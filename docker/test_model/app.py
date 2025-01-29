@@ -2,6 +2,7 @@ import json
 import os
 import logging
 import requests
+from time import sleep
 
 # Set up logging
 logging.basicConfig(level=logging.INFO)
@@ -10,12 +11,11 @@ logger = logging.getLogger(__name__)
 # Model names mapping
 MODEL_NAMES = {
     "GPT-2": "openai-community/gpt2",
-    "T5": "google-t5/t5-small",
-    "GPT-Neo": "EleutherAI/gpt-neo-2.7B",
-    "BART": "facebook/bart-large",
+    "DeepSeek-R1-Distill-Qwen-1.5B": "deepseek-ai/DeepSeek-R1-Distill-Qwen-1.5B",
+    "Llama-3.2-1B": "meta-llama/Llama-3.2-1B"
 }
 
-HUGGINGFACE_API_URL = "https://api-inference.huggingface.co/models"
+INFERENCE_API_URL =  os.getenv('INFERENCE_API_URL') 
 
 def add_cors(response):
     """Add CORS headers to the response."""
@@ -27,6 +27,37 @@ def add_cors(response):
         "Access-Control-Allow-Headers": "Content-Type"
     })
     return response
+
+def make_request_with_retries(url, headers, payload, retries=3, delay=5):
+    """
+    Make the HTTP POST request with retries in case of a timeout or other transient issues.
+    """
+    for attempt in range(retries):
+        try:
+            # Make the API request with a long timeout
+            response = requests.post(
+                url,
+                headers=headers,
+                json=payload,
+                timeout=(300, 1200)
+            )
+
+            # Check for successful response
+            if response.status_code == 200:
+                return response.json()
+            else:
+                logger.error(f"API request failed with status code {response.status_code}")
+                return None
+        except requests.exceptions.Timeout as e:
+            logger.error(f"Timeout occurred on attempt {attempt + 1}/{retries}: {str(e)}")
+        except requests.exceptions.RequestException as e:
+            logger.error(f"Request failed on attempt {attempt + 1}/{retries}: {str(e)}")
+        
+        # Wait before retrying
+        sleep(delay)
+    
+    # After retries, return None or an error message
+    return None
 
 def lambda_handler(event, context):
     """AWS Lambda function for invoking models via Hugging Face REST API."""
@@ -45,44 +76,29 @@ def lambda_handler(event, context):
 
         # Prepare headers for the Hugging Face API request
         headers = {
-            "Authorization": f"Bearer {os.getenv('HF_API_KEY')}"  # API Key from environment variable
+            "Authorization": f"Bearer {os.getenv('HF_API_KEY')}",
+            "Content-Type": "application/json"
         }
 
         # Prepare the payload for the request
-        if model_name == "T5":
-            # For T5, we will create a specific prompt format
-            input_text = f"question: {prompt} context: {prompt}"
-            payload = {
-                "inputs": input_text,
-                "options": {"use_cache": False}
+        payload = {
+            "inputs": prompt,
+            "options": {"use_cache": False},
+            "parameters": {
+                "max_new_tokens": 1024,
+                "temperature": 0.7,
+                "top_p": 0.9
             }
-        elif model_name == "BART":
-            # For BART, we just pass the prompt directly
-            payload = {
-                "inputs": prompt,
-                "options": {"use_cache": False}
-            }
-        else:
-            # For GPT-2 and GPT-Neo, we pass the prompt directly
-            payload = {
-                "inputs": prompt,
-                "options": {"use_cache": False}
-            }
+        }
 
-        # Make the API request to Hugging Face Inference API
-        response = requests.post(
-            f"{HUGGINGFACE_API_URL}/{MODEL_NAMES[model_name]}",
-            headers=headers,
-            json=payload
+        # Make the API request to Hugging Face Inference API with retries
+        response_json = make_request_with_retries(
+            f"{INFERENCE_API_URL}/{MODEL_NAMES[model_name]}",
+            headers,
+            payload
         )
 
-        # Log the full response for debugging
-        logger.debug(f"Response: {response.text}")
-
-        if response.status_code == 200:
-            # Parse the response JSON
-            response_json = response.json()
-
+        if response_json:
             # Check if generated text exists and return it
             generated_text = response_json[0].get("generated_text", "")
             if generated_text:
@@ -91,9 +107,7 @@ def lambda_handler(event, context):
                 # Return the response with CORS headers
                 return add_cors({
                     "statusCode": 200,
-                    "body": json.dumps({
-                        "response": generated_text
-                    })
+                    "body": json.dumps({"response": generated_text})
                 })
             else:
                 return add_cors({
@@ -101,10 +115,9 @@ def lambda_handler(event, context):
                     "body": json.dumps({"error": "Generated text not found"})
                 })
         else:
-            logger.error(f"Hugging Face API request failed with status code {response.status_code}")
             return add_cors({
-                "statusCode": response.status_code,
-                "body": json.dumps({"error": "Failed to generate response"})
+                "statusCode": 500,
+                "body": json.dumps({"error": "Failed to generate response after retries"})
             })
 
     except Exception as e:
