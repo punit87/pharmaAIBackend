@@ -94,7 +94,7 @@ def lambda_handler(event, context):
         #)
 
         response = requests.post(
-            f"{GOOGLE_COLAB_URL}",
+            f"{os.getenv("GOOGLE_COLAB_URL")}",
             headers=headers,
             json=data
         )
