@@ -35,11 +35,17 @@ def make_request_with_retries(url, headers, payload, retries=3, delay=5):
     for attempt in range(retries):
         try:
             # Make the API request with a long timeout
+            #response = requests.post(
+                #url,
+                #headers=headers,
+                #json=payload,
+                #timeout=(300, 1200)
+            #)
+
             response = requests.post(
-                url,
+                f"{GOOGLE_COLAB_URL}",
                 headers=headers,
-                json=payload,
-                timeout=(300, 1200)
+                json=data
             )
 
             # Check for successful response
