@@ -87,8 +87,14 @@ def lambda_handler(event, context):
         }
 
         # Make the request to Hugging Face Inference API
+        #response = requests.post(
+            #f"{HUGGINGFACE_API_URL}/{MODEL_NAMES[model_name]}",
+            #headers=headers,
+            #json=data
+        #)
+
         response = requests.post(
-            f"{HUGGINGFACE_API_URL}/{MODEL_NAMES[model_name]}",
+            f"{GOOGLE_COLAB_URL}",
             headers=headers,
             json=data
         )

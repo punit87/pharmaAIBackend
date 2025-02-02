@@ -3,7 +3,7 @@ import re
 import torch
 import numpy as np
 import csv
-from fastapi import FastAPI
+from fastapi import FastAPI, Request
 from pyngrok import ngrok
 import uvicorn
 import nest_asyncio
@@ -129,9 +129,13 @@ async def startup_event():
     print(f"API available at: {public_url}")
 
 @app.post("/query")
-async def handle_query(query: str):
+async def handle_query(request: Request):
+    data = await request.json()
+    query = data.get('inputs', '')
     results = search_similar_documents(faiss_index, query, combined_documents)
-    return {"response": results}
+    combined_results = "\n".join(results)
+    response = [{"generated_text": combined_results}]
+    return response
 
 if __name__ == "__main__":
     uvicorn.run(app, host="0.0.0.0", port=8000)
