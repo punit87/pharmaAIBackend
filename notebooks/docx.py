@@ -91,28 +91,26 @@ def process_uploaded_file(file_name):
     else:
         return "Unsupported file type."
 
-# File Upload
-uploaded = files.upload()
 
-# Process each uploaded file
-for filename in uploaded.keys():
-    print(f"\nProcessing file: {filename}")
-    extracted_data = process_uploaded_file(filename)
 
-    if isinstance(extracted_data, list) and extracted_data:
-        print("\nExtracted Data:")
-        print(json.dumps(extracted_data, indent=4))  # Beautify JSON output
+filename = "/content/drive/My Drive/lifesciences/training_documents/ProtonGlow_URS.docx"
+if not os.path.exists(filename):
+  print(f"File not found: {filename}")
 
-        # Save the extracted JSON data to the specified path
-        output_path = "/content/drive/MyDrive/lifesciences/extracted_data/json/extracted_data.json"
-        with open(output_path, "w") as json_file:
-            json.dump(extracted_data, json_file, indent=4)
-        print(f"\nExtracted data saved to: {output_path}")
-    else:
-        print("No valid data found or unsupported file type.")
+print(f"\nProcessing file: {filename}")
+extracted_data = process_uploaded_file(filename)
 
-# This code saves the extracted section names (without numbers) to an "all_sections.txt" file and
-# creates individual text files for each section, containing its table data in a readable format.
+if isinstance(extracted_data, list) and extracted_data:
+    print("\nExtracted Data:")
+    print(json.dumps(extracted_data, indent=4))  # Beautify JSON output
+
+    # Save the extracted JSON data to the specified path
+    output_path = "/content/drive/MyDrive/lifesciences/extracted_data/json/extracted_data.json"
+    with open(output_path, "w") as json_file:
+        json.dump(extracted_data, json_file, indent=4)
+    print(f"\nExtracted data saved to: {output_path}")
+else:
+    print("No valid data found or unsupported file type.")
 
 # Define the output folder
 output_folder = "/content/drive/MyDrive/lifesciences/extracted_data/text"
@@ -130,10 +128,10 @@ print(f"Section names saved to: {all_sections_path}")
 for section in extracted_data:
     section_name = re.sub(r'^\d+(\.\d+)*\s+', '', section["section_name"])  # Clean section name
     section_filename = os.path.join(output_folder, f"{section_name}.txt")
-
-    with open(section_filename, "w") as table_file:
-        for row in section["table_data"]:
-            table_file.write(f"{row[0]}: {row[1]}\n")  # Format as "1.1: Description"
+    if section.get("table_data"):
+        with open(section_filename, "w") as table_file:
+            for row in section["table_data"]:
+                table_file.write(f"{row[0]}: {row[1]}\n")  # Format as "1.1: Description"
 
     print(f"Table data saved to: {section_filename}")
 
@@ -329,16 +327,19 @@ async def query_section(query: QueryInput):
         with open(os.path.join(section_folder_path, f"{section_name[0]}.txt"), "r", encoding="utf-8") as f:
             section_content = [line.strip() for line in f.readlines()]
 
-        result = search_index(query.inputs, section_index_file, 10, section_content)
-        print(f"✅ result {result}")
+        results = search_index(query.inputs, section_index_file, 10, section_content)
+        print(f"✅ result {results}")
 
         # Step 5: Return the relevant information from the section index
-        print(f"✅ Returning results: Section {section_name}, {result}")
-        return {"section_name": section_name, "section_data": f" {result}"}
+        print(f"✅ Returning results: Section {section_name}, {results}")
+        combined_results = "\n".join(results)
+        response = [{"generated_text": combined_results}]
+        return response
 
     except Exception as e:
         print(f"❌ Error handling query: {e}")
-        raise HTTPException(status_code=500, detail="Error handling the query")
+        response = [{"generated_text": "Sorry, no training data available for this query"}]
+        return response
 
 # Run the FastAPI server with Uvicorn and expose it via Ngrok
 if __name__ == "__main__":
