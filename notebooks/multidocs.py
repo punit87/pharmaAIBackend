@@ -7,7 +7,7 @@ Original file is located at
     https://colab.research.google.com/drive/1yHmlBbH1jtsanhLMLd6ANhrY_XbPLsBR
 """
 
-!pip install python-docx pypdf faiss-cpu transformers torch tqdm sentence-transformers
+!pip install python-docx pypdf faiss-cpu transformers torch tqdm sentence-transformers fastapi uvicorn pyngrok
 
 import os
 from typing import List, Dict, Union
@@ -18,14 +18,20 @@ import faiss
 from transformers import AutoTokenizer, AutoModel
 import torch
 import pickle
-from google.colab import drive
+from google.colab import drive, userdata
 from pathlib import Path
 import json
 from datetime import datetime
 import uuid
 import logging
 from tqdm import tqdm
+import uvicorn
+import nest_asyncio
+from pyngrok import ngrok
+from pydantic import BaseModel
+from fastapi import FastAPI, HTTPException
 
+nest_asyncio.apply()
 def setup_google_drive():
     """Mount Google Drive and return the base path"""
     try:
@@ -348,6 +354,10 @@ class DocumentSearch:
             print(f"Added {len(all_embeddings)} embeddings to the FAISS index.")
             self.save_chunks()  # Save the chunks to file
 
+
+
+
+
     def query(self, query_text: str, top_k: int = 5) -> List[Dict[str, Union[str, float]]]:
         """Query the FAISS index"""
         try:
@@ -373,30 +383,47 @@ class DocumentSearch:
 
                 self.processor.logger.info(f"Query results: {results}")
                 print(f"Query results: {results}")
-                return results
-            else:
-                self.processor.logger.warning(f"No embedding generated for query: {query_text}")
-                return []
-        except Exception as e:
-            self.processor.logger.error(f"Error querying the FAISS index: {e}", exc_info=True)
-            print(f"Error querying the FAISS index: {e}")
-            return []
+                combined_results = "\n".join([r['text'] for r in results])
+                response = [{"generated_text": combined_results}]
+                return response
 
+        except Exception as e:
+              print(f"❌ Error handling query: {e}")
+              response = [{"generated_text": "Sorry, no training data available for this query"}]
+              return response
+
+# Define the FastAPI app
+app = FastAPI()
+
+class QueryInput(BaseModel):
+    inputs: str
+# FastAPI Endpoints
+@app.on_event("startup")
+async def startup_event():
+    ngrok.set_auth_token(userdata.get('ngrok_auth_token'))  # Replace with actual token if needed
+    public_url = ngrok.connect(8000)
+    print(f"API available at: {public_url}")
+
+@app.post("/query")
+async def query_section(query: QueryInput):
+    # Example query
+    print(f"📥 Received query: {query.inputs}")
+    query_text = query.inputs
+    base_path = '/content/drive/My Drive/lifesciences'
+    document_search = DocumentSearch(base_path)
+    response = document_search.query(query_text, 10)
+    return response
 
 def main():
+
     base_path = setup_google_drive()
     document_processor = DocumentProcessor(base_path)
     document_search = DocumentSearch(base_path)
-
     # Process training documents
     document_search.process_training_documents()
+    uvicorn.run(app, host="0.0.0.0", port=8000)
 
-    # Example query
-    query_text = "Give Machine Safety requirements"
-    results = document_search.query(query_text, 10)
-    print(f"Query results for '{query_text}':")
-    for result in results:
-        print(f"Text: {result['text']}, Distance: {result['distance']}")
+
 
 if __name__ == "__main__":
     main()
