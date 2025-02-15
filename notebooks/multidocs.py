@@ -414,6 +414,18 @@ async def query_section(query: QueryInput):
     response = document_search.query(query_text, 10)
     return response
 
+@app.get("/train")
+async def query_section():
+    # Example query
+    print(f"📥 Received training request")
+    base_path = setup_google_drive()
+    document_processor = DocumentProcessor(base_path)
+    document_search = DocumentSearch(base_path)
+    # Process training documents
+    document_search.process_training_documents()
+    response = [{"generated_text": "Model has as been trained on latest RAG database"}]
+    return response
+
 def main():
 
     base_path = setup_google_drive()
