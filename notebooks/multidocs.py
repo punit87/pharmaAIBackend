@@ -10,7 +10,7 @@ Original file is located at
 !pip install python-docx pypdf faiss-cpu transformers torch tqdm sentence-transformers fastapi uvicorn pyngrok
 
 import os
-from typing import List, Dict, Union
+from typing import List, Dict, Union, Optional
 from docx import Document
 from pypdf import PdfReader
 import numpy as np
@@ -18,424 +18,710 @@ import faiss
 from transformers import AutoTokenizer, AutoModel
 import torch
 import pickle
-from google.colab import drive, userdata
 from pathlib import Path
 import json
 from datetime import datetime
 import uuid
 import logging
+import time
 from tqdm import tqdm
 import uvicorn
-import nest_asyncio
 from pyngrok import ngrok
 from pydantic import BaseModel
-from fastapi import FastAPI, HTTPException
+from fastapi import FastAPI
+from functools import wraps
+import nest_asyncio
+from google.colab import userdata, drive
+import re
+from contextlib import asynccontextmanager
+import shutil
 
 nest_asyncio.apply()
-def setup_google_drive():
-    """Mount Google Drive and return the base path"""
-    try:
-        drive.mount('/content/drive')
-        base_path = '/content/drive/My Drive/lifesciences'
-        print(f"Google Drive mounted, base path: {base_path}")
-        return base_path
-    except Exception as e:
-        logging.error(f"Error mounting Google Drive: {e}", exc_info=True)
-        print("Error mounting Google Drive.")
-        return './lifesciences'  # Default to local directory if Google Drive fails
 
-class DocumentProcessor:
-    def __init__(self, base_path: str, model_name: str = "sentence-transformers/all-mpnet-base-v2"):
-        self.base_path = base_path
-        print(f"Base path: {self.base_path}")  # Consider using logging instead of print
-        self.models_path = os.path.join(base_path, 'models')
-        print(f"Models path: {self.models_path}")  # Consider using logging instead of print
-        self.index_path = os.path.join(base_path, 'indexes')
-        print(f"Index path: {self.index_path}")  # Consider using logging instead of print
-        self.extracted_data_path = os.path.join(base_path, 'extracted_data')
-        print(f"Extracted data path: {self.extracted_data_path}")  # Consider using logging instead of print
-        self.embeddings_path = os.path.join(base_path, 'embeddings')
-        print(f"Embeddings path: {self.embeddings_path}")  # Consider using logging instead of print
-        self.training_docs_path = os.path.join(base_path, 'training_documents')
-        print(f"Training docs path: {self.training_docs_path}")  # Consider using logging instead of print
-        self.chunks = []
-        # Create directories if they don't exist
-        for path in [self.models_path, self.index_path,
-                    self.extracted_data_path, self.embeddings_path,
-                    self.training_docs_path]:
-            os.makedirs(path, exist_ok=True)
-            print(f"Ensured directory exists: {path}")
+def timer_decorator(func):
+    @wraps(func)
+    def wrapper(*args, **kwargs):
+        start_time = time.time()
+        result = func(*args, **kwargs)
+        end_time = time.time()
+        execution_time = end_time - start_time
+        print(f"{func.__name__} took {execution_time:.2f} seconds to execute")
+        logging.info(f"{func.__name__} took {execution_time:.2f} seconds to execute")
+        return result
+    return wrapper
 
-        # Setup logging
-        self.setup_logging()
+class Section:
+    def __init__(self, text: str, heading: Optional[str] = None, level: int = 0):
+        self.text = text
+        self.heading = heading
+        self.level = level
+        self.content = {"text": text, "lists": []}
 
-        # Initialize the model
+    def get(self, key, default=None):
+        return getattr(self, key, default)
+
+class DocumentManager:
+    """Enhanced DocumentManager with improved section processing and response formatting"""
+
+    @staticmethod
+    def mount_drive() -> str:
+        """Mount Google Drive and create necessary base directory"""
         try:
-            self.tokenizer = AutoTokenizer.from_pretrained(model_name)
-            print(f"Tokenizer loaded for model {model_name}")
-            self.model = AutoModel.from_pretrained(model_name)
-            print(f"Model loaded for {model_name}")
-            self.device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
-            print(f"Device set to: {self.device}")
-            self.model.to(self.device)
-            self.logger.info(f"Model '{model_name}' loaded successfully on {self.device}.")  # Log success
+            # Don't force remount if already mounted
+            if not os.path.exists('/content/drive'):
+                drive.mount('/content/drive')
+
+            base_path = '/content/drive/My Drive/lifesciences'
+            os.makedirs(base_path, exist_ok=True)
+            return base_path
         except Exception as e:
-            self.logger.error(f"Error initializing model: {e}", exc_info=True)
-            print(f"Error initializing model: {e}")
-            raise  # Re-raise to stop execution if model fails to load
+            logging.error(f"Failed to mount drive: {str(e)}")
+            raise
+
+    def __init__(self, model_name: str = "sentence-transformers/all-mpnet-base-v2", dimension: int = 768):
+        self.base_path = self.mount_drive()
+        self.setup_paths()
+        self.setup_logging()
+        self.setup_model(model_name)
+        self.dimension = dimension
+        self.index = None
+        self.chunks = []
+        self.initialize_index()
+        self.section_pattern = re.compile(r'^(?:Section|Chapter|\d+\.|\d+\.\d+)\s+', re.IGNORECASE)
+        print(f"DocumentManager initialized with base path: {self.base_path}")
+
+    def setup_paths(self):
+        """Setup and create necessary directories in Google Drive"""
+        paths = {
+            'models': 'models',
+            'index': 'indexes',
+            'extracted_data': 'extracted_data',
+            'embeddings': 'embeddings',
+            'training_docs': 'training_documents',
+            'logs': 'logs'
+        }
+
+        for key, path in paths.items():
+            full_path = os.path.join(self.base_path, path)
+            setattr(self, f"{key}_path", full_path)
+            os.makedirs(full_path, exist_ok=True)
+            logging.info(f"Created directory: {full_path}")
 
     def setup_logging(self):
+        """Setup logging configuration"""
+        log_file = os.path.join(self.logs_path, 'processing.log')
         logging.basicConfig(
-            filename=os.path.join(self.base_path, 'processing.log'),
+            filename=log_file,
             level=logging.INFO,
             format='%(asctime)s - %(levelname)s - %(message)s'
         )
-        self.logger = logging.getLogger(__name__)
-        self.logger.info("Logging initialized.")  # Confirm logging setup
-        print("Logging initialized.")
+        logging.info("Logging initialized")
 
-    def get_document_metadata(self, file_path: str) -> Dict:
-        """Extract metadata from document"""
+    @timer_decorator
+    def setup_model(self, model_name: str):
+        """Initialize the transformer model and tokenizer"""
         try:
-            file_stat = os.stat(file_path)
-            metadata = {
-                "filename": os.path.basename(file_path),
-                "file_path": file_path,
-                "file_type": file_path.split('.')[-1].lower(),
-                "size": file_stat.st_size,
-                "created": datetime.fromtimestamp(file_stat.st_ctime).isoformat(),
-                "modified": datetime.fromtimestamp(file_stat.st_mtime).isoformat(),
-                "processed": datetime.now().isoformat()
-            }
-            print(f"Metadata extracted for {file_path}")
-            self.logger.info(f"Metadata extracted for {file_path}")
-            return metadata
+            self.tokenizer = AutoTokenizer.from_pretrained(model_name)
+            self.model = AutoModel.from_pretrained(model_name)
+            self.device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
+            self.model.to(self.device)
+            logging.info(f"Model loaded successfully on {self.device}")
         except Exception as e:
-            self.logger.error(f"Error getting metadata for {file_path}: {e}", exc_info=True)
-            print(f"Error getting metadata for {file_path}: {e}")
-            return {}  # Return an empty dict in case of an error
+            logging.error(f"Error initializing model: {e}")
+            raise
 
-    def extract_and_save_content(self, file_path: str) -> str:
-        """Extract content from a document and save it as JSON"""
-        try:
-            metadata = self.get_document_metadata(file_path)
-            extracted_data = []
+    def initialize_index(self):
+        """Initialize or load existing FAISS index"""
+        index_file = os.path.join(self.index_path, 'index.faiss')
+        chunks_file = os.path.join(self.index_path, 'chunks.pkl')
 
-            # Read document content
-            if file_path.endswith('.docx'):
-                extracted_data = self.extract_text_from_docx(file_path)
-            elif file_path.endswith('.pdf'):
-                extracted_data = self.extract_text_from_pdf(file_path)
-            else:
-                self.logger.warning(f"Unsupported file type: {file_path}")
-                print(f"Unsupported file type: {file_path}")
-                return None  # Handle unsupported types
+        if os.path.exists(index_file) and os.path.exists(chunks_file):
+            self.index = faiss.read_index(index_file)
+            with open(chunks_file, 'rb') as f:
+                self.chunks = pickle.load(f)
+            logging.info(f"Loaded existing index with {len(self.chunks)} chunks")
+        else:
+            self.index = faiss.IndexFlatL2(self.dimension)
+            self.chunks = []
+            logging.info("Created new FAISS index")
 
-            # Save extracted content and metadata
-            extracted_json = {
-                "metadata": metadata,
-                "sections": extracted_data
-            }
-
-            extracted_file_path = os.path.join(self.extracted_data_path, f"{uuid.uuid4()}.json")
-            with open(extracted_file_path, 'w', encoding='utf-8') as f:
-                json.dump(extracted_json, f, ensure_ascii=False, indent=4)
-
-            self.logger.info(f"Content extracted and saved to {extracted_file_path}")
-            print(f"Content extracted and saved to {extracted_file_path}")
-            return extracted_file_path
-        except Exception as e:
-            self.logger.error(f"Error extracting and saving content from {file_path}: {e}", exc_info=True)
-            print(f"Error extracting and saving content from {file_path}: {e}")
-            return None
-
-    def extract_text_from_docx(self, file_path: str) -> List[Dict[str, str]]:
-        """Extract text from a Word document (.docx)"""
+    def extract_docx_sections(self, file_path: str) -> List[Dict]:
+        """Extract sections from DOCX with null style handling"""
         try:
             doc = Document(file_path)
             sections = []
+            current_section = None
+            current_text = []
 
-            for paragraph in doc.paragraphs:
-                if paragraph.text.strip():
-                    sections.append({"text": paragraph.text.strip()})
-            print(f"Text extracted from DOCX: {file_path}")
-            self.logger.info(f"Text extracted from DOCX: {file_path}")
+            logging.info(f"Starting DOCX extraction for {file_path}")
+            logging.info(f"Total paragraphs: {len(doc.paragraphs)}")
+
+            for i, paragraph in enumerate(doc.paragraphs):
+                text = paragraph.text.strip()
+
+                if not text:
+                    continue
+
+                # Safely get style information
+                style_name = "default"
+                try:
+                    if paragraph.style and paragraph.style.name:
+                        style_name = paragraph.style.name
+                except AttributeError:
+                    pass
+
+                logging.info(f"Paragraph {i}: Style='{style_name}', Text='{text[:50]}...'")
+
+                # Enhanced heading detection that doesn't rely on style
+                is_heading = any([
+                    style_name.startswith('Heading'),
+                    len(text) <= 100 and text.isupper(),
+                    bool(re.match(r'^[\d\.]+\s+[A-Z]', text)),
+                    len(text.split()) <= 7 and text[0].isupper(),
+                    bool(re.match(r'^[A-Z][A-Z\s]{4,}$', text))
+                ])
+
+                if is_heading:
+                    # Save previous section if it exists
+                    if current_text:
+                        processed_content = self.process_lists('\n'.join(current_text))
+                        if processed_content["text"] or processed_content["lists"]:
+                            sections.append({
+                                "heading": current_section,
+                                "content": processed_content
+                            })
+                            logging.info(f"Added section with heading: {current_section}")
+
+                    current_section = text
+                    current_text = []
+                else:
+                    current_text.append(text)
+
+            # Handle final section
+            if current_text:
+                processed_content = self.process_lists('\n'.join(current_text))
+                if processed_content["text"] or processed_content["lists"]:
+                    sections.append({
+                        "heading": current_section,
+                        "content": processed_content
+                    })
+                    logging.info(f"Added final section with heading: {current_section}")
+
+            # Fallback for documents with no clear sections
+            if not sections:
+                all_text = []
+                for para in doc.paragraphs:
+                    text = para.text.strip()
+                    if text:
+                        all_text.append(text)
+
+                if all_text:
+                    processed_content = self.process_lists('\n'.join(all_text))
+                    sections.append({
+                        "heading": "Document Content",
+                        "content": processed_content
+                    })
+                    logging.info("Created single section with all content")
+
+            logging.info(f"Extracted {len(sections)} sections from DOCX")
+
+            # Debug output of sections
+            for i, section in enumerate(sections):
+                logging.info(f"Section {i + 1}:")
+                logging.info(f"  Heading: {section['heading']}")
+                logging.info(f"  Content length: {len(section['content'].get('text', ''))}")
+                logging.info(f"  Lists: {len(section['content'].get('lists', []))}")
+
             return sections
-        except Exception as e:
-            self.logger.error(f"Error extracting text from DOCX: {e}", exc_info=True)
-            print(f"Error extracting text from DOCX: {e}")
-            return []  # Return empty list in case of error
 
-    def extract_text_from_pdf(self, file_path: str) -> List[Dict[str, str]]:
-        """Extract text from a PDF document"""
+        except Exception as e:
+            logging.error(f"Error in extract_docx_sections: {str(e)}")
+            logging.exception("Full traceback:")
+
+            # Attempt recovery by processing the entire document as one section
+            try:
+                all_text = []
+                for para in doc.paragraphs:
+                    text = para.text.strip()
+                    if text:
+                        all_text.append(text)
+
+                if all_text:
+                    processed_content = self.process_lists('\n'.join(all_text))
+                    return [{
+                        "heading": "Document Content",
+                        "content": processed_content
+                    }]
+            except Exception as recovery_error:
+                logging.error(f"Recovery attempt failed: {str(recovery_error)}")
+
+            return []
+
+    def is_heading(self, text: str) -> bool:
+        """Enhanced heading detection with more patterns"""
+        return any([
+            bool(self.section_pattern.match(text)),
+            text.isupper() and len(text.split()) <= 7,
+            bool(re.match(r'^[\d\.]+\s+[A-Z]', text)),  # Numbered sections
+            bool(re.match(r'^[A-Z][a-z]+\s+\d+', text)),  # "Section 1", "Chapter 2" etc.
+            bool(re.match(r'^[A-Z][A-Z\s]{4,}$', text)),  # All caps words
+            len(text.split()) <= 7 and text[0].isupper()  # Short capitalized phrases
+        ])
+
+    def extract_pdf_sections(self, file_path: str) -> List[Dict]:
+        """Extract sections from PDF file and return in consistent format with DOCX extraction"""
         try:
             reader = PdfReader(file_path)
             sections = []
+            current_section = None
+            current_text = []
 
             for page in reader.pages:
                 text = page.extract_text()
-                if text.strip():
-                    sections.append({"text": text.strip()})
-            print(f"Text extracted from PDF: {file_path}")
-            self.logger.info(f"Text extracted from PDF: {file_path}")
-            return sections
-        except Exception as e:
-            self.logger.error(f"Error extracting text from PDF: {e}", exc_info=True)
-            print(f"Error extracting text from PDF: {e}")
-            return []  # Return empty list in case of error
+                if not text:
+                    continue
 
-    def get_embeddings(self, text: str) -> np.ndarray:
-        """Generate sentence embeddings for a given text"""
+                lines = text.split('\n')
+                for line in lines:
+                    line = line.strip()
+                    if not line:
+                        continue
+
+                    if self.is_heading(line):
+                        # Save previous section if exists
+                        if current_text:
+                            sections.append({
+                                "heading": current_section,
+                                "content": self.process_lists('\n'.join(current_text))
+                            })
+                            current_text = []
+                        current_section = line
+                    else:
+                        current_text.append(line)
+
+            # Add the last section
+            if current_text:
+                sections.append({
+                    "heading": current_section,
+                    "content": self.process_lists('\n'.join(current_text))
+                })
+
+            # If no sections were found, create one with all content
+            if not sections and current_text:
+                sections.append({
+                    "heading": None,
+                    "content": self.process_lists('\n'.join(current_text))
+                })
+
+            logging.info(f"Extracted {len(sections)} sections from PDF: {file_path}")
+            return sections
+
+        except Exception as e:
+            logging.error(f"Error extracting PDF sections from {file_path}: {str(e)}")
+            return []
+
+
+    def extract_docx_tables(self, file_path: str) -> List[Dict]:
+        """Extract tables from DOCX file."""
         try:
-            inputs = self.tokenizer(text, return_tensors='pt', truncation=True, padding=True)
+            doc = Document(file_path)
+            tables_data = []
+
+            for table in doc.tables:
+                table_list = []
+                for row in table.rows:
+                    row_list = []
+                    for cell in row.cells:
+                        row_list.append(cell.text)
+                    table_list.append(row_list)
+                tables_data.append(table_list)
+            return tables_data
+        except Exception as e:
+            logging.error(f"Error extracting DOCX tables: {e}")
+            return []
+
+    def extract_pdf_tables(self, file_path: str) -> List[Dict]:
+        """Extract tables from PDF using camelot."""
+        try:
+            import camelot  # Import camelot only when needed
+            tables = camelot.read_pdf(file_path)
+            tables_data = []
+            for table in tables:
+                df = table.df
+                table_list = df.values.tolist()  # Convert DataFrame to list
+                tables_data.append(table_list)
+            return tables_data
+        except Exception as e:
+            logging.error(f"Error extracting PDF tables: {e}")
+            return []
+
+    def process_lists(self, text: str) -> Dict[str, Union[str, List[str]]]:
+        """Process text to identify and structure lists"""
+        lines = text.split('\n')
+        processed_text = []
+        current_list = []
+        in_list = False
+
+        list_markers = ['•', '-', '·', '*', '○', '▪', '✓']
+        number_pattern = re.compile(r'^\d+[\.\)]')
+
+        result = {
+            "text": "",
+            "lists": []
+        }
+
+        for line in lines:
+            line = line.strip()
+            if not line:
+                continue
+
+            is_list_item = (
+                any(line.startswith(marker) for marker in list_markers) or
+                number_pattern.match(line)
+            )
+
+            if is_list_item:
+                if not in_list:
+                    in_list = True
+                    if processed_text:
+                        result["text"] = '\n'.join(processed_text)
+                current_list.append(line)
+            else:
+                if in_list:
+                    in_list = False
+                    if current_list:
+                        result["lists"].append(current_list)
+                        current_list = []
+                processed_text.append(line)
+
+        if in_list and current_list:
+            result["lists"].append(current_list)
+        if processed_text:
+            result["text"] = '\n'.join(processed_text)
+
+        return result
+
+    @timer_decorator
+    def get_embeddings(self, text: str) -> np.ndarray:
+        """Generate embeddings for given text"""
+        try:
+            inputs = self.tokenizer(text, return_tensors='pt', truncation=True, padding=True, max_length=512)
             inputs = inputs.to(self.device)
-            print(f"Tokenizing input: {text}")
 
             with torch.no_grad():
-                output = self.model(**inputs)
-                print(f"Model output generated for input text.")
+                outputs = self.model(**inputs)
+                embedding = outputs.last_hidden_state.mean(dim=1).cpu().numpy()
 
-            # The error was likely happening because the model returns more than just the embedding.
-            # We specifically want the last hidden state and mean it to get a sentence embedding.
-            embedding = output.last_hidden_state.mean(dim=1).cpu().numpy()
-            print(f"Generated embedding for text.")
             return embedding
         except Exception as e:
-            self.logger.error(f"Error generating embeddings for text: {e}", exc_info=True)
-            print(f"Error generating embeddings for text: {e}")
+            logging.error(f"Error generating embedding: {e}")
             return None
 
-    def process_and_save_embeddings(self, sections: List[Dict[str, str]]) -> str:
-        """Process sections and save their embeddings"""
-        try:
-            embeddings = []
-            for section in sections:
-                text = section["text"]
-                embedding = self.get_embeddings(text)
-                if embedding is not None:
-                    section["embedding"] = embedding.tolist()  # Convert to list for JSON serialization
-                    embeddings.append(section)
+    def clear_directories(self):
+        """Clears embeddings, indexes, and extracted data directories."""
+        dirs_to_clear = [
+            self.embeddings_path,
+            self.index_path,
+            self.extracted_data_path
+        ]
+        for dir_path in dirs_to_clear:
+            try:
+                if os.path.exists(dir_path):
+                    shutil.rmtree(dir_path)  # Remove the directory and its contents
+                    os.makedirs(dir_path)    # Recreate the directory
+                    logging.info(f"Cleared directory: {dir_path}")
                 else:
-                    self.logger.warning(f"Could not generate embedding for section: {section}")
-                    print(f"Could not generate embedding for section: {section}")
+                    os.makedirs(dir_path)
+                    logging.info(f"Directory created: {dir_path}")
 
-            # Save embeddings to file
-            embedding_file_path = os.path.join(self.embeddings_path, f"{uuid.uuid4()}.pkl")
-            with open(embedding_file_path, 'wb') as f:
-                pickle.dump(embeddings, f)
-
-            # Ensure chunks are updated
-            self.chunks.extend(embeddings)
-            self.logger.info(f"Embeddings processed and saved to {embedding_file_path}")
-            print(f"Embeddings processed and saved to {embedding_file_path}")
-            print(f"Current number of chunks: {len(self.chunks)}")  # Debugging line
-            return embedding_file_path
-        except Exception as e:
-            self.logger.error(f"Error processing and saving embeddings: {e}", exc_info=True)
-            print(f"Error processing and saving embeddings: {e}")
-            return None  # Indicate failure
-
-
-
-    def process_training_documents(self):
-        training_docs_path = self.training_docs_path
-        extracted_data_path = self.extracted_data_path
-        logger = self.logger
-        """Processes all documents in the training documents folder."""
-        processed_files = []
-        try:
-            for filename in os.listdir(training_docs_path):
-                if filename.endswith(('.docx', '.pdf')):
-                    file_path = os.path.join(training_docs_path, filename)
-                    extracted_file_path = self.extract_and_save_content(file_path)
-                    if extracted_file_path:
-                        processed_files.append(extracted_file_path)
-            logger.info(f"Processed {len(processed_files)} training documents.")
-            print(f"Processed {len(processed_files)} training documents.")
-            return processed_files
-        except Exception as e:
-            logger.error(f"Error processing training documents: {e}", exc_info=True)
-            print(f"Error processing training documents: {e}")
-            return processed_files
-
-class DocumentSearch:
-    def __init__(self, base_path: str, dimension: int = 768):
-        self.base_path = base_path
-        self.index_path = os.path.join(base_path, 'indexes')
-        self.embeddings_path = os.path.join(base_path, 'embeddings')
-        self.processor = DocumentProcessor(base_path)
-        print(f"DocumentSearch initialized with base path {base_path}")
-
-        # Initialize FAISS index
-        self.dimension = dimension
-        self.index = faiss.IndexFlatL2(dimension)
-        self.chunks = []  # Ensure this list is populated with sections
-
-        # Load existing index if available
-        self.load_index()
-
-    def load_chunks(self):
-        """Load chunks from a previously saved file"""
-        chunks_file = os.path.join(self.index_path, 'chunks.pkl')
-        if os.path.exists(chunks_file):
-            try:
-                with open(chunks_file, 'rb') as f:
-                    self.chunks = pickle.load(f)
-                self.processor.logger.info(f"Loaded {len(self.chunks)} chunks.")
-                print(f"Loaded {len(self.chunks)} chunks.")
             except Exception as e:
-                self.processor.logger.error(f"Error loading chunks: {e}", exc_info=True)
-                print(f"Error loading chunks: {e}")
-                self.chunks = []  # Initialize as empty list if loading fails
-        else:
-            self.processor.logger.info("No chunks file found, starting fresh.")
-            print("No chunks file found, starting fresh.")
-            self.chunks = []  # Initialize as empty list if file doesn't exist
-
-    def save_chunks(self):
-        """Save chunks to a file for future use"""
+                logging.error(f"Error clearing directory {dir_path}: {e}")
+                raise
+    def process_document(self, file_path: str) -> Optional[str]:
         try:
-            chunks_file = os.path.join(self.index_path, 'chunks.pkl')
-            with open(chunks_file, 'wb') as f:
-                pickle.dump(self.chunks, f)
-            self.processor.logger.info(f"Saved {len(self.chunks)} chunks to file.")
-            print(f"Saved {len(self.chunks)} chunks to file.")
-        except Exception as e:
-            self.processor.logger.error(f"Error saving chunks: {e}", exc_info=True)
-            print(f"Error saving chunks: {e}")
+            if not os.path.exists(file_path):
+                logging.error(f"File not found: {file_path}")
+                return None
 
-    def load_index(self):
-        """Load the FAISS index from file if it exists"""
+            metadata = {  # Initialize metadata *before* processing sections
+                "filename": os.path.basename(file_path),
+                "file_path": file_path,
+                "file_type": file_path.split('.')[-1].lower(),
+                "processed": datetime.now().isoformat()
+            }
+
+            # Extract sections based on file type
+            sections = []
+            if file_path.endswith('.docx'):
+                sections = self.extract_docx_sections(file_path)
+            elif file_path.endswith('.pdf'):
+                sections = self.extract_pdf_sections(file_path)
+            else:
+                logging.error(f"Unsupported file type: {file_path}")
+                return None
+
+            if not sections:
+                logging.warning(f"No sections extracted from {file_path}")
+                return None
+
+            # Process each section
+            for section_data in sections:
+                # Handle both dictionary and Section object formats
+                if isinstance(section_data, dict):
+                    heading = section_data.get("heading")
+                    content = section_data.get("content", {})
+                else:
+                    heading = section_data.heading
+                    content = section_data.content
+
+                print(f"content:{content}")
+               # Ensure metadata is a dictionary (crucial!)
+                if not isinstance(metadata, dict):
+                    metadata = {}  # Initialize to an empty dict if it's not one
+
+                logging.debug(f"Metadata before chunk creation: {metadata}")
+                print(f"Metadata before chunk creation: {metadata}")
+                # Process main text
+                main_text = content.get("text", "")
+                if main_text:
+                    embedding = self.get_embeddings(main_text)
+                    if embedding is not None:
+                        self.index.add(embedding)
+                        chunk = {
+                            "text": main_text,
+                            "metadata": metadata.copy(),  # Copy!
+                            "heading": heading,
+                            "type": "text"
+                        }
+                        self.chunks.append(chunk)
+                        logging.debug(f"Added text chunk: {chunk}")  # Log the created chunk
+
+                # Process lists (same logic as for main text)
+                lists = content.get("lists", [])
+                for lst in lists:
+                    list_text = '\n'.join(lst) if isinstance(lst, list) else lst
+                    embedding = self.get_embeddings(list_text)
+                    if embedding is not None: # Simplified if check
+                        self.index.add(embedding)
+                        chunk = {
+                            "text": list_text,
+                            "metadata": metadata.copy(),  # Copy!
+                            "heading": heading,
+                            "type": "list"
+                        }
+                        self.chunks.append(chunk)
+                        logging.debug(f"Added list chunk: {chunk}") # Log the created chunk
+
+
+
+                # Extract and process tables
+                tables = []
+                if file_path.endswith('.docx'):
+                    tables = self.extract_docx_tables(file_path)
+                elif file_path.endswith('.pdf'):
+                    tables = self.extract_pdf_tables(file_path)
+
+                for table in tables:
+                    table_text = "\n".join(["|".join(row) for row in table]) # Simple string representation
+                    embedding = self.get_embeddings(table_text)
+                    if embedding is not None:
+                        self.index.add(embedding)
+                        chunk = {
+                            "text": table_text,
+                            "metadata": metadata.copy(),
+                            "heading": None,  # Tables might not have headings
+                            "type": "table"
+                        }
+                        self.chunks.append(chunk)
+                        logging.debug(f"Added table chunk: {chunk}")
+
+            self.save_index_state()
+            logging.info(f"Successfully processed document: {file_path}")
+            return file_path
+
+        except Exception as e:
+            logging.exception(f"Error processing document {file_path}: {str(e)}")
+            return None
+
+    def save_index_state(self):
+        """Save current index and chunks to disk"""
         index_file = os.path.join(self.index_path, 'index.faiss')
-        if os.path.exists(index_file):
-            try:
-                self.index = faiss.read_index(index_file)
-                print(f"Loaded index with {self.index.ntotal} vectors.")  # Debugging line
-                self.load_chunks()  # Ensure chunks are loaded after the index is loaded
-                self.processor.logger.info(f"Index loaded with {self.index.ntotal} vectors.")
-            except Exception as e:
-                self.processor.logger.error(f"Error loading index: {str(e)}")
-                print(f"Error loading index: {str(e)}")
-                self.index = faiss.IndexFlatL2(self.dimension)  # Initialize a new index if loading fails
-                self.chunks = []  # Initialize chunks as empty if index loading fails
-        else:
-            self.processor.logger.info("No index found, starting fresh.")
-            print("No index found, starting fresh.")
-            self.index = faiss.IndexFlatL2(self.dimension)  # Initialize a new index if none exists
-            self.chunks = []  # Initialize as empty list if no index file
+        chunks_file = os.path.join(self.index_path, 'chunks.pkl')
 
+        faiss.write_index(self.index, index_file)
+        with open(chunks_file, 'wb') as f:
+            pickle.dump(self.chunks, f)
+        logging.info(f"Saved index with {len(self.chunks)} chunks")
 
-    def process_training_documents(self):
-        """Process documents, add embeddings to index, and store chunks"""
-        processed_files = self.processor.process_training_documents()
-
-        # Generate embeddings and store chunks
-        all_embeddings = []
-        for file_path in processed_files:
-            with open(file_path, 'r', encoding='utf-8') as f:
-                data = json.load(f)
-                sections = data.get("sections", [])
-                embeddings_file_path = self.processor.process_and_save_embeddings(sections)
-
-                # Load embeddings from the file
-                if embeddings_file_path:
-                    with open(embeddings_file_path, 'rb') as f:
-                        embeddings = pickle.load(f)
-                        for section in embeddings:
-                            if "embedding" in section:
-                                embedding = np.array(section["embedding"], dtype=np.float32)
-                                all_embeddings.append(embedding)
-                                self.chunks.append(section)  # Save section with embedding
-        # Add embeddings to FAISS index
-        if all_embeddings:
-            embeddings_matrix = np.vstack(all_embeddings)
-            self.index.add(embeddings_matrix)
-            self.processor.logger.info(f"Added {len(all_embeddings)} embeddings to the FAISS index.")
-            print(f"Added {len(all_embeddings)} embeddings to the FAISS index.")
-            self.save_chunks()  # Save the chunks to file
-
-
-
-
-
+    @timer_decorator
     def query(self, query_text: str, top_k: int = 5) -> List[Dict[str, Union[str, float]]]:
-        """Query the FAISS index"""
+        """Enhanced search with better response formatting"""
         try:
-            query_embedding = self.processor.get_embeddings(query_text)
+            query_embedding = self.get_embeddings(query_text)
             if query_embedding is not None:
                 query_embedding = query_embedding.astype(np.float32)
                 distances, indices = self.index.search(query_embedding, top_k)
 
-                # Ensure indices are valid and match the chunks
-                if len(indices[0]) > len(self.chunks):
-                    self.processor.logger.warning(f"Indices returned exceed number of chunks. Check index and chunks integrity.")
-                    print(f"Warning: Indices returned exceed number of chunks. Check index and chunks integrity.")
-                    return []
-
                 results = []
                 for idx, dist in zip(indices[0], distances[0]):
                     if idx < len(self.chunks):
-                        result = {
-                            "text": self.chunks[idx]["text"],
-                            "distance": dist
+                        chunk = self.chunks[idx]
+                        # CRITICAL: Check and log the chunk *before* accessing metadata
+                        logging.debug(f"Chunk before metadata access: {chunk}")
+                        if "metadata" not in chunk:  # Check if metadata exists!
+                            logging.error(f"Chunk is missing metadata: {chunk}")
+                            chunk["metadata"] = []
+                            # Handle the error gracefully (e.g., skip this chunk)
+                            #continue  # Skip to the next chunk
+
+                        result = { # Now it's safe to access metadata
+                            "content": chunk["text"],
+                            "distance": float(dist),
+                            "metadata": chunk["metadata"],
+                            "type": chunk.get("type", "text"),
+                            "heading": chunk.get("heading", "")
                         }
                         results.append(result)
 
-                self.processor.logger.info(f"Query results: {results}")
-                print(f"Query results: {results}")
-                combined_results = "\n".join([r['text'] for r in results])
-                response = [{"generated_text": combined_results}]
-                return response
 
+                # Format response based on content type
+                formatted_response = self.format_response(results)
+                return [{"generated_text": formatted_response}]
+
+            return [{"generated_text": "No results found"}]
         except Exception as e:
-              print(f"❌ Error handling query: {e}")
-              response = [{"generated_text": "Sorry, no training data available for this query"}]
-              return response
+            logging.error(f"Error performing query: {e}")
+            return [{"generated_text": "Error processing query"}]
 
-# Define the FastAPI app
-app = FastAPI()
+    def format_response(self, results: List[Dict]) -> str:
+        """Format search results based on content type"""
+        formatted_sections = []
+
+        for result in results:
+            section = []
+            if result["heading"]:
+                section.append(f"## {result['heading']}")
+
+            if result["type"] == "list":
+                # Format list items
+                items = result["content"].split('\n')
+                section.extend(items)
+
+            elif result["type"] == "table":  # Handle tables
+                table_str = result["content"]
+                section.append(table_str)  # Directly append table string
+
+            else:
+                # Format regular text
+                section.append(result["content"])
+
+            section.append("\n")  # Add spacing between sections
+            formatted_sections.append('\n'.join(section))
+
+        return '\n'.join(formatted_sections)
+
+    def process_training_documents(self):
+        """Process all documents in the training directory"""
+        self.clear_directories()
+        processed_files = []
+        for filename in os.listdir(self.training_docs_path):
+            if filename.endswith(('.docx', '.pdf')):
+                file_path = os.path.join(self.training_docs_path, filename)
+                if self.process_document(file_path):
+                    processed_files.append(file_path)
+
+        logging.info(f"Processed {len(processed_files)} training documents")
+        return processed_files
+
+@asynccontextmanager
+async def lifespan(app: FastAPI):
+    # Startup (Only ngrok setup here)
+    try:
+        ngrok_token = userdata.get('ngrok_auth_token')
+        if ngrok_token:
+            ngrok.set_auth_token(ngrok_token)
+            tunnel = ngrok.connect(8000)  # Establish the tunnel
+            public_url = tunnel.public_url #Simplified
+            logging.info(f"API available at: {public_url}")
+            print(f"API available at: {public_url}") #Print to console too
+            app.state.ngrok_url = public_url #Store it in app.state
+        else:
+            logging.warning("ngrok_auth_token not found in Colab userdata")
+
+    except Exception as e:
+        logging.error(f"Error in ngrok setup (lifespan): {e}")
+        logging.exception("Full traceback:")  # Essential for debugging
+        raise  # Re-raise to prevent app start if ngrok fails
+
+    yield  # Important: Yield control to the app
+
+    # Shutdown (Only ngrok disconnect here)
+    try:
+        if hasattr(app.state, 'ngrok_url'):  # Check if ngrok was initialized
+            ngrok.disconnect(app.state.ngrok_url)
+    except Exception as e:
+        logging.error(f"Error in ngrok shutdown: {e}")
+        logging.exception("Full traceback:")
+# FastAPI Setup
+app = FastAPI(lifespan=lifespan)
 
 class QueryInput(BaseModel):
     inputs: str
-# FastAPI Endpoints
-@app.on_event("startup")
-async def startup_event():
-    ngrok.set_auth_token(userdata.get('ngrok_auth_token'))  # Replace with actual token if needed
-    public_url = ngrok.connect(8000)
-    print(f"API available at: {public_url}")
+
+document_manager = None
 
 @app.post("/query")
-async def query_section(query: QueryInput):
-    # Example query
-    print(f"📥 Received query: {query.inputs}")
-    query_text = query.inputs
-    base_path = '/content/drive/My Drive/lifesciences'
-    document_search = DocumentSearch(base_path)
-    response = document_search.query(query_text, 10)
-    return response
+async def query_endpoint(query: QueryInput):
+    """Endpoint for querying the document database with improved response formatting"""
+    global document_manager
+    try:
+        logging.info(f"Received query: {query.inputs}")
+        response = document_manager.query(query.inputs, 10)
+        return response
+    except Exception as e:
+        logging.error(f"Error in query endpoint: {e}")
+        return [{"generated_text": "Error processing query"}]
 
 @app.get("/train")
-async def query_section():
-    # Example query
-    print(f"📥 Received training request")
-    base_path = setup_google_drive()
-    document_processor = DocumentProcessor(base_path)
-    document_search = DocumentSearch(base_path)
-    # Process training documents
-    document_search.process_training_documents()
-    response = [{"generated_text": "Model has as been trained on latest RAG database"}]
-    return response
+async def train_endpoint():
+    """Endpoint for training/updating the document database"""
+    global document_manager
+    try:
+        logging.info("Received training request")
+        print("Initializing document manager...")
+        document_manager = DocumentManager()
+        processed_files = document_manager.process_training_documents()
+        return [{"generated_text": f"Successfully processed {len(processed_files)} documents"}]
+        document_manager.load_index_state()
+    except Exception as e:
+        logging.error(f"Error in train endpoint: {e}")
+        return [{"generated_text": "Error processing training request"}]
 
 def main():
+    """Main function to initialize and start the application"""
+    global document_manager
+    try:
+        # Initialize document manager
+        print("Initializing document manager...")
+        document_manager = DocumentManager()
 
-    base_path = setup_google_drive()
-    document_processor = DocumentProcessor(base_path)
-    document_search = DocumentSearch(base_path)
-    # Process training documents
-    document_search.process_training_documents()
-    uvicorn.run(app, host="0.0.0.0", port=8000)
+        # Process training documents
+        print("Processing training documents...")
+        processed_files = document_manager.process_training_documents()
 
+        if document_manager.index.ntotal > 0:
+            print(f"Successfully processed {len(processed_files)} files")
+            print("Starting server on http://0.0.0.0:8000")
+            uvicorn.run(app, host="0.0.0.0", port=8000)
+        else:
+            error_msg = "No documents were processed. Server startup aborted."
+            logging.error(error_msg)
+            raise RuntimeError(error_msg)
 
+    except Exception as e:
+        error_msg = f"Error in main: {str(e)}"
+        logging.error(error_msg)
+        raise
 
 if __name__ == "__main__":
     main()
