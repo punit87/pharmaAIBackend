@@ -329,19 +329,21 @@ for doc in data:
     filename = doc['filename']
     for block in doc['content']:
         if 'content' in block and block['content'].strip() and block['content'] != "No text detected":
-            # Normalize text: lowercase, remove extra whitespace, and clean special characters
             text = block['content'].lower().strip().replace('\n', ' ').replace('\t', ' ').replace('  ', ' ')
+            # Combine filename and content for richer context
+            combined_text = f"{filename} {text}"
             processed_texts.append({
                 'filename': filename,
                 'block_type': block['block_type'],
-                'text': text
+                'text': text,
+                'combined_text': combined_text  # For embedding
             })
 
 # Remove duplicates based on text content
 unique_texts = []
 seen_texts = set()
 for item in processed_texts:
-    text = item['text']
+    text = item['combined_text']
     if text not in seen_texts:
         seen_texts.add(text)
         unique_texts.append(item)
@@ -349,7 +351,7 @@ for item in processed_texts:
 print(f"Processed {len(unique_texts)} unique text blocks from {len(data)} documents.")
 
 # Load a pre-trained model for embeddings (e.g., Sentence-BERT)
-model_name = "sentence-transformers/all-MiniLM-L6-v2"
+model_name = "sentence-transformers/all-mpnet-base-v2"
 tokenizer = AutoTokenizer.from_pretrained(model_name)
 model = AutoModel.from_pretrained(model_name)
 
@@ -362,7 +364,7 @@ def get_embeddings(texts):
     return embeddings
 
 # Generate embeddings for all unique texts
-texts = [item['text'] for item in unique_texts]
+texts = [item['combined_text'] for item in unique_texts]
 embeddings = get_embeddings(texts)
 
 # Create a FAISS index (using L2 distance for similarity search)
@@ -376,14 +378,14 @@ faiss.write_index(index, "/content/drive/My Drive/lifesciences/faiss_index.faiss
 print(f"FAISS index created with {len(unique_texts)} vectors.")
 
 # Run a query
-query = "What are the key findings in life sciences research?"
+query = "key functional requirements for Text_With_Image_URS_Automated_Data_Integrity_System.docx"
 query_embedding = get_embeddings([query.lower().strip()])[0]  # Generate embedding for the query
 query_embedding = np.array([query_embedding], dtype=np.float32)
 
 # Perform similarity search (k=5 nearest neighbors)
 k = 5
 distances, indices = index.search(query_embedding, k)
-
+print(unique_texts)
 # Print the results
 print("\nQuery Results:")
 for i, idx in enumerate(indices[0]):
