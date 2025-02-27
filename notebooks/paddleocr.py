@@ -11,290 +11,393 @@ Original file is located at
 !apt-get install -y poppler-utils
 !pip install pdf2image python-docx pillow paddlepaddle paddleocr
 
-from paddleocr import PPStructure, PaddleOCR
+import os
+import json
+import time
 from docx import Document
 from docx.shared import Inches
 from pdf2image import convert_from_path
 from PIL import Image, ImageDraw, ImageFont, ImageEnhance
-import os
-import json
-import time
+from paddleocr import PPStructure, PaddleOCR
 from google.colab import drive
 
-def render_table_to_image(table, output_path_base):
-    rows = len(table.rows)
-    cols = len(table.columns)
-    cell_width, cell_height = 600, 120  # Increased cell size for better readability
-    max_rows_per_image = 15  # Reduce to ensure better handling of large tables
-    image_paths = []
+# Global step counter for top-level operations
+global_step = 0
 
-    for start_row in range(0, rows, max_rows_per_image):
-        end_row = min(start_row + max_rows_per_image, rows)
-        img_height = (end_row - start_row) * cell_height + 150  # More padding
-        img_width = cols * cell_width + 150  # More padding
+# Helper function to measure execution time and increment steps
+def measure_time(func):
+    def wrapper(*args, **kwargs):
+        global global_step
+        start_time = time.time()
+        print(f"Step {global_step}.{wrapper.sub_step}: Starting {func.__name__}")
+        wrapper.sub_step += 1
+        result = func(*args, **kwargs)
+        end_time = time.time()
+        print(f"Step {global_step}.{wrapper.sub_step}: {func.__name__} took {end_time - start_time:.2f} seconds")
+        wrapper.sub_step += 1
+        return result
+    wrapper.sub_step = 1  # Sub-step counter for each function
+    return wrapper
 
-        img = Image.new('RGB', (img_width, img_height), color=(255, 255, 255))
-        draw = ImageDraw.Draw(img)
+# Class to handle image creation and enhancement
+class ImageMaker:
+    @staticmethod
+    @measure_time
+    def create_blank_image(width, height):
+        global global_step
+        print(f"Step {global_step}.1: Creating a blank white image of size {width}x{height}")
+        return Image.new('RGB', (width, height), color=(255, 255, 255))
 
+    @staticmethod
+    @measure_time
+    def enhance_image(image):
+        global global_step
+        #print(f"Step {global_step}.1: Starting image enhancement")
+        image = ImageEnhance.Contrast(image).enhance(5.5)
+        #print(f"Step {global_step}.2: Contrast increased")
+        image = ImageEnhance.Sharpness(image).enhance(5.0)
+        #print(f"Step {global_step}.3: Sharpness increased")
+        image = ImageEnhance.Brightness(image).enhance(1.4)
+        #print(f"Step {global_step}.4: Brightness increased")
+        return image
+
+    @staticmethod
+    @measure_time
+    def save_image(image, path, dpi=(1500, 1500)):
+        global global_step
+        print(f"Step {global_step}.1: Saving image to {path} with DPI {dpi}")
+        image.save(path, dpi=dpi)
+        print(f"Step {global_step}.2: Image saved successfully")
+
+# Class to handle text drawing on images
+class TextDrawer:
+    @staticmethod
+    @measure_time
+    def get_font():
+        global global_step
+        print(f"Step {global_step}.1: Attempting to load Arial font size 40")
         try:
-            font = ImageFont.truetype("arial.ttf", 40)  # Larger font
+            font = ImageFont.truetype("arial.ttf", 40)
+            print(f"Step {global_step}.2: Successfully loaded Arial font")
         except:
+            print(f"Step {global_step}.2: Arial font not found, falling back to default")
             font = ImageFont.load_default(size=40)
-            print("Warning: Using default font with size 40.")
+            print(f"Step {global_step}.3: Using default font size 40")
+        return font
 
+    # Modified to use ImageDraw instead of Image
+    @staticmethod
+    @measure_time
+    def draw_text(draw, text, position, font):
+        global global_step
+        print(f"Step {global_step}.1: Drawing text '{text}' at position {position}")
+        draw.text(position, text, fill="black", font=font)
+        print(f"Step {global_step}.2: Text drawn successfully")
+
+# Class to handle table rendering
+class TableRenderer:
+    def __init__(self):
+        self.cell_width = 600
+        self.cell_height = 120
+        self.max_rows_per_image = 15
+
+    @measure_time
+    def render_table(self, table, output_base_path):
+        global global_step
+        print(f"Step {global_step}.1: Calculating table dimensions")
+        rows = len(table.rows)
+        cols = len(table.columns)
+        image_paths = []
+        print(f"Step {global_step}.2: Table has {rows} rows and {cols} columns")
+        sub_step = 3
+        for start_row in range(0, rows, self.max_rows_per_image):
+            end_row = min(start_row + self.max_rows_per_image, rows)
+            print(f"Step {global_step}.{sub_step}: Processing rows {start_row} to {end_row}")
+            image = self._create_table_image(table, start_row, end_row, cols)
+            output_path = f"{output_base_path}_part{start_row // self.max_rows_per_image}.png"
+            print(f"Step {global_step}.{sub_step + 1}: Saving table part to {output_path}")
+            ImageMaker.save_image(image, output_path)
+            image_paths.append(output_path)
+            sub_step += 2
+        print(f"Step {global_step}.{sub_step}: Table rendering complete")
+        return image_paths
+
+    @measure_time
+    def _create_table_image(self, table, start_row, end_row, cols):
+        global global_step
+        print(f"Step {global_step}.1: Calculating image dimensions")
+        img_height = (end_row - start_row) * self.cell_height + 150
+        img_width = cols * self.cell_width + 150
+        print(f"Step {global_step}.2: Image size set to {img_width}x{img_height}")
+        image = ImageMaker.create_blank_image(img_width, img_height)
+        print(f"Step {global_step}.3: Initializing drawing tool")
+        draw = ImageDraw.Draw(image)
+        print(f"Step {global_step}.4: Loading font for text")
+        font = TextDrawer.get_font()
+        sub_step = 5
         for i, row in enumerate(table.rows[start_row:end_row]):
             for j, cell in enumerate(row.cells):
-                x0 = j * cell_width + 25
-                y0 = i * cell_height + 25
-                x1 = x0 + cell_width
-                y1 = y0 + cell_height
-                draw.rectangle([x0, y0, x1, y1], outline="black", width=2)  # Thicker outline
-                text = cell.text.strip()
-                if text:
-                    max_width = cell_width - 50  # More margin for text
-                    wrapped_text = []
-                    words = text.split()
-                    current_line = ""
-                    for word in words:
-                        if draw.textlength(current_line + " " + word, font=font) <= max_width:
-                            current_line += " " + word if current_line else word
-                        else:
-                            wrapped_text.append(current_line)
-                            current_line = word
-                    if current_line:
-                        wrapped_text.append(current_line)
-                    for k, line in enumerate(wrapped_text):
-                        draw.text((x0 + 10, y0 + 10 + k * 45), line, fill="black", font=font)  # Adjusted line spacing
-                    print(f"Drawing text in table cell [{start_row + i},{j}]: {text}")
+                print(f"Step {global_step}.{sub_step}: Drawing cell at row {i}, column {j}")
+                self._draw_cell(draw, i, j, cell.text.strip(), font)
+                sub_step += 1
+        print(f"Step {global_step}.{sub_step}: Enhancing table image")
+        return ImageMaker.enhance_image(image)
 
-        img = ImageEnhance.Contrast(img).enhance(5.5)  # Higher contrast
-        img = ImageEnhance.Sharpness(img).enhance(5.0)  # Higher sharpness
-        img = ImageEnhance.Brightness(img).enhance(1.4)  # More brightness
-        output_path = f"{output_path_base}_part{start_row // max_rows_per_image}.png"
-        img.save(output_path, dpi=(1500, 1500))  # Higher DPI
-        image_paths.append(output_path)
-        print(f"Saved rendered table image: {output_path}")
+    def _draw_cell(self, draw, row_idx, col_idx, text, font):
+        global global_step
+        print(f"Step {global_step}.1: Calculating cell position")
+        x0 = col_idx * self.cell_width + 25
+        y0 = row_idx * self.cell_height + 25
+        x1 = x0 + self.cell_width
+        y1 = y0 + self.cell_height
+        print(f"Step {global_step}.2: Drawing cell border at ({x0}, {y0}) to ({x1}, {y1})")
+        draw.rectangle([x0, y0, x1, y1], outline="black", width=2)
+        if text:
+            print(f"Step {global_step}.3: Wrapping text '{text}' for cell")
+            wrapped_text = self._wrap_text(text, font, self.cell_width - 50)
+            sub_step = 4
+            for k, line in enumerate(wrapped_text):
+                print(f"Step {global_step}.{sub_step}: Drawing line '{line}'")
+                TextDrawer.draw_text(draw, line, (x0 + 10, y0 + 10 + k * 45), font)
+                sub_step += 1
 
-    return image_paths
-
-# Update convert_docx_to_images
-def convert_docx_to_images(docx_path, output_folder):
-    doc = Document(docx_path)
-    images = []
-    image_counter = 0
-
-    for para in doc.paragraphs:
-        if para.text.strip():
-            output_path = f"{output_folder}/para_{image_counter}.png"
-            img = Image.new('RGB', (800, 200), color=(255, 255, 255))
-            draw = ImageDraw.Draw(img)
-            font = ImageFont.load_default()
-            draw.text((10, 10), para.text, fill="black", font=font)
-            img.save(output_path)
-            images.append(output_path)
-            print(f"Saved paragraph image: {output_path}")
-            image_counter += 1
-
-    for table in doc.tables:
-        print(f"Processing table with {len(table.rows)} rows and {len(table.columns)} columns")
-        output_path_base = f"{output_folder}/table_{image_counter}"
-        table_images = render_table_to_image(table, output_path_base)
-        images.extend(table_images)
-        image_counter += 1
-
-    embedded_image_paths = extract_embedded_images(docx_path, output_folder)
-    images.extend(embedded_image_paths)
-
-    return images
-
-def extract_embedded_images(docx_path, output_folder):
-    """Extract embedded images from a DOCX file."""
-    doc = Document(docx_path)
-    image_paths = []
-    image_counter = 0
-
-    for rel in doc.part.rels.values():
-        if "image" in rel.reltype:
-            img = rel.target_part.blob
-            img_path = f"{output_folder}/embedded_image_{image_counter}.png"
-            with open(img_path, "wb") as f:
-                f.write(img)
-            img_pil = Image.open(img_path).convert('RGB')
-            img_pil = ImageEnhance.Contrast(img_pil).enhance(4.0)
-            img_pil = ImageEnhance.Sharpness(img_pil).enhance(4.0)
-            img_pil = ImageEnhance.Brightness(img_pil).enhance(1.2)
-            img_pil.save(img_path, dpi=(600, 600))
-            image_paths.append(img_path)
-            print(f"Extracted and enhanced embedded image: {img_path}")
-            image_counter += 1
-
-    return image_paths
-
-def convert_docx_to_images(docx_path, output_folder):
-    doc = Document(docx_path)
-    images = []
-    image_counter = 0
-
-    for para in doc.paragraphs:
-        if para.text.strip():
-            output_path = f"{output_folder}/para_{image_counter}.png"
-            img = Image.new('RGB', (800, 200), color=(255, 255, 255))
-            draw = ImageDraw.Draw(img)
-            font = ImageFont.load_default()
-            draw.text((10, 10), para.text, fill="black", font=font)
-            img.save(output_path)
-            images.append(output_path)
-            print(f"Saved paragraph image: {output_path}")
-            image_counter += 1
-
-    for table in doc.tables:
-        print(f"Processing table with {len(table.rows)} rows and {len(table.columns)} columns")
-        output_path_base = f"{output_folder}/table_{image_counter}"
-        table_images = render_table_to_image(table, output_path_base)
-        images.extend(table_images)
-        image_counter += 1
-
-    embedded_image_paths = extract_embedded_images(docx_path, output_folder)
-    images.extend(embedded_image_paths)
-
-    return images
-
-def process_images_with_paddleocr(image_paths, ocr_engine):
-    all_content = []
-
-    for image_path in image_paths:
-        print(f"Processing image: {image_path}")
-        if not os.path.exists(image_path):
-            print(f"Error: Image file not found: {image_path}")
-            continue
-
-        # Use PPStructure for layout detection
-        result = structure_engine(image_path)
-        print(f"Structure result for {image_path}: {result}")
-
-        for block in result:
-            if not isinstance(block, dict):
-                print(f"Skipping non-dict block: {block}")
-                continue
-            block_type = block.get('type', 'unknown')
-            res = block.get('res', {})
-            content = ""
-
-            if block_type == 'table':
-                print(f"Table detected in {image_path}, res: {res}")
-                # Force raw OCR with enhanced settings
-                ocr_result = ocr_engine.ocr(image_path, cls=True, det=True, rec=True)  # Removed rec_char_type
-                print(f"Raw OCR result for table {image_path}: {ocr_result}")
-                if ocr_result and ocr_result[0] is not None and len(ocr_result[0]) > 0:
-                    lines = [line[1][0] for line in ocr_result[0] if line[1][0] and line[1][0].strip()]
-                    if lines:
-                        # Clean and structure table content
-                        structured_content = []
-                        current_row = []
-                        for line in lines:
-                            line = line.strip().replace("\n", " ").replace("\r", " ").replace("\t", " ").replace("  ", " ")
-                            # Basic cleaning for typos and garbled text
-                            line = line.encode('ascii', 'ignore').decode('ascii')  # Remove non-ASCII characters
-                            if not line:
-                                continue
-                            # Try to identify table structure (e.g., numbered lines or "No./Description")
-                            if line.startswith("No.") or line.startswith(r"\d+\.\d+") or "Description" in line.upper():
-                                if current_row:
-                                    structured_content.append("\t".join([r.strip() for r in current_row if r.strip()]))
-                                current_row = [line]
-                            elif line and current_row:
-                                # Split long lines into potential columns if they contain keywords
-                                if any(keyword in line.upper() for keyword in ["MUST", "SHOULD", "ENSURE", "SYSTEM"]):
-                                    current_row.append(line)
-                                else:
-                                    current_row[-1] += " " + line
-                        if current_row:
-                            structured_content.append("\t".join([r.strip() for r in current_row if r.strip()]))
-                        content = "\n".join(structured_content) if structured_content else "\n".join(lines)
-                        # Apply basic typo correction if needed
-                        content = content.replace("are to", "and software to").replace("angucial;", "and increased").replace("Rort high", "support high")
-                    else:
-                        content = "No text detected"
-                else:
-                    content = "No text detected"
+    def _wrap_text(self, text, font, max_width):
+        global global_step
+        print(f"Step {global_step}.1: Starting text wrapping for '{text}'")
+        draw = ImageDraw.Draw(Image.new('RGB', (1, 1)))
+        print(f"Step {global_step}.2: Splitting text into words")
+        words = text.split()
+        lines = []
+        current_line = ""
+        sub_step = 3
+        for word in words:
+            print(f"Step {global_step}.{sub_step}: Checking word '{word}'")
+            if draw.textlength(current_line + " " + word, font=font) <= max_width:
+                current_line += " " + word if current_line else word
             else:
-                if isinstance(res, list):
-                    content = " ".join([item.get('text', '').strip() for item in res if item.get('text')])
-                elif isinstance(res, dict):
-                    content = res.get('text', '').strip()
+                print(f"Step {global_step}.{sub_step + 1}: Adding line '{current_line}'")
+                lines.append(current_line)
+                current_line = word
+                sub_step += 2
+        if current_line:
+            print(f"Step {global_step}.{sub_step}: Adding final line '{current_line}'")
+            lines.append(current_line)
+            sub_step += 1
+        print(f"Step {global_step}.{sub_step}: Text wrapped into {len(lines)} lines")
+        return lines
+
+# Class to handle document conversion
+class DocumentConverter:
+    def __init__(self):
+        self.table_renderer = TableRenderer()
+
+    @measure_time
+    def convert_docx(self, docx_path, output_folder):
+        global global_step
+        print(f"Step {global_step}.1: Loading DOCX file: {docx_path}")
+        doc = Document(docx_path)
+        images = []
+        image_counter = 0
+        sub_step = 2
+        for para in doc.paragraphs:
+            if para.text.strip():
+                print(f"Step {global_step}.{sub_step}: Converting paragraph {image_counter}")
+                images.append(self._convert_paragraph(para.text, output_folder, image_counter))
+                image_counter += 1
+                sub_step += 1
+        for table in doc.tables:
+            print(f"Step {global_step}.{sub_step}: Converting table {image_counter}")
+            table_images = self.table_renderer.render_table(table, f"{output_folder}/table_{image_counter}")
+            images.extend(table_images)
+            image_counter += 1
+            sub_step += 1
+        print(f"Step {global_step}.{sub_step}: Extracting embedded images")
+        embedded_images = self._extract_embedded_images(docx_path, output_folder)
+        images.extend(embedded_images)
+        sub_step += 1
+        print(f"Step {global_step}.{sub_step}: DOCX conversion complete")
+        return images
+
+    def _convert_paragraph(self, text, output_folder, counter):
+        global global_step
+        print(f"Step {global_step}.1: Creating image for paragraph {counter}")
+        image = ImageMaker.create_blank_image(800, 200)
+        print(f"Step {global_step}.2: Loading font for paragraph")
+        font = TextDrawer.get_font()
+        print(f"Step {global_step}.3: Drawing text '{text}'")
+        draw = ImageDraw.Draw(image)
+        TextDrawer.draw_text(draw, text, (10, 10), font)
+        output_path = f"{output_folder}/para_{counter}.png"
+        print(f"Step {global_step}.4: Saving paragraph image to {output_path}")
+        ImageMaker.save_image(image, output_path, dpi=(300, 300))
+        return output_path
+
+    @measure_time
+    def _extract_embedded_images(self, docx_path, output_folder):
+        global global_step
+        print(f"Step {global_step}.1: Loading DOCX file for embedded images: {docx_path}")
+        doc = Document(docx_path)
+        image_paths = []
+        counter = 0
+        sub_step = 2
+        for rel in doc.part.rels.values():
+            if "image" in rel.reltype:
+                print(f"Step {global_step}.{sub_step}: Extracting embedded image {counter}")
+                img_data = rel.target_part.blob
+                path = f"{output_folder}/embedded_image_{counter}.png"
+                print(f"Step {global_step}.{sub_step + 1}: Writing image data to {path}")
+                with open(path, "wb") as f:
+                    f.write(img_data)
+                print(f"Step {global_step}.{sub_step + 2}: Opening and converting image")
+                img = Image.open(path).convert('RGB')
+                print(f"Step {global_step}.{sub_step + 3}: Enhancing image")
+                img = ImageMaker.enhance_image(img)
+                print(f"Step {global_step}.{sub_step + 4}: Saving enhanced image")
+                ImageMaker.save_image(img, path, dpi=(600, 600))
+                image_paths.append(path)
+                counter += 1
+                sub_step += 5
+        print(f"Step {global_step}.{sub_step}: Extracted {counter} embedded images")
+        return image_paths
+
+    @measure_time
+    def convert_pdf(self, pdf_path, output_folder):
+        global global_step
+        print(f"Step {global_step}.1: Converting PDF {pdf_path} to images")
+        images = convert_from_path(pdf_path, output_folder=output_folder, fmt='png')
+        image_paths = [f"{output_folder}/page_{i}.png" for i in range(len(images))]
+        sub_step = 2
+        for i, img in enumerate(images):
+            print(f"Step {global_step}.{sub_step}: Saving page {i}")
+            ImageMaker.save_image(img, image_paths[i], dpi=(300, 300))
+            sub_step += 1
+        print(f"Step {global_step}.{sub_step}: Converted PDF to {len(image_paths)} images")
+        return image_paths
+
+# Class to handle OCR processing
+class TextExtractor:
+    def __init__(self, ocr_engine, structure_engine):
+        self.ocr_engine = ocr_engine
+        self.structure_engine = structure_engine
+
+    @measure_time
+    def extract_text_from_images(self, image_paths):
+        global global_step
+        all_content = []
+        sub_step = 1
+        for path in image_paths:
+            print(f"Step {global_step}.{sub_step}: Checking image {path}")
+            if not os.path.exists(path):
+                print(f"Step {global_step}.{sub_step + 1}: Skipping missing file: {path}")
+                sub_step += 2
+                continue
+            result = self.structure_engine(path)
+            sub_step += 2
+            for block in result:
+                print(f"Step {global_step}.{sub_step}: Processing block type '{block['type']}'")
+                if block['type'] == 'table':
+                    content = self._process_table(path)
+                elif block['type'] == 'title':
+                     print(f"Printing Title: {block.get('res', {})}");
+                elif block['type'] == 'figure':
+                    # New condition for figures
+                    content = self._process_figure_with_potential_table(path, block)
                 else:
-                    content = str(res).strip()
+                    content = self._process_text(block.get('res', {}))
+                sub_step += 1
+                if content.strip():
+                    print(f"Step {global_step}.{sub_step}: Adding content '{content}...'")
+                    all_content.append({'block_type': block['type'], 'content': content})
+                    sub_step += 1
+        print(f"Step {global_step}.{sub_step}: Text extraction complete")
+        return all_content
 
-            if content.strip() and content != "No text detected":
-                all_content.append({
-                    'block_type': block_type,
-                    'content': content.strip()
-                })
+    def _process_table(self, image_path):
+        print(f"Step {global_step}.1: Running OCR on table image {image_path}")
+        ocr_result = self.ocr_engine.ocr(image_path, cls=True, det=True, rec=True)
+        print(f"Step {global_step}.2: Checking OCR results")
+        if ocr_result and ocr_result[0]:
+            print(f"Step {global_step}.3: Extracting text lines")
+            lines = [line[1][0].strip() for line in ocr_result[0] if line[1][0].strip()]
+            if lines:
+                print(f"Step {global_step}.4: Joining {len(lines)} lines of text with newlines")
+                return "\n".join(lines)  # Already correct, just clarifying intent
+            print(f"Step {global_step}.4: No text detected")
+            return "No text detected"
+        print(f"Step {global_step}.3: No text detected")
+        return "No text detected"
 
-    return all_content
+    def _process_text(self, res):
+        print(f"Step {global_step}.1: Processing text block")
+        if isinstance(res, list):
+            print(f"Step {global_step}.2: Joining text from list with newlines")
+            return "\n".join([item.get('text', '').strip() for item in res])  # Changed from space to newline
+        print(f"Step {global_step}.2: Extracting text from dictionary or string")
+        return res.get('text', '').strip() if isinstance(res, dict) else str(res).strip()
 
-def process_document(file_path, temp_image_folder='/content/temp_images'):
-    """Process a document by converting it to images and applying OCR."""
-    if not os.path.exists(temp_image_folder):
-        os.makedirs(temp_image_folder)
+    def _process_figure_with_potential_table(self, image_path, block):
+        print(f"Step {global_step}.1: Checking if figure contains a table")
+        ocr_result = self.ocr_engine.ocr(image_path, cls=True, det=True, rec=True)
+        if not ocr_result or not ocr_result[0]:
+            return self._process_text(block.get('res', {}))
+        lines_with_boxes = []
+        for line in ocr_result[0]:
+            if len(line) >= 2 and line[1][0].strip():
+                text = line[1][0].strip()
+                box = line[0]
+                center_y = sum(point[1] for point in box) / 4
+                lines_with_boxes.append((text, center_y))
+        lines_with_boxes.sort(key=lambda x: x[1])
+        rows = []
+        current_row = []
+        last_y = None
+        row_threshold = 15
+        for text, y in lines_with_boxes:
+            if last_y is None or abs(y - last_y) < row_threshold:
+                current_row.append(text)
+            else:
+                if current_row:
+                    rows.append("\n".join(current_row))  # Changed from " | " to newline
+                current_row = [text]
+            last_y = y
+        if current_row:
+            rows.append("\n".join(current_row))  # Changed from " | " to newline
+        return "\n".join(rows)  # Already correct
 
-    if file_path.lower().endswith('.pdf'):
-        image_paths = convert_pdf_to_images(file_path, temp_image_folder)
-    elif file_path.lower().endswith('.docx'):
-        image_paths = convert_docx_to_images(file_path, temp_image_folder)
-    else:
-        print(f"Unsupported file type: {file_path}")
-        return []
+# Main Document Processor
+class DocumentProcessor:
+    def __init__(self):
+        self.converter = DocumentConverter()
+        self.extractor = TextExtractor(PaddleOCR(use_angle_cls=True, lang='en'),
+                                      PPStructure(show_log=False, lang='en'))
 
-    content = process_images_with_paddleocr(image_paths, ocr_engine)
-    print(f"Generated images: {image_paths}")
-    return content
-
-def render_list_to_image(list_items, output_path):
-    """Render a list to an image using PIL."""
-    img_height = len(list_items) * 30
-    img_width = 800
-    img = Image.new('RGB', (img_width, img_height), color=(255, 255, 255))
-    draw = ImageDraw.Draw(img)
-    font = ImageFont.load_default()
-    for i, item in enumerate(list_items):
-        draw.text((10, i * 30), f"• {item.text}", fill="black", font=font)
-    img.save(output_path)
-
-def convert_pdf_to_images(pdf_path, output_folder):
-    """Convert a PDF file to PNG images."""
-    images = convert_from_path(pdf_path, output_folder=output_folder, fmt='png')
-    image_paths = [f"{output_folder}/page_{i}.png" for i in range(len(images))]
-    for i, image in enumerate(images):
-        image.save(image_paths[i], 'PNG')
-    return image_paths
-
-# Mount Google Drive and initialize engines
-drive.mount('/content/drive', force_remount=True)
-structure_engine = PPStructure(show_log=True, lang='en')  # Ensure English model
-ocr_engine = PaddleOCR(use_angle_cls=True, lang='en')  # Ensure English model
-
-# Directory containing documents
-documents_dir = '/content/drive/My Drive/lifesciences/training_documents'
-output_file_path = '/content/drive/My Drive/lifesciences/organized_content_with_sections.json'
-
-# Process each document
-all_documents_content = []
-for filename in os.listdir(documents_dir):
-    if filename.endswith('.pdf') or filename.endswith('.docx'):
-        file_path = os.path.join(documents_dir, filename)
-        print(f"Processing file: {filename}")
-        document_content = process_document(file_path, '/content/drive/My Drive/lifesciences/images')
-        all_documents_content.append({
-            'filename': filename,
-            'content': document_content
-        })
-
-# Save the organized content to a JSON file
-with open(output_file_path, 'w') as f:
-    json.dump(all_documents_content, f, indent=4)
-
-print(f"Processing complete. Results saved to {output_file_path}.")
+    @measure_time
+    def process_file(self, file_path, temp_folder='/content/temp_images'):
+        global global_step
+        print(f"Step {global_step}.1: Checking temporary folder {temp_folder}")
+        if not os.path.exists(temp_folder):
+            print(f"Step {global_step}.2: Creating temporary folder {temp_folder}")
+            os.makedirs(temp_folder)
+            sub_step = 3
+        else:
+            sub_step = 2
+        print(f"Step {global_step}.{sub_step}: Determining file type for {file_path}")
+        sub_step += 1
+        if file_path.endswith('.pdf'):
+            print(f"Step {global_step}.{sub_step}: Converting PDF to images")
+            images = self.converter.convert_pdf(file_path, temp_folder)
+        elif file_path.endswith('.docx'):
+            print(f"Step {global_step}.{sub_step}: Converting DOCX to images")
+            images = self.converter.convert_docx(file_path, temp_folder)
+        else:
+            print(f"Step {global_step}.{sub_step}: Cannot process unsupported file type: {file_path}")
+            return []
+        sub_step += 1
+        print(f"Step {global_step}.{sub_step}: Extracting text from {len(images)} images")
+        content = self.extractor.extract_text_from_images(images)
+        sub_step += 1
+        print(f"Step {global_step}.{sub_step}: Processed {file_path}, generated {len(images)} images")
+        return content
 
 import gc
 import torch  # If you're using PyTorch
@@ -305,6 +408,52 @@ gc.collect()
 # If using PyTorch, also clear CUDA memory
 if torch.cuda.is_available():
     torch.cuda.empty_cache()
+
+from google.colab import drive
+
+# Main execution function
+def main():
+    global global_step
+    print(f"Step {global_step + 1}: Mounting Google Drive")
+    global_step += 1
+    drive.mount('/content/drive', force_remount=True)
+    print(f"Step {global_step + 1}: Initializing document processor")
+    global_step += 1
+    processor = DocumentProcessor()
+    documents_dir = '/content/drive/My Drive/lifesciences/training_documents'
+    output_file = '/content/drive/My Drive/lifesciences/organized_content_with_sections.json'
+
+    all_content = []
+    for filename in os.listdir(documents_dir):
+        if filename.endswith(('.pdf', '.docx')):
+            file_path = os.path.join(documents_dir, filename)
+            print(f"Step {global_step + 1}: Starting to process {filename}")
+            global_step += 1
+            content = processor.process_file(file_path, temp_folder='/content/drive/My Drive/lifesciences/images')
+            print(f"Step {global_step + 1}: Adding content for {filename}")
+            global_step += 1
+            all_content.append({'filename': filename, 'content': content})
+
+
+    # Add garbage collection after each file
+            print(f"Step {global_step + 1}: Running garbage collection")
+            global_step += 1
+            gc.collect()
+
+            # If using PyTorch/CUDA, also clear GPU memory
+            if torch.cuda.is_available():
+                torch.cuda.empty_cache()
+                print(f"Step {global_step}.1: Cleared CUDA cache")
+
+    print(f"Step {global_step + 1}: Saving results to {output_file}")
+    global_step += 1
+    with open(output_file, 'w') as f:
+        json.dump(all_content, f, indent=4)
+    print(f"Step {global_step + 1}: All done! Results saved")
+    global_step += 1
+
+if __name__ == "__main__":
+    main()
 
 !pip install faiss-cpu transformers torch
 
@@ -357,7 +506,8 @@ model = AutoModel.from_pretrained(model_name)
 
 # Function to generate embeddings
 def get_embeddings(texts):
-    inputs = tokenizer(texts, return_tensors="pt", padding=True, truncation=True, max_length=128)
+    # Remove max_length parameter but keep truncation for safety
+    inputs = tokenizer(texts, return_tensors="pt", padding=True, truncation=True)
     with torch.no_grad():
         outputs = model(**inputs)
     embeddings = outputs.last_hidden_state.mean(dim=1).numpy()
@@ -377,27 +527,171 @@ faiss.write_index(index, "/content/drive/My Drive/lifesciences/faiss_index.faiss
 
 print(f"FAISS index created with {len(unique_texts)} vectors.")
 
-# Run a query
-query = "key functional requirements for Text_With_Image_URS_Automated_Data_Integrity_System.docx"
-query_embedding = get_embeddings([query.lower().strip()])[0]  # Generate embedding for the query
-query_embedding = np.array([query_embedding], dtype=np.float32)
+!apt-get update
+!apt-get install -y software-properties-common
+!add-apt-repository ppa:ubuntu-toolchain-r/test -y
+!apt-get update
+!apt-get install -y libstdc++6
+!pip install faiss-cpu transformers torch sentence-transformers accelerate bitsandbytes sacremoses tabulate
 
-# Perform similarity search (k=5 nearest neighbors)
-k = 5
-distances, indices = index.search(query_embedding, k)
-print(unique_texts)
-# Print the results
-print("\nQuery Results:")
-for i, idx in enumerate(indices[0]):
-    if idx < len(unique_texts):  # Ensure the index is valid
-        result = unique_texts[idx]
-        print(f"\nResult {i+1} (Distance: {distances[0][i]:.4f}):")
-        print(f"Filename: {result['filename']}")
-        print(f"Block Type: {result['block_type']}")
-        print(f"Text: {result['text'][:500]}...")  # Show first 500 characters to keep it concise
+import json
+import faiss
+import numpy as np
+from transformers import AutoTokenizer, AutoModel, AutoModelForCausalLM, BitsAndBytesConfig
+import torch
+from google.colab import drive, userdata
+from tabulate import tabulate
+import gc
+from huggingface_hub import login
 
-# Optionally, save the processed data for reference
-with open('/content/drive/My Drive/lifesciences/processed_texts.json', 'w') as f:
-    json.dump(unique_texts, f, indent=4)
+# Set your Hugging Face token
+HF_TOKEN = userdata.get('HF_TOKEN')  # Fetch token from Colab secrets
+login(HF_TOKEN)  # Authenticate with Hugging Face
 
-print(f"Processing complete. Results and FAISS index saved.")
+# Mount Google Drive
+drive.mount('/content/drive', force_remount=True)
+
+# Load your processed data and embeddings
+json_path = '/content/drive/My Drive/lifesciences/organized_content_with_sections.json'
+with open(json_path, 'r') as f:
+    data = json.load(f)
+
+processed_texts = []
+for doc in data:
+    filename = doc['filename']
+    for block in doc['content']:
+        if 'content' in block and block['content'].strip() and block['content'] != "No text detected":
+            text = block['content'].lower().strip().replace('\n', ' ').replace('\t', ' ').replace('  ', ' ')
+            combined_text = f"{filename} {text}"
+            processed_texts.append({
+                'filename': filename,
+                'block_type': block['block_type'],
+                'text': text,
+                'combined_text': combined_text
+            })
+
+unique_texts = [dict(t) for t in {tuple(sorted(d.items())) for d in processed_texts}]
+model_name = "sentence-transformers/all-MiniLM-L6-v2"
+tokenizer = AutoTokenizer.from_pretrained(model_name)
+model = AutoModel.from_pretrained(model_name)
+
+def get_embeddings(texts):
+    inputs = tokenizer(texts, return_tensors="pt", padding=True, truncation=True)
+    with torch.no_grad():
+        outputs = model(**inputs)
+    return outputs.last_hidden_state.mean(dim=1).numpy()
+
+texts = [item['combined_text'] for item in unique_texts]
+embeddings = get_embeddings(texts)
+dimension = embeddings.shape[1]
+index = faiss.IndexFlatL2(dimension)
+index.add(embeddings)
+
+# Check GPU availability
+print("CUDA available:", torch.cuda.is_available())
+if torch.cuda.is_available():
+    print(f"GPU: {torch.cuda.get_device_name(0)}")
+
+# Load language model with GPU/CPU handling
+def load_language_model(model_choice):
+    if torch.cuda.is_available():
+        quantization_config = BitsAndBytesConfig(load_in_8bit=True)
+        try:
+            if model_choice == "biogpt":
+                model_name = "microsoft/biogpt"
+                tokenizer = AutoTokenizer.from_pretrained(model_name, use_auth_token=HF_TOKEN)
+                model = AutoModelForCausalLM.from_pretrained(model_name, quantization_config=quantization_config, use_auth_token=HF_TOKEN)
+                print(f"Loaded {model_name} with 8-bit quantization on GPU.")
+            elif model_choice == "mistral":
+                model_name = "mistralai/Mistral-7B-Instruct-v0.1"
+                tokenizer = AutoTokenizer.from_pretrained(model_name, use_auth_token=HF_TOKEN)
+                model = AutoModelForCausalLM.from_pretrained(model_name, quantization_config=quantization_config, device_map="auto", use_auth_token=HF_TOKEN)
+                print(f"Loaded {model_name} with 8-bit quantization on GPU.")
+            else:
+                return None, None
+        except RuntimeError as e:
+            print(f"Quantization failed: {e}. Falling back to full precision on GPU.")
+            if model_choice == "biogpt":
+                model = AutoModelForCausalLM.from_pretrained(model_name, use_auth_token=HF_TOKEN).to("cuda")
+            else:
+                model = AutoModelForCausalLM.from_pretrained(model_name, device_map="auto", use_auth_token=HF_TOKEN)
+    else:
+        print(f"No GPU detected. Loading {model_choice} in full precision on CPU.")
+        if model_choice == "biogpt":
+            model_name = "microsoft/biogpt"
+        elif model_choice == "mistral":
+            model_name = "mistralai/Mistral-7B-Instruct-v0.1"
+        else:
+            return None, None
+        tokenizer = AutoTokenizer.from_pretrained(model_name, use_auth_token=HF_TOKEN)
+        model = AutoModelForCausalLM.from_pretrained(model_name, use_auth_token=HF_TOKEN)
+    return tokenizer, model
+
+# Generate response
+def generate_response(faiss_results, model, tokenizer, max_new_tokens=50):
+    context = "\n".join([f"Result {i+1}:\n{res['text']}" for i, res in enumerate(faiss_results)])  # Added newline after "Result X:"
+    prompt = f"Based on the following retrieved information, provide a concise answer:\n{context}\nAnswer:"
+    inputs = tokenizer(prompt, return_tensors="pt", truncation=True)
+    if torch.cuda.is_available():
+        inputs = {k: v.to("cuda") for k, v in inputs.items()}
+    with torch.no_grad():
+        outputs = model.generate(**inputs, max_new_tokens=max_new_tokens, num_return_sequences=1)
+    return tokenizer.decode(outputs[0], skip_special_tokens=True)
+
+# Search function
+def search_documents(query, k=5, response_type="raw", model_choice=None):
+    query_embedding = get_embeddings([query.lower().strip()])[0]
+    query_embedding = np.array([query_embedding], dtype=np.float32)
+    distances, indices = index.search(query_embedding, k)
+    faiss_results = []
+    for i, idx in enumerate(indices[0]):
+        if idx < len(unique_texts):
+            result = unique_texts[idx]
+            faiss_results.append({
+                'filename': result['filename'],
+                'block_type': result['block_type'],
+                'text': result['text'],
+                'distance': distances[0][i]
+            })
+    if response_type == "raw":
+        return faiss_results
+    elif response_type in ["biogpt", "mistral"]:
+        if model_choice not in ["biogpt", "mistral"]:
+            print("Invalid model choice. Using raw results.")
+            return faiss_results
+        llm_tokenizer, llm_model = load_language_model(model_choice)
+        if llm_model is None:
+            print(f"Failed to load {model_choice}. Returning raw results.")
+            return faiss_results
+        response = generate_response(faiss_results, llm_model, llm_tokenizer)
+        return response
+    else:
+        print("Invalid response type. Returning raw results.")
+        return faiss_results
+# Generate table of responses
+def generate_response_table(query, k=3):
+    raw_results = search_documents(query, k=k, response_type="raw")
+    raw_text = "\n\n".join([f"Result {i+1}:\n{res['text']}" for i, res in enumerate(raw_results)])  # Double newline between results
+
+    biogpt_response = search_documents(query, k=k, response_type="biogpt", model_choice="biogpt")
+    gc.collect()
+    if torch.cuda.is_available():
+        torch.cuda.empty_cache()
+
+    mistral_response = search_documents(query, k=k, response_type="mistral", model_choice="mistral")
+    gc.collect()
+    if torch.cuda.is_available():
+        torch.cuda.empty_cache()
+
+    table_data = [
+        ["RAG (Raw)", raw_text],
+        ["RAG + BioGPT", biogpt_response],
+        ["RAG + Mistral", mistral_response]
+    ]
+    headers = ["Method", "Response"]
+    print("\nResponses in Tabular Format:")
+    print(tabulate(table_data, headers=headers, tablefmt="grid"))
+
+# Example usage
+query = "General Requirements from table inside ProtonGlow_Test_URS (1).docx"
+generate_response_table(query, k=3)
