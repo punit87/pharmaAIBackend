@@ -67,10 +67,7 @@ def lambda_handler(event, context):
 
         # Generate the prompt
         prompt = f'''
-        You are an advanced assistant specializing in generating meaningful and context-aware content based on User Requirements Specifications (URS). 
-        Using your extensive knowledge base, identify and analyze any relevant URS that corresponds to the following document: "{document_heading}". 
-        Focus specifically on the section titled "{section_name}", and generate 4 bullet points that are clear, detailed, and highly relevant to this section.
-        This request was generated at timestamp: {timestamp}. Please come up with a different response than the last time. Also, the response should not be empty string.
+        section: {section_name}.
         '''
 
         logger.debug(f"Generated prompt: {prompt}")

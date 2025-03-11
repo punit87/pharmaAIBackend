@@ -45,7 +45,7 @@ def make_request_with_retries(url, headers, payload, retries=3, delay=5):
             response = requests.post(
                 f"{os.getenv("GOOGLE_COLAB_URL")}",
                 headers=headers,
-                json=data
+                json=payload
             )
 
             # Check for successful response

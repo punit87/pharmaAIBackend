@@ -1,0 +1,11 @@
+torch
+torchvision
+numpy
+huggingface_hub
+python-docx
+fastapi
+uvicorn
+sentence-transformers
+faiss-cpu
+datasets
+transformers

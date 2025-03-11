@@ -36,7 +36,7 @@ def create_response(status_code, message):
 def lambda_handler(event, context):
     """Handles signup with Google credentials."""
     load_dotenv()
-
+    conn, cursor = None, None
     try:
         data = json.loads(event['body'])
         name = data.get('name')
@@ -47,7 +47,7 @@ def lambda_handler(event, context):
             return create_response(400, "All fields are required!")
 
         # Database connection
-        conn, cursor = None, None
+        
         conn = get_db_connection()
         cursor = conn.cursor()
 
@@ -70,8 +70,8 @@ def lambda_handler(event, context):
         conn.commit()
 
         # Send activation email
-        send_activation_email(email, activation_token)
-        return create_response(201, "Signup successful. Check your email to activate your account.")
+        return send_activation_email(email, activation_token)
+        
 
     except Exception as e:
         logger.error(f"Error during signup with Google: {str(e)}")
@@ -118,9 +118,10 @@ def send_activation_email(to_email, activation_token):
             }
         )
         logger.info(f"Activation email sent to {to_email}. Message ID: {response['MessageId']}")
+        return create_response(201, "Signup successful. Check your email to activate your account. Please note it can take upto 30 minutes for the email to arrive")
     except Exception as e:
         logger.error(f"Failed to send email via SES: {e}")
-
+        raise e
 # Utility functions
 def generate_activation_token():
     return str(uuid.uuid4())
