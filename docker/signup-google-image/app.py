@@ -40,15 +40,23 @@ def lambda_handler(event, context):
         if not all([name, email]):
             return create_response(400, "All fields are required!")
 
-        # Encrypt the username using AWS KMS
+        # Check email length for bcrypt compatibility (max 72 bytes)
+        if len(email.encode('utf-8')) > 72:
+            return create_response(400, "Email cannot exceed 72 characters. Please use a different email to sign up.")
+
+        # Encrypt name and email using AWS KMS
         encrypted_name = encrypt_with_kms(name)
+        encrypted_email = encrypt_with_kms(email)
+
+        # Hash the plain email using bcrypt for the email_hash column
+        email_hash = hash_email(email)
 
         # Database connection
         conn = get_db_connection()
         cursor = conn.cursor()
 
-        # Check if email already exists
-        cursor.execute("SELECT * FROM users WHERE email = %s", (email,))
+        # Check if email_hash already exists (to avoid duplicates)
+        cursor.execute("SELECT * FROM users WHERE email_hash = %s", (email_hash,))
         if cursor.fetchone():
             return create_response(400, "Email already exists. Please use a different email.")
 
@@ -58,11 +66,11 @@ def lambda_handler(event, context):
         hashed_password = hash_password(password)
         hashed_token = hashlib.sha256(activation_token.encode()).hexdigest()
 
-        # Insert new user into database with encrypted name
+        # Insert new user into database with encrypted name, encrypted email, and email hash
         cursor.execute("""
-            INSERT INTO users (name, email, password, activation_token, active)
-            VALUES (%s, %s, %s, %s, %s)
-        """, (encrypted_name, email, hashed_password, hashed_token, True))
+            INSERT INTO users (name, email, email_hash, password, activation_token, active)
+            VALUES (%s, %s, %s, %s, %s, %s)
+        """, (encrypted_name, encrypted_email, email_hash, hashed_password, hashed_token, True))
         conn.commit()
 
         return create_response(201, "Signup successful. Continue to Login")
@@ -94,13 +102,32 @@ def encrypt_with_kms(data):
     """
     try:
         response = kms_client.encrypt(
-            KeyId='alias/key_neondb',
+            KeyId='alias/key_neondb',  # Ensure this alias exists and is accessible
             Plaintext=data.encode('utf-8')
         )
         return response['CiphertextBlob']
     except Exception as e:
         logger.error(f"Failed to encrypt data with KMS: {str(e)}")
         raise
+
+# Email hashing function using bcrypt
+def hash_email(email):
+    """
+    Hash an email address using bcrypt.
+    
+    Args:
+        email (str): Plain email to hash (must be <= 72 bytes)
+    
+    Returns:
+        str: Hashed email (decoded from bytes to string)
+    
+    Raises:
+        ValueError: If email exceeds 72 bytes
+    """
+    email_bytes = email.encode('utf-8')
+    if len(email_bytes) > 72:
+        raise ValueError("Email cannot exceed 72 characters for hashing")
+    return bcrypt.hashpw(email_bytes, bcrypt.gensalt()).decode('utf-8')
 
 # Email service (unchanged)
 def send_activation_email(to_email, activation_token):
