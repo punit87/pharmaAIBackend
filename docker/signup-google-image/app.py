@@ -94,7 +94,7 @@ def encrypt_with_kms(data):
     """
     try:
         response = kms_client.encrypt(
-            KeyId='alias/aws/lambda',
+            KeyId='alias/key_neondb',
             Plaintext=data.encode('utf-8')
         )
         return response['CiphertextBlob']
