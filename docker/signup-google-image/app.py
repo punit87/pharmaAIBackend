@@ -40,22 +40,24 @@ def lambda_handler(event, context):
         if not all([name, email]):
             return create_response(400, "All fields are required!")
 
-        # Check email length for bcrypt compatibility (max 72 bytes)
-        if len(email.encode('utf-8')) > 72:
-            return create_response(400, "Email cannot exceed 72 characters. Please use a different email to sign up.")
+        # Normalize email
+        email = email.strip().lower()
 
         # Encrypt name and email using AWS KMS
         encrypted_name = encrypt_with_kms(name)
         encrypted_email = encrypt_with_kms(email)
 
-        # Hash the plain email using bcrypt for the email_hash column
-        email_hash = hash_email(email)
+        # Generate deterministic SHA-256 hash for email
+        email_hash = hashlib.sha256(email.encode('utf-8')).hexdigest()
+
+        # Generate masked email (first 2 alphabetic chars + mask rest, keep domain after last @)
+        masked_email = mask_email(email)
 
         # Database connection
         conn = get_db_connection()
         cursor = conn.cursor()
 
-        # Check if email_hash already exists (to avoid duplicates)
+        # Check if email_hash already exists (deterministic duplicate check)
         cursor.execute("SELECT * FROM users WHERE email_hash = %s", (email_hash,))
         if cursor.fetchone():
             return create_response(400, "Email already exists. Please use a different email.")
@@ -66,11 +68,11 @@ def lambda_handler(event, context):
         hashed_password = hash_password(password)
         hashed_token = hashlib.sha256(activation_token.encode()).hexdigest()
 
-        # Insert new user into database with encrypted name, encrypted email, and email hash
+        # Insert new user into database with encrypted name, encrypted email, email_hash, and masked_email
         cursor.execute("""
-            INSERT INTO users (name, email, email_hash, password, activation_token, active)
-            VALUES (%s, %s, %s, %s, %s, %s)
-        """, (encrypted_name, encrypted_email, email_hash, hashed_password, hashed_token, True))
+            INSERT INTO users (name, email, email_hash, masked_email, password, activation_token, active)
+            VALUES (%s, %s, %s, %s, %s, %s, %s)
+        """, (encrypted_name, encrypted_email, email_hash, masked_email, hashed_password, hashed_token, True))
         conn.commit()
 
         return create_response(201, "Signup successful. Continue to Login")
@@ -102,7 +104,7 @@ def encrypt_with_kms(data):
     """
     try:
         response = kms_client.encrypt(
-            KeyId='alias/key_neondb',  # Ensure this alias exists and is accessible
+            KeyId='alias/key_neondb',
             Plaintext=data.encode('utf-8')
         )
         return response['CiphertextBlob']
@@ -110,24 +112,31 @@ def encrypt_with_kms(data):
         logger.error(f"Failed to encrypt data with KMS: {str(e)}")
         raise
 
-# Email hashing function using bcrypt
-def hash_email(email):
+# Mask email function
+def mask_email(email):
     """
-    Hash an email address using bcrypt.
+    Mask the email, keeping only the first 2 alphabetic characters visible before the last @,
+    and showing the full domain after the last @.
     
     Args:
-        email (str): Plain email to hash (must be <= 72 bytes)
+        email (str): The email to mask
     
     Returns:
-        str: Hashed email (decoded from bytes to string)
-    
-    Raises:
-        ValueError: If email exceeds 72 bytes
+        str: Masked email (e.g., "jo****@example.com")
     """
-    email_bytes = email.encode('utf-8')
-    if len(email_bytes) > 72:
-        raise ValueError("Email cannot exceed 72 characters for hashing")
-    return bcrypt.hashpw(email_bytes, bcrypt.gensalt()).decode('utf-8')
+    # Split on the last occurrence of @
+    local_part, domain = email.rsplit('@', 1)
+    
+    # Extract first 2 alphabetic characters from local part
+    alpha_chars = ''.join(c for c in local_part if c.isalpha())[:2]
+    if not alpha_chars:
+        alpha_chars = local_part[:2]  # Fallback to first 2 chars if no alphabets
+    
+    # Mask the rest of the local part
+    masked_local = alpha_chars + '*' * (len(local_part) - len(alpha_chars))
+    
+    # Return with full domain unmasked
+    return f"{masked_local}@{domain}"
 
 # Email service (unchanged)
 def send_activation_email(to_email, activation_token):
