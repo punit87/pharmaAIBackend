@@ -6,11 +6,11 @@ from psycopg2.extras import execute_values
 
 # Neon PostgreSQL config
 DB_CONFIG = {
-    "dbname": "neondb",
-    "user": "neondb_owner",
-    "password": "npg_DU3Vxoi6cCIu",
-    "host": "ep-purple-sound-a4z952yb-pooler.us-east-1.aws.neon.tech",
-    "port": "5432",
+    "dbname": os.getenv("DB_NAME"),
+    "user": os.getenv("DB_USER"),
+    "password": os.getenv("DB_PASS"),
+    "host": os.getenv("DB_HOST"),
+    "port": os.getenv("DB_PORT"),
     "sslmode": "require"
 }
 
@@ -19,8 +19,25 @@ SAGEMAKER_ENDPOINT = os.environ.get("SAGEMAKER_ENDPOINT")
 if not SAGEMAKER_ENDPOINT:
     raise ValueError("SAGEMAKER_ENDPOINT environment variable not set")
 
+# CORS headers
+CORS_HEADERS = {
+    "Content-Type": "application/json",
+    "Access-Control-Allow-Origin": "*",  # Allows all origins
+    "Access-Control-Allow-Methods": "GET, POST, OPTIONS",  # Allowed HTTP methods
+    "Access-Control-Allow-Headers": "Content-Type",  # Allowed headers
+    "Access-Control-Max-Age": "86400"  # Cache preflight response for 24 hours
+}
+
 def lambda_handler(event, context):
     try:
+        # Handle CORS preflight OPTIONS request
+        if event.get("httpMethod") == "OPTIONS":
+            return {
+                "statusCode": 200,
+                "headers": CORS_HEADERS,
+                "body": json.dumps({"message": "CORS preflight successful"})
+            }
+
         # Parse API Gateway event
         query_params = event.get("queryStringParameters", {})
         urs_name = query_params.get("urs_name", "")
@@ -65,12 +82,24 @@ def lambda_handler(event, context):
         return {
             "statusCode": 200,
             "body": json.dumps({"results": response, "count": len(response)}),
-            "headers": {"Content-Type": "application/json"}
+            "headers": CORS_HEADERS
         }
 
     except requests.exceptions.RequestException as e:
-        return {"statusCode": 500, "body": json.dumps({"error": f"SageMaker error: {str(e)}"})}
+        return {
+            "statusCode": 500,
+            "body": json.dumps({"error": f"SageMaker error: {str(e)}"}),
+            "headers": CORS_HEADERS
+        }
     except psycopg2.Error as e:
-        return {"statusCode": 500, "body": json.dumps({"error": f"Database error: {str(e)}"})}
+        return {
+            "statusCode": 500,
+            "body": json.dumps({"error": f"Database error: {str(e)}"}),
+            "headers": CORS_HEADERS
+        }
     except Exception as e:
-        return {"statusCode": 500, "body": json.dumps({"error": str(e)})}
+        return {
+            "statusCode": 500,
+            "body": json.dumps({"error": str(e)}),
+            "headers": CORS_HEADERS
+        }
