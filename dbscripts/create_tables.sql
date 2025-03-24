@@ -1,73 +1,94 @@
 CREATE TABLE documents (
-    id SERIAL PRIMARY KEY,
-    name TEXT NOT NULL UNIQUE -- e.g., "URS_System_A"
+    id integer NOT NULL,
+    name text NOT NULL,
+    CONSTRAINT documents_pkey PRIMARY KEY (id),
+    CONSTRAINT documents_name_key UNIQUE (name)
 );
 
 CREATE TABLE source_files (
-    id SERIAL PRIMARY KEY,
-    document_id INT NOT NULL REFERENCES documents(id) ON DELETE CASCADE,
-    file_name TEXT NOT NULL, -- e.g., "system_a_urs_v1"
-    file_type TEXT NOT NULL CHECK (file_type IN ('docx', 'pdf', 'other')), -- e.g., "docx"
-    UNIQUE (document_id, file_name)
+    id integer NOT NULL,
+    document_id integer NOT NULL,
+    file_name text NOT NULL,
+    file_type text NOT NULL,
+    CONSTRAINT source_files_pkey PRIMARY KEY (id),
+    CONSTRAINT source_files_document_id_file_name_key UNIQUE (document_id, file_name),
+    CONSTRAINT source_files_file_type_check CHECK (file_type IN ('docx', 'pdf', 'other')),
+    CONSTRAINT source_files_document_id_fkey FOREIGN KEY (document_id) REFERENCES documents(id) ON DELETE CASCADE
 );
 
 CREATE TABLE batch_runs (
-    id SERIAL PRIMARY KEY,
-    run_number INT NOT NULL UNIQUE, -- e.g., 1, 2, 3
-    started_at TIMESTAMP WITHOUT TIME ZONE NOT NULL DEFAULT CURRENT_TIMESTAMP,
-    completed_at TIMESTAMP WITHOUT TIME ZONE,
-    processed_files INT DEFAULT 0 -- Tracks number of files processed in this run
+    id integer NOT NULL,
+    run_number integer NOT NULL,
+    started_at timestamp without time zone DEFAULT CURRENT_TIMESTAMP NOT NULL,
+    completed_at timestamp without time zone,
+    processed_files integer DEFAULT 0,
+    batch_status text DEFAULT 'NOT_STARTED'::text NOT NULL,
+    CONSTRAINT batch_runs_pkey PRIMARY KEY (id),
+    CONSTRAINT batch_runs_run_number_key UNIQUE (run_number),
+    CONSTRAINT batch_runs_batch_status_check CHECK (batch_status IN ('SUCCESS', 'FAILED', 'RUNNING', 'TERMINATED', 'NOT_STARTED'))
 );
 
-
-
 CREATE TABLE source_file_runs (
-    id SERIAL PRIMARY KEY,
-    source_file_id INT NOT NULL REFERENCES source_files(id) ON DELETE CASCADE,
-    batch_run_id INT NOT NULL REFERENCES batch_runs(id) ON DELETE CASCADE,
-    author TEXT, -- Extracted during batch (e.g., "John Doe")
-    created_dt DATE, -- Extracted during batch (e.g., "2023-01-15")
-    last_modified_dt DATE, -- Extracted during batch (e.g., "2023-02-10")
-    number_pages INT CHECK (number_pages > 0), -- Extracted during batch (e.g., 25)
-    UNIQUE (source_file_id, batch_run_id) -- Ensures one entry per file per run
+    id integer NOT NULL,
+    source_file_id integer NOT NULL,
+    batch_run_id integer NOT NULL,
+    author text,
+    created_dt date,
+    last_modified_dt date,
+    number_pages integer,
+    CONSTRAINT source_file_runs_pkey PRIMARY KEY (id),
+    CONSTRAINT source_file_runs_source_file_id_batch_run_id_key UNIQUE (source_file_id, batch_run_id),
+    CONSTRAINT source_file_runs_number_pages_check CHECK (number_pages > 0),
+    CONSTRAINT source_file_runs_source_file_id_fkey FOREIGN KEY (source_file_id) REFERENCES source_files(id) ON DELETE CASCADE,
+    CONSTRAINT source_file_runs_batch_run_id_fkey FOREIGN KEY (batch_run_id) REFERENCES batch_runs(id) ON DELETE CASCADE
 );
 
 CREATE TABLE sections (
-    id SERIAL PRIMARY KEY,
-    section_name TEXT NOT NULL UNIQUE -- e.g., "Introduction"
+    id integer NOT NULL,
+    section_name text NOT NULL,
+    CONSTRAINT sections_pkey PRIMARY KEY (id),
+    CONSTRAINT sections_section_name_key UNIQUE (section_name)
 );
 
 CREATE TABLE source_file_run_sections (
-    source_file_run_id INT NOT NULL REFERENCES source_file_runs(id) ON DELETE CASCADE,
-    section_id INT NOT NULL REFERENCES sections(id) ON DELETE CASCADE,
-    PRIMARY KEY (source_file_run_id, section_id)
+    source_file_run_id integer NOT NULL,
+    section_id integer NOT NULL,
+    CONSTRAINT source_file_run_sections_pkey PRIMARY KEY (source_file_run_id, section_id),
+    CONSTRAINT source_file_run_sections_source_file_run_id_fkey FOREIGN KEY (source_file_run_id) REFERENCES source_file_runs(id) ON DELETE CASCADE,
+    CONSTRAINT source_file_run_sections_section_id_fkey FOREIGN KEY (section_id) REFERENCES sections(id) ON DELETE CASCADE
 );
 
 CREATE TABLE content_blocks (
-    id SERIAL PRIMARY KEY,
-    source_file_run_id INT NOT NULL REFERENCES source_file_runs(id) ON DELETE CASCADE,
-    section_id INT REFERENCES sections(id) ON DELETE SET NULL, -- Nullable if section is unknown
-    block_number INT NOT NULL, -- e.g., 1, 2, 3 within the file for this run
-    content_type TEXT CHECK (content_type IN ('text', 'image', 'table', 'figure', 'title', 'list')), -- Extracted content type
-    content TEXT, -- Extracted content
-    coord_x1 INT, -- Bounding box
-    coord_y1 INT,
-    coord_x2 INT,
-    coord_y2 INT,
-    created_at TIMESTAMP WITHOUT TIME ZONE NOT NULL DEFAULT CURRENT_TIMESTAMP,
-    faiss_index_id INT, -- Reference to FAISS index
-    UNIQUE (source_file_run_id, block_number) -- Unique per file run
+    id integer NOT NULL,
+    source_file_run_id integer NOT NULL,
+    section_id integer,
+    block_number integer NOT NULL,
+    content_type text,
+    content text,
+    coord_x1 integer,
+    coord_y1 integer,
+    coord_x2 integer,
+    coord_y2 integer,
+    created_at timestamp without time zone DEFAULT CURRENT_TIMESTAMP NOT NULL,
+    faiss_index_id integer,
+    CONSTRAINT content_blocks_pkey PRIMARY KEY (id),
+    CONSTRAINT content_blocks_source_file_run_id_block_number_key UNIQUE (source_file_run_id, block_number),
+    CONSTRAINT content_blocks_content_type_check CHECK (content_type IN ('text', 'image', 'table', 'figure', 'title', 'list')),
+    CONSTRAINT content_blocks_source_file_run_id_fkey FOREIGN KEY (source_file_run_id) REFERENCES source_file_runs(id) ON DELETE CASCADE,
+    CONSTRAINT content_blocks_section_id_fkey FOREIGN KEY (section_id) REFERENCES sections(id) ON DELETE SET NULL
 );
 
 CREATE TABLE skipped_block_items (
-    id SERIAL PRIMARY KEY,
-    batch_run_id INT NOT NULL REFERENCES batch_runs(id) ON DELETE CASCADE,
-    parent_block_type VARCHAR(20) NOT NULL,
-    skipped_block_type VARCHAR(20) NOT NULL,
-    section_name VARCHAR(255),
-    parent_block_content VARCHAR(1000),
-    skipped_block_content VARCHAR(1000),
-    parent_block_coordinates INTEGER[],
-    skipped_block_coordinates INTEGER[],
-    created_at TIMESTAMP WITHOUT TIME ZONE DEFAULT CURRENT_TIMESTAMP
+    id integer NOT NULL,
+    batch_run_id integer NOT NULL,
+    parent_block_type character varying(20) NOT NULL,
+    skipped_block_type character varying(20) NOT NULL,
+    section_name character varying(255),
+    parent_block_content character varying(1000),
+    skipped_block_content character varying(1000),
+    parent_block_coordinates integer[],
+    skipped_block_coordinates integer[],
+    created_at timestamp without time zone DEFAULT CURRENT_TIMESTAMP,
+    CONSTRAINT skipped_block_items_pkey PRIMARY KEY (id),
+    CONSTRAINT skipped_block_items_batch_run_id_fkey FOREIGN KEY (batch_run_id) REFERENCES batch_runs(id) ON DELETE CASCADE
 );
