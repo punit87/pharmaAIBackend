@@ -61,17 +61,26 @@ def lambda_handler(event, context):
         payload = {
             "urs_name": urs_name,
             "section_name": section_name,
-            "k": 50  # Search for 50 nearest neighbors
+            "k": 50  # Search for 50 nearest neighbors to filter later
         }
 
         # Call SageMaker endpoint
-        response = sagemaker_runtime.invoke_endpoint(
-            EndpointName=SAGEMAKER_ENDPOINT_NAME,
-            ContentType="application/json",
-            Body=json.dumps(payload)
-        )
-        faiss_data = json.loads(response["Body"].read().decode("utf-8"))
-        faiss_indices_all = faiss_data["indices"]  # List of 50 FAISS indices
+        try:
+            response = sagemaker_runtime.invoke_endpoint(
+                EndpointName=SAGEMAKER_ENDPOINT_NAME,
+                ContentType="application/json",
+                Body=json.dumps(payload)
+            )
+            faiss_data = json.loads(response["Body"].read().decode("utf-8"))
+            faiss_indices_all = faiss_data["indices"]  # List of 50 FAISS indices
+        except sagemaker_runtime.exceptions.ClientError as e:
+            if "ModelError" in str(e) and "FAISS index not found" in str(e):
+                return {
+                    "statusCode": 404,
+                    "body": json.dumps({"error": f"No FAISS index found for urs_name: {urs_name}"}),
+                    "headers": CORS_HEADERS
+                }
+            raise
 
         # Filter out previously seen indices and take first k
         faiss_indices = [idx for idx in faiss_indices_all if idx not in seen_indices][:k]
