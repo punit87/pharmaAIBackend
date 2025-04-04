@@ -6,6 +6,8 @@ from sentence_transformers import SentenceTransformer
 import faiss
 import numpy as np
 import torch
+import hashlib
+import re
 
 # Set up logging for CloudWatch
 logger = logging.getLogger(__name__)
@@ -17,31 +19,35 @@ logger.addHandler(handler)
 # Global variables
 device = torch.device("cpu")  # Serverless doesn't support GPU
 sentence_model = None
-faiss_index = None
 
-# Paths in SageMaker's default model directory
-SENTENCE_MODEL_PATH = "/opt/ml/model/all-MiniLM-L6-v2"
-FAISS_INDEX_PATH = "/opt/ml/model/faiss_index_retrained.index"
+# Base directory for FAISS indexes in SageMaker model directory
+FAISS_BASE_DIR = "/opt/ml/model/faiss_indexes"
+
+def preprocess_name_for_hash(name):
+    """Preprocess urs_name for hashing, consistent with final_layout_parser.ipynb."""
+    name = re.sub(r'^\d+\s*', '', name).strip()
+    return re.sub(r'[^a-z0-9]', '', name.lower())
+
+def get_faiss_index_path(urs_name):
+    """Generate FAISS index path based on urs_name."""
+    hashed_name = hashlib.md5(preprocess_name_for_hash(urs_name).encode()).hexdigest()
+    return os.path.join(FAISS_BASE_DIR, f"{hashed_name}.index")
 
 def model_fn(model_dir, context=None):
-    """Load the model and FAISS index during endpoint initialization."""
-    global sentence_model, faiss_index
+    """Load the SentenceTransformer model during endpoint initialization."""
+    global sentence_model
     try:
-        logger.info("Loading model and FAISS index")
+        logger.info("Loading SentenceTransformer model")
         
-        # Load SentenceTransformer model
+        # Load SentenceTransformer model (static path remains unchanged)
+        SENTENCE_MODEL_PATH = "/opt/ml/model/all-MiniLM-L6-v2"
         if not os.path.exists(SENTENCE_MODEL_PATH):
             raise FileNotFoundError(f"Model directory not found: {SENTENCE_MODEL_PATH}")
         sentence_model = SentenceTransformer(SENTENCE_MODEL_PATH, device=device)
         logger.info("SentenceTransformer model loaded successfully")
 
-        # Load FAISS index
-        if not os.path.exists(FAISS_INDEX_PATH):
-            raise FileNotFoundError(f"FAISS index not found: {FAISS_INDEX_PATH}")
-        faiss_index = faiss.read_index(FAISS_INDEX_PATH)
-        logger.info("FAISS index loaded successfully")
-
-        return {"sentence_model": sentence_model, "faiss_index": faiss_index}
+        # FAISS index will be loaded dynamically in predict_fn
+        return {"sentence_model": sentence_model}
     except Exception as e:
         logger.error(f"Model loading failed: {str(e)}", exc_info=True)
         raise
@@ -69,11 +75,18 @@ def input_fn(request_body, request_content_type):
         raise
 
 def predict_fn(input_data, model_dict):
-    """Perform inference using the loaded model and FAISS index."""
+    """Perform inference using the loaded model and dynamically loaded FAISS index."""
     try:
         logger.info(f"Processing query: urs_name={input_data['urs_name']}, section_name={input_data['section_name']}, k={input_data['k']}")
         sentence_model = model_dict["sentence_model"]
-        faiss_index = model_dict["faiss_index"]
+
+        # Dynamically load the FAISS index based on urs_name
+        faiss_index_path = get_faiss_index_path(input_data["urs_name"])
+        if not os.path.exists(faiss_index_path):
+            logger.warning(f"FAISS index not found for urs_name={input_data['urs_name']} at {faiss_index_path}")
+            raise FileNotFoundError(f"FAISS index not found: {faiss_index_path}")
+        faiss_index = faiss.read_index(faiss_index_path)
+        logger.info(f"Loaded FAISS index from {faiss_index_path}")
 
         # Construct query string
         separator = "|||"
