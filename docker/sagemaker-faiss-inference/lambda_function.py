@@ -1,6 +1,6 @@
 import json
 import os
-import requests
+import boto3
 import psycopg2
 from psycopg2.extras import execute_values
 
@@ -14,18 +14,21 @@ DB_CONFIG = {
     "sslmode": "require"
 }
 
-# Get SageMaker endpoint URL from environment variable
-SAGEMAKER_ENDPOINT = os.environ.get("SAGEMAKER_ENDPOINT")
-if not SAGEMAKER_ENDPOINT:
-    raise ValueError("SAGEMAKER_ENDPOINT environment variable not set")
+# Get SageMaker endpoint name from environment variable
+SAGEMAKER_ENDPOINT_NAME = os.environ.get("SAGEMAKER_ENDPOINT_NAME")
+if not SAGEMAKER_ENDPOINT_NAME:
+    raise ValueError("SAGEMAKER_ENDPOINT_NAME environment variable not set")
+
+# Initialize SageMaker Runtime client
+sagemaker_runtime = boto3.client("sagemaker-runtime")
 
 # CORS headers
 CORS_HEADERS = {
     "Content-Type": "application/json",
-    "Access-Control-Allow-Origin": "*",  # Allows all origins
-    "Access-Control-Allow-Methods": "GET, POST, OPTIONS",  # Allowed HTTP methods
-    "Access-Control-Allow-Headers": "Content-Type",  # Allowed headers
-    "Access-Control-Max-Age": "86400"  # Cache preflight response for 24 hours
+    "Access-Control-Allow-Origin": "*",
+    "Access-Control-Allow-Methods": "GET, POST, OPTIONS",
+    "Access-Control-Allow-Headers": "*",
+    "Access-Control-Max-Age": "86400"
 }
 
 def lambda_handler(event, context):
@@ -38,54 +41,108 @@ def lambda_handler(event, context):
                 "body": json.dumps({"message": "CORS preflight successful"})
             }
 
-        # Parse API Gateway event
-        query_params = event.get("queryStringParameters", {})
+        # Parse API Gateway event (query parameters from GET request)
+        query_params = event.get("queryStringParameters", {}) or {}
         urs_name = query_params.get("urs_name", "")
         section_name = query_params.get("section_name", "")
         k = int(query_params.get("k", 5))
+        # Parse seen_indices from query parameter (comma-separated string or JSON)
+        seen_indices_str = query_params.get("seen_indices", "")
+        seen_indices = set(map(int, seen_indices_str.split(","))) if seen_indices_str else set()
+
+        if not urs_name or not section_name:
+            return {
+                "statusCode": 400,
+                "body": json.dumps({"error": "Missing urs_name or section_name"}),
+                "headers": CORS_HEADERS
+            }
+
+        # Prepare payload for SageMaker endpoint
+        payload = {
+            "urs_name": urs_name,
+            "section_name": section_name,
+            "k": 50  # Search for 50 nearest neighbors
+        }
 
         # Call SageMaker endpoint
-        sagemaker_url = f"{SAGEMAKER_ENDPOINT}/query_faiss/?urs_name={urs_name}§ion_name={section_name}&k={k}"
-        response = requests.get(sagemaker_url)
-        response.raise_for_status()
-        faiss_data = response.json()
-        faiss_indices = faiss_data["indices"]
+        response = sagemaker_runtime.invoke_endpoint(
+            EndpointName=SAGEMAKER_ENDPOINT_NAME,
+            ContentType="application/json",
+            Body=json.dumps(payload)
+        )
+        faiss_data = json.loads(response["Body"].read().decode("utf-8"))
+        faiss_indices_all = faiss_data["indices"]  # List of 50 FAISS indices
+
+        # Filter out previously seen indices and take first k
+        faiss_indices = [idx for idx in faiss_indices_all if idx not in seen_indices][:k]
+        if not faiss_indices:
+            return {
+                "statusCode": 200,
+                "body": json.dumps({
+                    "results": [],
+                    "count": 0,
+                    "faiss_indices": [],
+                    "message": "No new distinct results available"
+                }),
+                "headers": CORS_HEADERS
+            }
 
         # Connect to Neon PostgreSQL
         with psycopg2.connect(**DB_CONFIG) as conn:
             with conn.cursor() as cursor:
                 query = """
-                    SELECT cb.id, cb.source_file_run_id, cb.section_id, cb.block_number, cb.content_type, cb.content,
-                          cb.coord_x1, cb.coord_y1, cb.coord_x2, cb.coord_y2, cb.created_at, cb.faiss_index_id
+                    SELECT cb.id, cb.batch_run_id, cb.urs_section_id, cb.block_number, cb.content_type, cb.content,
+                           cb.coord_x1, cb.coord_y1, cb.coord_x2, cb.coord_y2, cb.created_at, cb.faiss_index_id,
+                           sec.name AS section_name
                     FROM content_blocks cb
+                    INNER JOIN urs_section_mapping usm ON cb.urs_section_id = usm.urs_section_id
+                    INNER JOIN sections sec ON usm.section_id = sec.id
                     WHERE cb.faiss_index_id = ANY(%s)
+                    AND sec.name = %s
                     ORDER BY cb.created_at DESC;
                 """
-                cursor.execute(query, (faiss_indices,))
+                cursor.execute(query, (faiss_indices, section_name))
                 results = cursor.fetchall()
 
         # Format response
-        response = []
+        response_data = []
+        retrieved_faiss_indices = []
         for row in results:
-            response.append({
+            response_data.append({
                 "id": row[0],
-                "source_file_run_id": row[1],
-                "section_id": row[2],
+                "batch_run_id": row[1],
+                "urs_section_id": row[2],
                 "block_number": row[3],
                 "content_type": row[4],
                 "content": row[5],
                 "coordinates": {"x1": row[6], "y1": row[7], "x2": row[8], "y2": row[9]},
-                "created_at": row[10],
-                "faiss_index_id": row[11]
+                "created_at": row[10].isoformat() if row[10] else None,
+                "faiss_index_id": row[11],
+                "section_name": row[12]
             })
+            retrieved_faiss_indices.append(row[11])
+
+        # Combine seen_indices with new retrieved indices for the client to store
+        updated_seen_indices = list(seen_indices.union(retrieved_faiss_indices))
 
         return {
             "statusCode": 200,
-            "body": json.dumps({"results": response, "count": len(response)}),
+            "body": json.dumps({
+                "results": response_data,
+                "count": len(response_data),
+                "faiss_indices": retrieved_faiss_indices,
+                "seen_indices": updated_seen_indices  # Return updated list for client
+            }),
             "headers": CORS_HEADERS
         }
 
-    except requests.exceptions.RequestException as e:
+    except ValueError as e:
+        return {
+            "statusCode": 400,
+            "body": json.dumps({"error": str(e)}),
+            "headers": CORS_HEADERS
+        }
+    except sagemaker_runtime.exceptions.ClientError as e:
         return {
             "statusCode": 500,
             "body": json.dumps({"error": f"SageMaker error: {str(e)}"}),
