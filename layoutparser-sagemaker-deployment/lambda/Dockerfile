@@ -6,8 +6,10 @@ RUN dnf -y install \
     mesa-libGL libXrender libSM libICE libXinerama cairo libxslt \
     wget tar java-17-amazon-corretto-devel findutils \
     gcc gcc-c++ make libffi-devel python3-devel xz git \
+    poppler-utils \  # <- add this line
     glibc-langpack-en glibc-locale-source \
     && dnf clean all && rm -rf /var/cache/dnf
+
 
 # Generate en_US.UTF-8 locale
 RUN localedef -i en_US -f UTF-8 en_US.UTF-8
