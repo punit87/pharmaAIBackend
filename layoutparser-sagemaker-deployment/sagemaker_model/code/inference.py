@@ -1,4 +1,7 @@
 import os
+import subprocess
+import sys
+import io
 import json
 import zipfile
 import torch
@@ -6,19 +9,37 @@ import layoutparser as lp
 from PIL import Image
 import numpy as np
 import cv2
-import io
-
-# Load model
-model = lp.Detectron2LayoutModel(
-    config_path="/opt/ml/model/config.yml",
-    model_path="/opt/ml/model/model.pth",
-    label_map={0: "figure", 1: "list", 2: "table", 3: "text", 4: "title"},
-    extra_config=["MODEL.ROI_HEADS.SCORE_THRESH_TEST", 0.2],
-    device="cpu"  # Serverless endpoints use CPU
-)
 
 def model_fn(model_dir):
-    """Load the model (already loaded globally for simplicity)."""
+    #submit_dir = os.environ.get('SAGEMAKER_SUBMIT_DIRECTORY')
+    #req_path = os.path.join(submit_dir, "requirements.txt")
+
+    #print(f"Submit directory: {submit_dir}")
+    #print(f"Requirements path: {req_path}")
+    #print(f"Directory contents: {os.listdir(submit_dir)}")
+    #print(f"Requirements exists: {os.path.exists(req_path)}")
+
+    #print(f"Installing requirements from {req_path}")
+    #result = subprocess.run(
+        #[sys.executable, "-m", "pip", "install", "--no-cache-dir", "-r", req_path],
+        #check=True,
+        #capture_output=True,
+        #text=True,
+    #)
+    #print("Requirements installed successfully.")
+    #print(f"pip install output: {result.stdout}")
+
+    # subprocess.check_call([sys.executable, "-m", "pip", "install", "-r", req_path])
+
+   
+    """Load the model from the model directory."""
+    model = lp.Detectron2LayoutModel(
+        config_path=os.path.join(model_dir, "config.yml"),
+        model_path=os.path.join(model_dir, "model_final.pth"),
+        label_map={0: "figure", 1: "list", 2: "table", 3: "text", 4: "title"},
+        extra_config=["MODEL.ROI_HEADS.SCORE_THRESH_TEST", 0.2],
+        device="cpu"
+    )
     return model
 
 def input_fn(request_body, request_content_type):

@@ -104,14 +104,30 @@ fi
 echo "Creating SageMaker model..."
 aws --profile ${SAGEMAKER_PROFILE} sagemaker create-model \
     --model-name "${SAGEMAKER_MODEL_NAME}" \
-    --primary-container Image="${PYTORCH_IMAGE}",ModelDataUrl="${S3_MODEL_PATH}" \
+    --primary-container "{
+        \"Image\": \"${PYTORCH_IMAGE}\",
+        \"ModelDataUrl\": \"${S3_MODEL_PATH}\",
+        \"Environment\": {
+            \"SAGEMAKER_MODEL_SERVER_WORKERS\": \"${TS_DEFAULT_WORKERS_PER_MODEL}\",
+            \"TS_DEFAULT_WORKERS_PER_MODEL\": \"${TS_DEFAULT_WORKERS_PER_MODEL}\",
+            \"TS_WORKER_TIMEOUT\": \"${TS_WORKER_TIMEOUT}\",
+            \"TS_LOG_LOCATION\": \"${TS_LOG_LOCATION}\",
+            \"TS_METRICS_LOG_LOCATION\": \"${TS_METRICS_LOG_LOCATION}\",
+            \"TS_ACCESS_LOG_LOCATION\": \"${TS_ACCESS_LOG_LOCATION}\",
+            \"TS_MODEL_LOG_LOCATION\": \"${TS_MODEL_LOG_LOCATION}\",
+            \"TS_MODEL_METRICS_LOG_LOCATION\": \"${TS_MODEL_METRICS_LOG_LOCATION}\",
+            \"TS_SNAPSHOT_DIR\": \"${TS_SNAPSHOT_DIR}\",
+            \"SAGEMAKER_PROGRAM\": \"inference.py\",
+            \"SAGEMAKER_SUBMIT_DIRECTORY\": \"/opt/ml/model/code\"
+        }
+    }" \
     --execution-role-arn "${SAGEMAKER_ROLE_ARN}"
 
 # Create serverless endpoint configuration
 echo "Creating SageMaker endpoint configuration..."
 aws --profile ${SAGEMAKER_PROFILE} sagemaker create-endpoint-config \
     --endpoint-config-name "${ENDPOINT_CONFIG_NAME}" \
-    --production-variants '[{"VariantName":"AllTraffic","ModelName":"'"${SAGEMAKER_MODEL_NAME}"'","ServerlessConfig":{"MemorySizeInMB":2048,"MaxConcurrency":1}}]'
+    --production-variants '[{"VariantName":"AllTraffic","ModelName":"'"${SAGEMAKER_MODEL_NAME}"'","ServerlessConfig":{"MemorySizeInMB":3072,"MaxConcurrency":9}}]'
 
 # Create serverless endpoint
 echo "Creating SageMaker serverless endpoint..."

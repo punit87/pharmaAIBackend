@@ -160,7 +160,7 @@ def lambda_handler(event, context):
 
         # Convert .docx to PDF and upload to S3
         pdf_s3_key = f"pdf/{doc_name}.pdf"
-        logger.info("Converting .docx to PDF and uploading to S3: %s", pdf_s3_key)
+        logger.info("Now Converting .docx to PDF and uploading to S3: %s", pdf_s3_key)
         try:
             # Run LibreOffice, capturing output in /tmp
             subprocess.run(
