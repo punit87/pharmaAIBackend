@@ -158,29 +158,66 @@ echo "Configuring S3 event notification for bucket ${S3_BUCKET}..."
 
 NOTIFICATION_CONFIG=$(cat <<EOF
 {
-    "LambdaFunctionConfigurations": [
-        {
-            "LambdaFunctionArn": "${LAMBDA_ARN}",
-            "Events": ["s3:ObjectCreated:*"],
-            "Filter": {
-                "Key": {
-                    "FilterRules": [
-                        {
-                            "Name": "prefix",
-                            "Value": "uploads/"
-                        },
-                        {
-                            "Name": "suffix",
-                            "Value": ".docx"
-                        }
-                    ]
-                }
+  "LambdaFunctionConfigurations": [
+    {
+      "LambdaFunctionArn": "${LAMBDA_ARN}",
+      "Events": ["s3:ObjectCreated:*"],
+      "Filter": {
+        "Key": {
+          "FilterRules": [
+            {
+              "Name": "prefix",
+              "Value": "uploads/rag-data-extraction/"
+            },
+            {
+              "Name": "suffix",
+              "Value": ".docx"
             }
+          ]
         }
-    ]
+      }
+    },
+    {
+      "LambdaFunctionArn": "${LAMBDA_ARN}",
+      "Events": ["s3:ObjectCreated:*"],
+      "Filter": {
+        "Key": {
+          "FilterRules": [
+            {
+              "Name": "prefix",
+              "Value": "uploads/rag-data-extraction/"
+            },
+            {
+              "Name": "suffix",
+              "Value": ".pdf"
+            }
+          ]
+        }
+      }
+    },
+    {
+      "LambdaFunctionArn": "${LAMBDA_ARN}",
+      "Events": ["s3:ObjectCreated:*"],
+      "Filter": {
+        "Key": {
+          "FilterRules": [
+            {
+              "Name": "prefix",
+              "Value": "uploads/rag-data-extraction/"
+            },
+            {
+              "Name": "suffix",
+              "Value": ".doc"
+            }
+          ]
+        }
+      }
+    }
+  ]
 }
 EOF
 )
+
 
 aws --profile ${LAMBDA_PROFILE} s3api put-bucket-notification-configuration \
     --bucket "${S3_BUCKET}" \
