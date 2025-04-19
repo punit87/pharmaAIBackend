@@ -19,7 +19,7 @@ export ENDPOINT_CONFIG_NAME="layoutparser-endpoint-config"
 export ENDPOINT_NAME="layoutparser-endpoint"
 export SAGEMAKER_ROLE_ARN="arn:aws:iam::864899869769:role/service-role/AmazonSageMaker-ExecutionRole-20250325T114201"
 export LOCAL_MODEL_DIR="../sagemaker_model"
-
+export SAGEMAKER_ENDPOINT_NAME=layoutparser-endpoint
 # TorchServe Environment Variables for SageMaker
 export TS_LOG_LOCATION="/tmp/ts.log"
 export TS_METRICS_LOG_LOCATION="/tmp/ts_metrics.log"
@@ -48,3 +48,10 @@ export PYTORCH_IMAGE="763104351884.dkr.ecr.us-east-1.amazonaws.com/pytorch-infer
 export LAMBDA_ARN="arn:aws:lambda:${AWS_REGION}:${AWS_ACCOUNT_ID}:function:${LAMBDA_FUNCTION_NAME}"
 export BUCKET_ARN="arn:aws:s3:::${S3_BUCKET}"
 export STATEMENT_ID="s3-trigger"
+
+export DB_NAME=neondb
+export DB_USER=neondb_owner
+export DB_PASSWORD=npg_a7UTVgtl3xWk@ep
+export DB_HOST=red-bush-a43597op-pooler.us-east-1.aws.neon.tech
+export DB_PORT=5432
+export DB_SSLMODE=require

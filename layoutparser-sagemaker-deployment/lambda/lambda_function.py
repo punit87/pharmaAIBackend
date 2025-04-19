@@ -29,13 +29,14 @@ sagemaker_client = boto3.client("sagemaker-runtime")
 # Configuration
 S3_BUCKET = "aytanai-batch-processing"
 ENDPOINT_NAME = os.getenv("SAGEMAKER_ENDPOINT_NAME", "<ENDPOINT_NAME>")
+# Database configuration from environment variables
 DB_CONFIG = {
-    "dbname": "neondb",
-    "user": "neondb_owner",
-    "password": "npg_DU3Vxoi6cCIu",
-    "host": "ep-shy-recipe-a406b4wg-pooler.us-east-1.aws.neon.tech",
-    "port": "5432",
-    "sslmode": "require"
+    "dbname": os.getenv("DB_NAME", "neondb"),
+    "user": os.getenv("DB_USER", "neondb_owner"),
+    "password": os.getenv("DB_PASSWORD"),
+    "host": os.getenv("DB_HOST", "ep-shy-recipe-a406b4wg-pooler.us-east-1.aws.neon.tech"),
+    "port": os.getenv("DB_PORT", "5432"),
+    "sslmode": os.getenv("DB_SSLMODE", "require")
 }
 
 # Load spaCy model
@@ -112,6 +113,17 @@ def preprocess_name_for_hash(name):
     logger.debug("Processed name for hash: %s", processed_name)
     return processed_name
 
+def extract_timestamp_from_key(s3_key):
+    """Extract timestamp from S3 key (e.g., 'filename_20250418123045.docx')."""
+    logger.debug("Extracting timestamp from S3 key: %s", s3_key)
+    match = re.search(r'_(\d{14})\.', s3_key)
+    if match:
+        timestamp = match.group(1)
+        logger.debug("Extracted timestamp: %s", timestamp)
+        return timestamp
+    logger.error("No timestamp found in S3 key: %s", s3_key)
+    raise ValueError("Invalid S3 key format: no timestamp found")
+
 def lambda_handler(event, context):
     logger.info("Lambda handler invoked with event: %s", json.dumps(event, indent=2))
     
@@ -124,57 +136,70 @@ def lambda_handler(event, context):
         decoded_s3_key = urllib.parse.unquote(s3_key)
         logger.info("Decoded S3 key: %s", decoded_s3_key)
         
-        if not decoded_s3_key.endswith(".docx"):
-            logger.info("Skipping non-.docx file: %s", decoded_s3_key)
+        if not decoded_s3_key.endswith((".docx", ".doc", ".pdf")):
+            logger.info("Skipping non-document file: %s", decoded_s3_key)
             continue
 
-        # Download .docx file to /tmp (required for LibreOffice)
-        tmp_docx = "/tmp/input.docx"
-        logger.info("Downloading .docx file from S3: %s to %s", decoded_s3_key, tmp_docx)
+        # Download document file to /tmp
+        tmp_doc = "/tmp/input" + Path(decoded_s3_key).suffix
+        logger.info("Downloading document file from S3: %s to %s", decoded_s3_key, tmp_doc)
         try:
-            s3_client.download_file(S3_BUCKET, decoded_s3_key, tmp_docx)
-            logger.info("Successfully downloaded .docx file")
+            s3_client.download_file(S3_BUCKET, decoded_s3_key, tmp_doc)
+            logger.info("Successfully downloaded document file")
         except Exception as e:
-            logger.error("Failed to download .docx file: %s", str(e))
+            logger.error("Failed to download document file: %s", str(e))
             raise
 
-        # Download metadata.json
-        tmp_metadata = "/tmp/metadata.json"
-        logger.info("Downloading metadata.json from S3 to %s", tmp_metadata)
+        # Extract timestamp from S3 key
         try:
-            s3_client.download_file(S3_BUCKET, "metadata/metadata.json", tmp_metadata)
+            timestamp = extract_timestamp_from_key(decoded_s3_key)
+        except ValueError as e:
+            logger.error(str(e))
+            raise
+
+        # Download metadata.json using the timestamp
+        metadata_s3_key = f"metadata/metadata_{timestamp}.json"
+        tmp_metadata = "/tmp/metadata.json"
+        logger.info("Downloading metadata file from S3: %s to %s", metadata_s3_key, tmp_metadata)
+        try:
+            s3_client.download_file(S3_BUCKET, metadata_s3_key, tmp_metadata)
             with open(tmp_metadata, "r") as f:
                 metadata = json.load(f)
             logger.info("Metadata loaded: %s", json.dumps(metadata, indent=2))
         except Exception as e:
-            logger.error("Failed to download or parse metadata.json: %s", str(e))
+            logger.error("Failed to download or parse metadata file: %s", str(e))
             raise
 
-        doc_name = Path(decoded_s3_key).stem
-        logger.debug("Document name: %s", doc_name)
+        doc_name = Path(decoded_s3_key).stem  # Includes timestamp (e.g., "filename_20250418123045")
+        original_doc_name = doc_name.rsplit("_", 1)[0]  # Remove timestamp (e.g., "filename")
+        logger.debug("Document name: %s, Original document name: %s", doc_name, original_doc_name)
         urs_name = next(
-            (item["urs_name"] for item in metadata["documents"] if item["doc_name"] == f"{doc_name}.docx"),
-            doc_name,
+            (item["urs_name"] for item in metadata["documents"] if item["doc_name"] == f"{original_doc_name}{Path(decoded_s3_key).suffix}"),
+            original_doc_name,
         )
         logger.info("URS name resolved: %s", urs_name)
 
-        # Convert .docx to PDF and upload to S3
+        # Convert document to PDF if not already PDF
         pdf_s3_key = f"pdf/{doc_name}.pdf"
-        logger.info("Now Converting .docx to PDF and uploading to S3: %s", pdf_s3_key)
+        logger.info("Converting document to PDF and uploading to S3: %s", pdf_s3_key)
         try:
-            # Run LibreOffice, capturing output in /tmp
-            subprocess.run(
-                ["/opt/libreoffice25.2/program/soffice", "--headless", "--convert-to", "pdf", tmp_docx, "--outdir", "/tmp"],
-                check=True,
-            )
-            # Read PDF and upload to S3
-            tmp_pdf = "/tmp/input.pdf"
-            with open(tmp_pdf, "rb") as f:
-                pdf_data = f.read()
+            if decoded_s3_key.endswith(".pdf"):
+                # If already PDF, read directly
+                with open(tmp_doc, "rb") as f:
+                    pdf_data = f.read()
+            else:
+                # Convert .docx or .doc to PDF using LibreOffice
+                subprocess.run(
+                    ["/opt/libreoffice25.2/program/soffice", "--headless", "--convert-to", "pdf", tmp_doc, "--outdir", "/tmp"],
+                    check=True,
+                )
+                tmp_pdf = "/tmp/input.pdf"
+                with open(tmp_pdf, "rb") as f:
+                    pdf_data = f.read()
             s3_client.put_object(Bucket=S3_BUCKET, Key=pdf_s3_key, Body=pdf_data)
             logger.info("Successfully uploaded PDF to S3: %s", pdf_s3_key)
         except Exception as e:
-            logger.error("Failed to convert .docx to PDF or upload to S3: %s", str(e))
+            logger.error("Failed to convert document to PDF or upload to S3: %s", str(e))
             raise
 
         # Convert PDF to images using in-memory streaming

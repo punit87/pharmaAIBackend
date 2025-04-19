@@ -56,8 +56,10 @@ CREATE TABLE urs_section_mapping (
     section_id integer NOT NULL
 );
 
+CREATE SEQUENCE users_id_seq;
+
 CREATE TABLE users (
-    id integer NOT NULL,
+    id integer NOT NULL DEFAULT nextval('users_id_seq'),
     name bytea,
     email bytea,
     password character varying(1000),
@@ -69,3 +71,5 @@ CREATE TABLE users (
     email_hash text,
     masked_email text
 );
+
+ALTER SEQUENCE users_id_seq OWNED BY users.id;

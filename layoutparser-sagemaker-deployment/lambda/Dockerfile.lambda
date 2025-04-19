@@ -1,0 +1,28 @@
+ARG ACCOUNT_ID
+ARG REGION
+ARG TESSERACT_REPO
+ARG LIBREOFFICE_REPO
+
+FROM ${ACCOUNT_ID}.dkr.ecr.${REGION}.amazonaws.com/${LIBREOFFICE_REPO}:latest AS libreoffice
+FROM ${ACCOUNT_ID}.dkr.ecr.${REGION}.amazonaws.com/${TESSERACT_REPO}:latest AS tesseract
+FROM public.ecr.aws/lambda/python:3.12
+
+# Copy LibreOffice from the libreoffice image
+COPY --from=libreoffice /opt/libreoffice25.2 /opt/libreoffice25.2
+#COPY --from=libreoffice /usr/lib64/libreoffice /usr/lib64/libreoffice
+
+# Copy Tesseract from the tesseract image
+COPY --from=tesseract /usr/local/bin/tesseract /usr/local/bin/
+COPY --from=tesseract /usr/local/lib/ /usr/local/lib/
+COPY --from=tesseract /usr/local/share/tessdata/ /usr/local/share/tessdata/
+
+# Install Python dependencies
+COPY requirements.txt .
+RUN pip3 install --no-cache-dir -r requirements.txt && \
+    python3 -m spacy download en_core_web_lg
+
+# Copy Lambda handler
+COPY lambda_function.py .
+
+# Define Lambda entrypoint
+CMD ["lambda_function.lambda_handler"]
