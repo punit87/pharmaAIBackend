@@ -1,25 +1,51 @@
-ARG ACCOUNT_ID
-ARG REGION
-ARG TESSERACT_REPO
-ARG LIBREOFFICE_REPO
+ARG ACCOUNT_ID=864899869769
+ARG REGION=us-east-1
+ARG LIBREOFFICE_REPO=aytanai-batch-process-libreoffice
+ARG TESSERACT_REPO=aytanai-batch-process-tesseract
+ARG SPACY_REPO=aytanai-batch-process-spacy
 
 FROM ${ACCOUNT_ID}.dkr.ecr.${REGION}.amazonaws.com/${LIBREOFFICE_REPO}:latest AS libreoffice
 FROM ${ACCOUNT_ID}.dkr.ecr.${REGION}.amazonaws.com/${TESSERACT_REPO}:latest AS tesseract
+FROM ${ACCOUNT_ID}.dkr.ecr.${REGION}.amazonaws.com/${SPACY_REPO}:latest AS spacy
+
 FROM public.ecr.aws/lambda/python:3.12
 
-# Copy LibreOffice from the libreoffice image
-COPY --from=libreoffice /opt/libreoffice25.2 /opt/libreoffice25.2
-#COPY --from=libreoffice /usr/lib64/libreoffice /usr/lib64/libreoffice
+# Install minimal runtime dependencies
+RUN dnf -y install fontconfig glibc-langpack-en libstdc++ freetype poppler-utils && \
+    dnf clean all && rm -rf /var/cache/dnf
 
-# Copy Tesseract from the tesseract image
+# Copy spaCy environment from spacy image
+COPY --from=spacy /var/lang/lib/python3.12/site-packages /var/lang/lib/python3.12/site-packages
+
+# Install additional Python dependencies
+COPY requirements.txt .
+RUN pip install --no-cache-dir -r requirements.txt
+
+# Copy LibreOffice binaries, libraries, and fonts
+COPY --from=libreoffice /opt/libreoffice25.2 /opt/libreoffice25.2
+COPY --from=libreoffice /usr/share/fonts /usr/share/fonts
+COPY --from=libreoffice /usr/share/libreoffice /usr/share/libreoffice
+COPY --from=libreoffice /usr/lib64 /usr/lib64
+COPY --from=libreoffice /usr/lib/jvm /usr/lib/jvm
+
+# Copy Tesseract binaries, libraries, and data
 COPY --from=tesseract /usr/local/bin/tesseract /usr/local/bin/
 COPY --from=tesseract /usr/local/lib/ /usr/local/lib/
 COPY --from=tesseract /usr/local/share/tessdata/ /usr/local/share/tessdata/
 
-# Install Python dependencies
-COPY requirements.txt .
-RUN pip3 install --no-cache-dir -r requirements.txt && \
-    python3 -m spacy download en_core_web_lg
+# Update font cache
+RUN fc-cache -f
+
+# Set environment variables
+ENV LD_LIBRARY_PATH=/usr/lib64:/usr/local/lib:/opt/libreoffice25.2/program:/opt/libreoffice25.2/ure/lib:$LD_LIBRARY_PATH
+ENV PATH=/opt/libreoffice25.2/program:/usr/local/bin:/usr/local/sbin:/usr/sbin:/usr/bin:/sbin:/bin:$PATH
+ENV LANG=en_US.UTF-8
+ENV LANGUAGE=en_US:en
+ENV LC_ALL=en_US.UTF-8
+ENV HOME=/tmp
+ENV LIBREOFFICE_HOME=/opt/libreoffice25.2
+ENV LIBREOFFICE_LANG=en-US
+ENV TESSDATA_PREFIX=/usr/local/share/tessdata/
 
 # Copy Lambda handler
 COPY lambda_function.py .

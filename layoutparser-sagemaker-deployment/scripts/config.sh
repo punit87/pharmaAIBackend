@@ -51,7 +51,7 @@ export STATEMENT_ID="s3-trigger"
 
 export DB_NAME=neondb
 export DB_USER=neondb_owner
-export DB_PASSWORD=npg_a7UTVgtl3xWk@ep
-export DB_HOST=red-bush-a43597op-pooler.us-east-1.aws.neon.tech
+export DB_PASSWORD=npg_a7UTVgtl3xWk
+export DB_HOST=ep-red-bush-a43597op-pooler.us-east-1.aws.neon.tech
 export DB_PORT=5432
 export DB_SSLMODE=require

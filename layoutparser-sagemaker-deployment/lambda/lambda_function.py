@@ -113,16 +113,16 @@ def preprocess_name_for_hash(name):
     logger.debug("Processed name for hash: %s", processed_name)
     return processed_name
 
-def extract_timestamp_from_key(s3_key):
-    """Extract timestamp from S3 key (e.g., 'filename_20250418123045.docx')."""
-    logger.debug("Extracting timestamp from S3 key: %s", s3_key)
-    match = re.search(r'_(\d{14})\.', s3_key)
+def extract_uuid_from_key(s3_key):
+    """Extract UUID from S3 key (e.g., 'uuid-123e4567-e89b-12d3-a456-426614174000_URS_LIMS(1) (1).docx')."""
+    logger.debug("Extracting UUID from S3 key: %s", s3_key)
+    match = re.search(r'([0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12})_', s3_key)
     if match:
-        timestamp = match.group(1)
-        logger.debug("Extracted timestamp: %s", timestamp)
-        return timestamp
-    logger.error("No timestamp found in S3 key: %s", s3_key)
-    raise ValueError("Invalid S3 key format: no timestamp found")
+        uuid_str = match.group(1)
+        logger.debug("Extracted UUID: %s", uuid_str)
+        return uuid_str
+    logger.error("No UUID found in S3 key: %s", s3_key)
+    raise ValueError("Invalid S3 key format: no UUID found")
 
 def lambda_handler(event, context):
     logger.info("Lambda handler invoked with event: %s", json.dumps(event, indent=2))
@@ -150,15 +150,15 @@ def lambda_handler(event, context):
             logger.error("Failed to download document file: %s", str(e))
             raise
 
-        # Extract timestamp from S3 key
+        # Extract UUID from S3 key
         try:
-            timestamp = extract_timestamp_from_key(decoded_s3_key)
+            batch_uuid = extract_uuid_from_key(decoded_s3_key)
         except ValueError as e:
             logger.error(str(e))
             raise
 
-        # Download metadata.json using the timestamp
-        metadata_s3_key = f"metadata/metadata_{timestamp}.json"
+        # Download metadata.json using the UUID
+        metadata_s3_key = f"metadata/metadata_{batch_uuid}.json"
         tmp_metadata = "/tmp/metadata.json"
         logger.info("Downloading metadata file from S3: %s to %s", metadata_s3_key, tmp_metadata)
         try:
@@ -170,8 +170,9 @@ def lambda_handler(event, context):
             logger.error("Failed to download or parse metadata file: %s", str(e))
             raise
 
-        doc_name = Path(decoded_s3_key).stem  # Includes timestamp (e.g., "filename_20250418123045")
-        original_doc_name = doc_name.rsplit("_", 1)[0]  # Remove timestamp (e.g., "filename")
+        doc_name = Path(decoded_s3_key).stem  # e.g., "uuid-123e4567-e89b- 12d3-a456-426614174000_URS_LIMS(1) (1)"
+        batch_uuid = extract_uuid_from_key(decoded_s3_key)  # e.g., "uuid-123e4567-e89b-12d3-a456-426614174000"
+        original_doc_name = doc_name[len(batch_uuid) + 1:] if batch_uuid in doc_name else doc_name  # e.g., "URS_LIMS(1) (1)"
         logger.debug("Document name: %s, Original document name: %s", doc_name, original_doc_name)
         urs_name = next(
             (item["urs_name"] for item in metadata["documents"] if item["doc_name"] == f"{original_doc_name}{Path(decoded_s3_key).suffix}"),

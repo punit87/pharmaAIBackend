@@ -1,23 +1,15 @@
 #!/bin/bash
-
-# Lambda Function Deployment and S3 Trigger Setup with Multi-image Architecture
-# Handles:
-#   - Building and pushing Docker images (LibreOffice, Tesseract, Lambda) to ECR
-#   - Creating or updating Lambda function
-#   - Setting up S3 trigger for Lambda function
-
 # Exit on error
 set -e
 
-# Source environment variables if not already loaded
-if [ -z "$AWS_REGION" ]; then
-  SCRIPT_DIR="$( cd "$( dirname "${BASH_SOURCE[0]}" )" >/dev/null 2>&1 && pwd )"
-  source "${SCRIPT_DIR}/config.sh"
-fi
+# Source environment variables
+SCRIPT_DIR="$( cd "$( dirname "${BASH_SOURCE[0]}" )" >/dev/null 2>&1 && pwd )"
+source "${SCRIPT_DIR}/config.sh"
 
-# Additional environment variables for new repositories
+# Define repositories
 LIBREOFFICE_ECR_REPOSITORY="${LAMBDA_ECR_REPOSITORY}-libreoffice"
 TESSERACT_ECR_REPOSITORY="${LAMBDA_ECR_REPOSITORY}-tesseract"
+SPACY_ECR_REPOSITORY="${LAMBDA_ECR_REPOSITORY}-spacy"
 
 # --- Helper Functions ---
 # Check if a Lambda function exists
@@ -26,120 +18,186 @@ check_lambda_exists() {
     return $?
 }
 
-# Function for ECR repository management
-manage_ecr_repo() {
+# Function to check if an image exists in ECR
+image_exists_in_ecr() {
     local repo_name=$1
-    local image_tag=$2
-    local dockerfile=$3
-    local build_args=$4
-    local force_rebuild=$5
+    local tag=$2
     
-    echo "Managing ECR repository: ${repo_name}"
+    aws --profile ${ECR_PROFILE} ecr describe-images \
+        --repository-name "${repo_name}" \
+        --region "${AWS_REGION}" \
+        --image-ids imageTag="${tag}" &>/dev/null
     
-    # Check if repository exists
-    if aws --profile ${ECR_PROFILE} ecr describe-repositories \
-        --repository-names "${repo_name}" \
-        --region "${AWS_REGION}" > /dev/null 2>&1; then
-        echo "ECR repository ${repo_name} already exists."
-        
-        # List all images in the repository
-        IMAGE_IDS=$(aws --profile ${ECR_PROFILE} ecr list-images \
-            --repository-name "${repo_name}" \
-            --region "${AWS_REGION}" \
-            --query 'imageIds[*]' \
-            --output json)
-        
-        if [ "$force_rebuild" = "true" ]; then
-            echo "Force rebuild enabled. Deleting all images in ${repo_name}..."
-            if [ -n "$IMAGE_IDS" ] && [ "$IMAGE_IDS" != "[]" ]; then
-                aws --profile ${ECR_PROFILE} ecr batch-delete-image \
-                    --repository-name "${repo_name}" \
-                    --region "${AWS_REGION}" \
-                    --image-ids "$IMAGE_IDS"
-                echo "All images deleted from ${repo_name}."
-            else
-                echo "No images found in ${repo_name}."
-            fi
-        else
-            if [ -n "$IMAGE_IDS" ] && [ "$IMAGE_IDS" != "[]" ]; then
-                echo "Images found in ${repo_name}. Skipping build and push."
-                return
-            else
-                echo "No images found in ${repo_name}. Proceeding with build and push."
-            fi
-        fi
-    else
-        echo "Creating ECR repository ${repo_name}..."
-        aws --profile ${ECR_PROFILE} ecr create-repository \
-            --repository-name "${repo_name}" \
-            --region "${AWS_REGION}"
-    fi
-    
-    # Build and push Docker image
-    local ecr_uri="${AWS_ACCOUNT_ID}.dkr.ecr.${AWS_REGION}.amazonaws.com/${repo_name}"
-    
-    echo "Building and pushing Docker image for ${repo_name}"
-    if [ -n "$build_args" ]; then
-        docker buildx build \
-          --platform linux/amd64 \
-          --provenance=false \
-          --output type=image,push=true \
-          --tag "${ecr_uri}:${image_tag}" \
-          ${build_args} \
-          --file "${dockerfile}" \
-          .  # <-- THIS IS THE MISSING BUILD CONTEXT
-    else
-        docker buildx build \
-          --platform linux/amd64 \
-          --provenance=false \
-          --output type=image,push=true \
-          --tag "${ecr_uri}:${image_tag}" \
-          --file "${dockerfile}" \
-          .  # <-- THIS IS THE MISSING BUILD CONTEXT
-    fi
+    return $?
 }
-
-echo "==== Lambda Deployment and S3 Trigger Setup with Multi-image Architecture ===="
 
 # Step 1: Authenticate to Amazon ECR
 echo "Authenticating to Amazon ECR..."
 aws --profile ${ECR_PROFILE} ecr get-login-password --region "${AWS_REGION}" | docker login --username AWS --password-stdin ${AWS_ACCOUNT_ID}.dkr.ecr.${AWS_REGION}.amazonaws.com
 
 # Step 2: Move to Lambda directory
-SCRIPT_DIR="$( cd "$( dirname "${BASH_SOURCE[0]}" )" >/dev/null 2>&1 && pwd )"
 LAMBDA_DIR="$(dirname "$SCRIPT_DIR")/lambda"
 cd "$LAMBDA_DIR"
 
 export DOCKER_BUILDKIT=1
 
 # Step 3: Build and push LibreOffice image
-echo "Building and pushing LibreOffice Docker image..."
-manage_ecr_repo "${LIBREOFFICE_ECR_REPOSITORY}" "latest" "Dockerfile.libreoffice" "false"
+echo "Checking LibreOffice Docker image..."
+# Check if repository exists
+if ! aws --profile ${ECR_PROFILE} ecr describe-repositories --repository-names "${LIBREOFFICE_ECR_REPOSITORY}" --region "${AWS_REGION}" &>/dev/null; then
+    echo "Creating ECR repository ${LIBREOFFICE_ECR_REPOSITORY}..."
+    aws --profile ${ECR_PROFILE} ecr create-repository --repository-name "${LIBREOFFICE_ECR_REPOSITORY}" --region "${AWS_REGION}"
+    LIBREOFFICE_IMAGE_EXISTS=false
+else
+    # Check if image with latest tag exists
+    if image_exists_in_ecr "${LIBREOFFICE_ECR_REPOSITORY}" "latest"; then
+        echo "LibreOffice image already exists in ECR. Skipping build."
+        LIBREOFFICE_IMAGE_EXISTS=true
+    else
+        echo "LibreOffice repository exists but latest image not found."
+        LIBREOFFICE_IMAGE_EXISTS=false
+    fi
+fi
+
+# Build and push LibreOffice image if it doesn't exist
+if [ "$LIBREOFFICE_IMAGE_EXISTS" != "true" ]; then
+    echo "Building LibreOffice image..."
+    docker buildx build \
+        --platform linux/amd64 \
+        --provenance=false \
+        --output type=image,push=true \
+        --tag "${AWS_ACCOUNT_ID}.dkr.ecr.${AWS_REGION}.amazonaws.com/${LIBREOFFICE_ECR_REPOSITORY}:latest" \
+        --file Dockerfile.libreoffice \
+        .
+    
+    echo "Verifying LibreOffice image..."
+    aws --profile ${ECR_PROFILE} ecr describe-images \
+        --repository-name "${LIBREOFFICE_ECR_REPOSITORY}" \
+        --region "${AWS_REGION}" \
+        --query 'imageDetails[*].{Tags:imageTags,Pushed:imagePushedAt}' \
+        --output table
+else
+    echo "Using existing LibreOffice image from ECR."
+fi
 
 # Step 4: Build and push Tesseract image
-echo "Building and pushing Tesseract Docker image..."
-manage_ecr_repo "${TESSERACT_ECR_REPOSITORY}" "latest" "Dockerfile.tesseract" "false"
+echo "Checking Tesseract Docker image..."
+# Check if repository exists
+if ! aws --profile ${ECR_PROFILE} ecr describe-repositories --repository-names "${TESSERACT_ECR_REPOSITORY}" --region "${AWS_REGION}" &>/dev/null; then
+    echo "Creating ECR repository ${TESSERACT_ECR_REPOSITORY}..."
+    aws --profile ${ECR_PROFILE} ecr create-repository --repository-name "${TESSERACT_ECR_REPOSITORY}" --region "${AWS_REGION}"
+    TESSERACT_IMAGE_EXISTS=false
+else
+    # Check if image with latest tag exists
+    if image_exists_in_ecr "${TESSERACT_ECR_REPOSITORY}" "latest"; then
+        echo "Tesseract image already exists in ECR. Skipping build."
+        TESSERACT_IMAGE_EXISTS=true
+    else
+        echo "Tesseract repository exists but latest image not found."
+        TESSERACT_IMAGE_EXISTS=false
+    fi
+fi
 
-# Step 5: Build and push Lambda image
+# Build and push Tesseract image if it doesn't exist
+if [ "$TESSERACT_IMAGE_EXISTS" != "true" ]; then
+    echo "Building Tesseract image..."
+    docker buildx build \
+        --platform linux/amd64 \
+        --provenance=false \
+        --output type=image,push=true \
+        --tag "${AWS_ACCOUNT_ID}.dkr.ecr.${AWS_REGION}.amazonaws.com/${TESSERACT_ECR_REPOSITORY}:latest" \
+        --file Dockerfile.tesseract \
+        .
+    
+    echo "Verifying Tesseract image..."
+    aws --profile ${ECR_PROFILE} ecr describe-images \
+        --repository-name "${TESSERACT_ECR_REPOSITORY}" \
+        --region "${AWS_REGION}" \
+        --query 'imageDetails[*].{Tags:imageTags,Pushed:imagePushedAt}' \
+        --output table
+else
+    echo "Using existing Tesseract image from ECR."
+fi
 
+# Step 5: Build and push spaCy image
+echo "Checking spaCy Docker image..."
+# Check if repository exists
+if ! aws --profile ${ECR_PROFILE} ecr describe-repositories --repository-names "${SPACY_ECR_REPOSITORY}" --region "${AWS_REGION}" &>/dev/null; then
+    echo "Creating ECR repository ${SPACY_ECR_REPOSITORY}..."
+    aws --profile ${ECR_PROFILE} ecr create-repository --repository-name "${SPACY_ECR_REPOSITORY}" --region "${AWS_REGION}"
+    SPACY_IMAGE_EXISTS=false
+else
+    # Check if image with latest tag exists
+    if image_exists_in_ecr "${SPACY_ECR_REPOSITORY}" "latest"; then
+        echo "spaCy image already exists in ECR. Skipping build."
+        SPACY_IMAGE_EXISTS=true
+    else
+        echo "spaCy repository exists but latest image not found."
+        SPACY_IMAGE_EXISTS=false
+    fi
+fi
+
+# Build and push spaCy image if it doesn't exist
+if [ "$SPACY_IMAGE_EXISTS" != "true" ]; then
+    echo "Building spaCy image..."
+    docker buildx build \
+        --platform linux/amd64 \
+        --provenance=false \
+        --output type=image,push=true \
+        --tag "${AWS_ACCOUNT_ID}.dkr.ecr.${AWS_REGION}.amazonaws.com/${SPACY_ECR_REPOSITORY}:latest" \
+        --file Dockerfile.spacy \
+        .
+    
+    echo "Verifying spaCy image..."
+    aws --profile ${ECR_PROFILE} ecr describe-images \
+        --repository-name "${SPACY_ECR_REPOSITORY}" \
+        --region "${AWS_REGION}" \
+        --query 'imageDetails[*].{Tags:imageTags,Pushed:imagePushedAt}' \
+        --output table
+else
+    echo "Using existing spaCy image from ECR."
+fi
+
+# Step 6: Build and push Lambda image
 echo "Building and pushing Lambda Docker image..."
-cd "$LAMBDA_DIR" || exit 1
-echo "${AWS_ACCOUNT_ID}.dkr.ecr.${AWS_REGION}.amazonaws.com/${LAMBDA_ECR_REPOSITORY}:latest"
+# Check if repository exists
+if ! aws --profile ${ECR_PROFILE} ecr describe-repositories --repository-names "${LAMBDA_ECR_REPOSITORY}" --region "${AWS_REGION}" &>/dev/null; then
+    echo "Creating ECR repository ${LAMBDA_ECR_REPOSITORY}..."
+    aws --profile ${ECR_PROFILE} ecr create-repository --repository-name "${LAMBDA_ECR_REPOSITORY}" --region "${AWS_REGION}"
+fi
+
+# Build Lambda image with explicit build args
+echo "Building Lambda image with explicit build args:"
+echo "ACCOUNT_ID: ${AWS_ACCOUNT_ID}"
+echo "REGION: ${AWS_REGION}"
+echo "LIBREOFFICE_REPO: ${LIBREOFFICE_ECR_REPOSITORY}"
+echo "TESSERACT_REPO: ${TESSERACT_ECR_REPOSITORY}"
+echo "SPACY_REPO: ${SPACY_ECR_REPOSITORY}"
+
 docker buildx build \
-  --platform linux/amd64 \
-  --provenance=false \
-  --output type=image,push=true \
-  --tag "${AWS_ACCOUNT_ID}.dkr.ecr.${AWS_REGION}.amazonaws.com/${LAMBDA_ECR_REPOSITORY}:latest" \
-  --build-arg ACCOUNT_ID="${AWS_ACCOUNT_ID}" \
-  --build-arg REGION="${AWS_REGION}" \
-  --build-arg TESSERACT_REPO="${TESSERACT_ECR_REPOSITORY}" \
-  --build-arg LIBREOFFICE_REPO="${LIBREOFFICE_ECR_REPOSITORY}" \
-  --file Dockerfile.lambda \
-  .
+    --platform linux/amd64 \
+    --provenance=false \
+    --output type=image,push=true \
+    --tag "${AWS_ACCOUNT_ID}.dkr.ecr.${AWS_REGION}.amazonaws.com/${LAMBDA_ECR_REPOSITORY}:latest" \
+    --build-arg ACCOUNT_ID="${AWS_ACCOUNT_ID}" \
+    --build-arg REGION="${AWS_REGION}" \
+    --build-arg LIBREOFFICE_REPO="${LIBREOFFICE_ECR_REPOSITORY}" \
+    --build-arg TESSERACT_REPO="${TESSERACT_ECR_REPOSITORY}" \
+    --build-arg SPACY_REPO="${SPACY_ECR_REPOSITORY}" \
+    --file Dockerfile.lambda \
+    .
+
+# Verify image exists
+echo "Verifying Lambda image..."
+aws --profile ${ECR_PROFILE} ecr describe-images \
+    --repository-name "${LAMBDA_ECR_REPOSITORY}" \
+    --region "${AWS_REGION}" \
+    --query 'imageDetails[*].{Tags:imageTags,Pushed:imagePushedAt}' \
+    --output table
 
 cd "$SCRIPT_DIR" || exit 1
 
-# Step 6: Update or create Lambda function
+# Step 7: Update or create Lambda function
 if check_lambda_exists; then
     echo "Updating existing Lambda function ${LAMBDA_FUNCTION_NAME}..."
     aws --profile ${LAMBDA_PROFILE} lambda update-function-code \
@@ -166,6 +224,8 @@ if check_lambda_exists; then
         --profile ${LAMBDA_PROFILE}
 else
     echo "Creating Lambda function ${LAMBDA_FUNCTION_NAME}..."
+    echo "IMAGE URI = ${AWS_ACCOUNT_ID}.dkr.ecr.${AWS_REGION}.amazonaws.com/${LAMBDA_ECR_REPOSITORY}:latest"
+    echo "Role = ${LAMBDA_ROLE_ARN}"
     aws --profile ${LAMBDA_PROFILE} lambda create-function \
         --function-name "${LAMBDA_FUNCTION_NAME}" \
         --package-type Image \
@@ -182,7 +242,7 @@ else
         --profile ${LAMBDA_PROFILE}
 fi
 
-# Step 7: Configure S3 trigger permission for Lambda function
+# Step 8: Configure S3 trigger permission for Lambda function
 echo "Configuring S3 trigger permission for Lambda function ${LAMBDA_FUNCTION_NAME}..."
 
 # Check if permission already exists
@@ -210,7 +270,7 @@ aws --profile ${LAMBDA_PROFILE} lambda add-permission \
     echo "S3 trigger permission failed to add ,continuing..."
 }
 
-# Step 8: Configure S3 event notification
+# Step 9: Configure S3 event notification
 echo "Using Lambda ARN: ${LAMBDA_ARN}"
 echo "Configuring S3 event notification for bucket ${S3_BUCKET}..."
 
@@ -225,7 +285,7 @@ NOTIFICATION_CONFIG=$(cat <<EOF
           "FilterRules": [
             {
               "Name": "prefix",
-              "Value": "Uploads/rag-data-extraction/"
+              "Value": "uploads/rag-data-extraction/"
             },
             {
               "Name": "suffix",
@@ -243,7 +303,7 @@ NOTIFICATION_CONFIG=$(cat <<EOF
           "FilterRules": [
             {
               "Name": "prefix",
-              "Value": "Uploads/rag-data-extraction/"
+              "Value": "uploads/rag-data-extraction/"
             },
             {
               "Name": "suffix",
@@ -261,7 +321,7 @@ NOTIFICATION_CONFIG=$(cat <<EOF
           "FilterRules": [
             {
               "Name": "prefix",
-              "Value": "Uploads/rag-data-extraction/"
+              "Value": "uploads/rag-data-extraction/"
             },
             {
               "Name": "suffix",
@@ -280,7 +340,7 @@ aws --profile ${LAMBDA_PROFILE} s3api put-bucket-notification-configuration \
     --bucket "${S3_BUCKET}" \
     --notification-configuration "${NOTIFICATION_CONFIG}" && \
     echo "Successfully set S3 notification configuration." || {
-    echo "S3 notification configuration failed to update ,continuing..."
+    echo "S3 notification configuration failed to update, continuing..."
 }
 
 echo "Multi-image Lambda deployment and S3 trigger setup complete."
