@@ -1,183 +1,132 @@
 import json
-import os
 import psycopg2
-from psycopg2.extras import RealDictCursor
+import os
+import re
 
 # Database configuration from environment variables
 DB_CONFIG = {
-    "dbname": os.getenv("DB_NAME"),
-    "user": os.getenv("DB_USER"),
-    "password": os.getenv("DB_PASS"),
-    "host": os.getenv("DB_HOST"),
+    "host": os.environ.get("DB_HOST", "localhost"),
     "port": os.environ.get("DB_PORT", "5432"),
-    "sslmode": "require"
+    "dbname": os.environ.get("DB_NAME", "your_database"),
+    "user": os.environ.get("DB_USER", "your_user"),
+    "password": os.environ.get("DB_PASS", "your_password"),
+    "sslmode":"require"
 }
 
-# CORS headers to be included in every response
+# CORS headers to include in all responses
 CORS_HEADERS = {
     "Content-Type": "application/json",
-    "Access-Control-Allow-Origin": "*",  # Allow all origins; replace with specific origin if needed (e.g., "https://your-flutter-app.com")
-    "Access-Control-Allow-Methods": "GET, OPTIONS",  # Allow GET and OPTIONS (for preflight)
-    "Access-Control-Allow-Headers": "Content-Type",  # Allow Content-Type header
-    "Access-Control-Max-Age": "86400"  # Cache preflight response for 24 hours
+    "Access-Control-Allow-Origin": "*",
+    "Access-Control-Allow-Methods": "GET, OPTIONS",
+    "Access-Control-Allow-Headers": "Content-Type, Authorization",
+    "Access-Control-Max-Age": "86400"
 }
 
+# Helper function to get database connection
 def get_db_connection():
-    """Establish a connection to the PostgreSQL database."""
-    return psycopg2.connect(**DB_CONFIG, cursor_factory=RealDictCursor)
-
-def get_documents(filter=""):
-    """Fetch unique document names with optional filter."""
-    conn = get_db_connection()
     try:
-        with conn.cursor() as cur:
-            cur.execute("SELECT DISTINCT name FROM documents WHERE name ILIKE %s", (f"%{filter}%",))
-            return cur.fetchall()
+        return psycopg2.connect(**DB_CONFIG)
     except Exception as e:
-        raise Exception(f"Error fetching documents: {str(e)}")
-    finally:
-        conn.close()
+        return {"error": f"Database connection error: {str(e)}"}
 
-def get_source_files(document_names):
-    """Fetch source files for given document names."""
-    conn = get_db_connection()
+# Method to get unique URS names for dropdown
+def get_urs_list():
+    conn = None
     try:
+        conn = get_db_connection()
+        if isinstance(conn, dict) and "error" in conn:
+            return {
+                "statusCode": 500,
+                "headers": CORS_HEADERS,
+                "body": json.dumps({"error": conn["error"]})
+            }
+        
         with conn.cursor() as cur:
-            names = document_names.split(',')
-            cur.execute("""
-                SELECT sf.file_name
-                FROM source_files sf
-                JOIN documents d ON sf.document_id = d.id
-                WHERE d.name = ANY(%s)
-            """, (names,))
-            return cur.fetchall()
-    except Exception as e:
-        raise Exception(f"Error fetching source files: {str(e)}")
-    finally:
-        conn.close()
-
-def get_source_file_runs():
-    """Fetch all source file runs with associated metadata and sections."""
-    conn = get_db_connection()
-    try:
-        with conn.cursor() as cur:
-            cur.execute("""
-                SELECT sfr.id, d.name, sf.file_name as src_file, sfr.author, sfr.created_dt::text, 
-                       sfr.last_modified_dt::text, sfr.number_pages, 
-                       ARRAY_AGG(s.section_name) as sections
-                FROM source_file_runs sfr
-                JOIN source_files sf ON sfr.source_file_id = sf.id
-                JOIN documents d ON sf.document_id = d.id
-                LEFT JOIN source_file_run_sections srs ON sfr.id = srs.source_file_run_id
-                LEFT JOIN sections s ON srs.section_id = s.id
-                GROUP BY sfr.id, d.name, sf.file_name, sfr.author, sfr.created_dt, sfr.last_modified_dt, sfr.number_pages
-            """)
-            return cur.fetchall()
-    except Exception as e:
-        raise Exception(f"Error fetching source file runs: {str(e)}")
-    finally:
-        conn.close()
-
-def get_sections(source_file_ids):
-    """Fetch sections for given source file IDs."""
-    conn = get_db_connection()
-    try:
-        with conn.cursor() as cur:
-            ids = source_file_ids.split(',')
-            cur.execute("""
-                SELECT DISTINCT s.section_name
-                FROM sections s
-                JOIN source_file_run_sections srs ON s.id = srs.section_id
-                WHERE srs.source_file_run_id = ANY(%s::int[])
-            """, (ids,))
-            return cur.fetchall()
-    except Exception as e:
-        raise Exception(f"Error fetching sections: {str(e)}")
-    finally:
-        conn.close()
-
-def lambda_handler(event, context):
-    """AWS Lambda handler function to process API requests with CORS support."""
-    try:
-        # Extract request details from the event
-        http_method = event.get('httpMethod', '')
-        path = event.get('path', '')
-        query_params = event.get('queryStringParameters', {}) or {}
-
-        # Handle OPTIONS request for CORS preflight
-        if http_method == 'OPTIONS':
-            return {
-                'statusCode': 200,
-                'body': json.dumps({'message': 'CORS preflight successful'}),
-                'headers': CORS_HEADERS
-            }
-
-        # Only handle GET requests beyond this point
-        if http_method != 'GET':
-            return {
-                'statusCode': 405,
-                'body': json.dumps({'error': 'Method Not Allowed'}),
-                'headers': CORS_HEADERS
-            }
-
-        # Route handling based on path
-        if path == '/documents':
-            filter = query_params.get('filter', '')
-            result = get_documents(filter)
-            return {
-                'statusCode': 200,
-                'body': json.dumps(result),
-                'headers': CORS_HEADERS
-            }
-
-        elif path == '/source_files':
-            document_names = query_params.get('document_names', '')
-            if not document_names:
-                return {
-                    'statusCode': 400,
-                    'body': json.dumps({'error': 'Missing document_names parameter'}),
-                    'headers': CORS_HEADERS
-                }
-            result = get_source_files(document_names)
-            return {
-                'statusCode': 200,
-                'body': json.dumps(result),
-                'headers': CORS_HEADERS
-            }
-
-        elif path == '/source_file_runs':
-            result = get_source_file_runs()
-            return {
-                'statusCode': 200,
-                'body': json.dumps(result),
-                'headers': CORS_HEADERS
-            }
-
-        elif path == '/sections':
-            source_file_ids = query_params.get('source_file_ids', '')
-            if not source_file_ids:
-                return {
-                    'statusCode': 400,
-                    'body': json.dumps({'error': 'Missing source_file_ids parameter'}),
-                    'headers': CORS_HEADERS
-                }
-            result = get_sections(source_file_ids)
-            return {
-                'statusCode': 200,
-                'body': json.dumps(result),
-                'headers': CORS_HEADERS
-            }
-
-        else:
-            return {
-                'statusCode': 404,
-                'body': json.dumps({'error': 'Not Found'}),
-                'headers': CORS_HEADERS
-            }
-
+            cur.execute("SELECT id, name FROM urs ORDER BY name")
+            urs_list = [{"id": row[0], "name": row[1]} for row in cur.fetchall()]
+        return {
+            "statusCode": 200,
+            "headers": CORS_HEADERS,
+            "body": json.dumps(urs_list)
+        }
     except Exception as e:
         return {
-            'statusCode': 500,
-            'body': json.dumps({'error': str(e)}),
-            'headers': CORS_HEADERS
+            "statusCode": 500,
+            "headers": CORS_HEADERS,
+            "body": json.dumps({"error": f"Error fetching URS list: {str(e)}"})
+        }
+    finally:
+        if conn and not isinstance(conn, dict):
+            conn.close()
+
+# Method to get sections for a given urs_id that exist in content_blocks
+def get_sections_by_urs(urs_id):
+    conn = None
+    try:
+        conn = get_db_connection()
+        if isinstance(conn, dict) and "error" in conn:
+            return {
+                "statusCode": 500,
+                "headers": CORS_HEADERS,
+                "body": json.dumps({"error": conn["error"]})
+            }
+        
+        with conn.cursor() as cur:
+            query = """
+                SELECT DISTINCT s.id, s.name
+                FROM sections s
+                JOIN urs_section_mapping usm ON s.id = usm.section_id
+                JOIN content_blocks cb ON usm.urs_section_id = cb.urs_section_id
+                WHERE usm.urs_id = %s
+                ORDER BY s.name
+            """
+            cur.execute(query, (urs_id,))
+            sections = [{"id": row[0], "name": row[1]} for row in cur.fetchall()]
+        return {
+            "statusCode": 200,
+            "headers": CORS_HEADERS,
+            "body": json.dumps(sections)
+        }
+    except Exception as e:
+        return {
+            "statusCode": 500,
+            "headers": CORS_HEADERS,
+            "body": json.dumps({"error": f"Error fetching sections: {str(e)}"})
+        }
+    finally:
+        if conn and not isinstance(conn, dict):
+            conn.close()
+
+# Lambda handler
+def lambda_handler(event, context):
+    try:
+        # Extract path from API Gateway event
+        path = event.get("path", "")
+        
+        # Handle OPTIONS request for CORS preflight
+        if event.get("httpMethod") == "OPTIONS":
+            return {
+                "statusCode": 200,
+                "headers": CORS_HEADERS,
+                "body": json.dumps({})
+            }
+        
+        # Route based on path
+        if path.endswith("/urs"):
+            return get_urs_list()
+        elif re.match(r".*/sections/\d+$", path):
+            # Extract urs_id from path (e.g., /dev/sections/123)
+            urs_id = int(path.split("/")[-1])
+            return get_sections_by_urs(urs_id)
+        else:
+            return {
+                "statusCode": 404,
+                "headers": CORS_HEADERS,
+                "body": json.dumps({"error": "Invalid path"})
+            }
+    except Exception as e:
+        return {
+            "statusCode": 500,
+            "headers": CORS_HEADERS,
+            "body": json.dumps({"error": f"Handler error: {str(e)}"})
         }
