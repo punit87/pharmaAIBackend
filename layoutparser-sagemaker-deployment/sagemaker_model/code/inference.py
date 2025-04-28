@@ -34,7 +34,7 @@ def model_fn(model_dir):
    
     """Load the model from the model directory."""
     model = lp.Detectron2LayoutModel(
-        config_path=os.path.join(model_dir, "config.yml"),
+        config_path=os.path.join(model_dir, "config.yaml"),
         model_path=os.path.join(model_dir, "model_final.pth"),
         label_map={0: "figure", 1: "list", 2: "table", 3: "text", 4: "title"},
         extra_config=["MODEL.ROI_HEADS.SCORE_THRESH_TEST", 0.2],

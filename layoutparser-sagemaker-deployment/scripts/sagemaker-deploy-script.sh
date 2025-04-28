@@ -70,7 +70,7 @@ echo "==== SageMaker Deployment ===="
 # Package model files into tar.gz
 echo "Packaging model files into ${MODEL_TAR}..."
 cd "${MODEL_DIR}"
-tar -czf "${MODEL_TAR}" config.yml model_final.pth code/
+tar -czf "${MODEL_TAR}" config.yaml model_final.pth code/
 cd -
 
 # Upload model artifact to S3 using S3_PROFILE
@@ -127,7 +127,7 @@ aws --profile ${SAGEMAKER_PROFILE} sagemaker create-model \
 echo "Creating SageMaker endpoint configuration..."
 aws --profile ${SAGEMAKER_PROFILE} sagemaker create-endpoint-config \
     --endpoint-config-name "${ENDPOINT_CONFIG_NAME}" \
-    --production-variants '[{"VariantName":"AllTraffic","ModelName":"'"${SAGEMAKER_MODEL_NAME}"'","ServerlessConfig":{"MemorySizeInMB":3072,"MaxConcurrency":9}}]'
+    --production-variants '[{"VariantName":"AllTraffic","ModelName":"'"${SAGEMAKER_MODEL_NAME}"'","ServerlessConfig":{"MemorySizeInMB":3072,"MaxConcurrency":3}}]'
 
 # Create serverless endpoint
 echo "Creating SageMaker serverless endpoint..."

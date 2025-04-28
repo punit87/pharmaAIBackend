@@ -1,4 +1,0 @@
-sentence-transformers==2.7.0
-faiss-cpu==1.7.4
-torch==2.1.0
-numpy<2.0

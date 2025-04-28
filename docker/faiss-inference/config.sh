@@ -1,0 +1,12 @@
+#!/bin/bash
+export AWS_REGION="us-east-1"
+export ECR_REPOSITORY="aytanai-sagemakerfaissinference"
+export LAMBDA_FUNCTION_NAME="lambda_sagemaker_faiss_inference"
+export AWS_ACCOUNT_ID="864899869769"
+export DB_NAME="neondb"
+export DB_USER="neondb_owner"
+export DB_PASS="npg_a7UTVgtl3xWk"
+export DB_HOST="ep-red-bush-a43597op-pooler.us-east-1.aws.neon.tech"
+export DB_PORT="5432"
+export SAGEMAKER_ENDPOINT_NAME="faiss-serverless"
+export LAMBDA_ROLE_ARN="arn:aws:iam::864899869769:role/service-role/inferenceLambda-role-i8fz568r"

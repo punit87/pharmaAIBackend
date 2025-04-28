@@ -73,3 +73,8 @@ CREATE TABLE skipped_block_items (
     created_at timestamp without time zone DEFAULT CURRENT_TIMESTAMP,
     CONSTRAINT fk_batch_run_id FOREIGN KEY (batch_run_id) REFERENCES batch_runs(id)
 );
+
+
+ALTER TABLE urs ADD CONSTRAINT urs_name_unique UNIQUE (name);
+ALTER TABLE sections ADD CONSTRAINT sections_section_hash_unique UNIQUE (section_hash);
+ALTER TABLE urs_section_mapping ADD CONSTRAINT urs_section_unique UNIQUE (urs_id, section_id);

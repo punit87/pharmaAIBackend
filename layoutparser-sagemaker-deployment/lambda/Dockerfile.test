@@ -22,9 +22,6 @@ RUN mkdir -p /usr/lib64/libreoffice && \
     find /opt/libreoffice25.2 -name '*.so*' -exec cp -n {} /usr/lib64/libreoffice/ \; && \
     /sbin/ldconfig
 
-
-
-
 # Verify library presence
 RUN echo "Checking for required libraries..." && \
     find /usr/lib64 -name 'libssl3.so' || echo "libssl3.so not found" && \

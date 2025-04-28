@@ -6,3 +6,5 @@ pillow
 numpy
 psycopg2-binary
 spacy
+sentence-transformers
+faiss-cpu
