@@ -494,7 +494,8 @@ def lambda_handler(event, context):
                         if line.strip():
                             logger.debug("Processing content line: %s", line[:100])
                             try:
-                                embedding = sentence_transformer.encode([line.strip()])
+                                combined_text = f"{urs_name} {current_section} {line.strip()}"
+                                embedding = sentence_transformer.encode([combined_text])
                                 faiss_index.add(embedding)
                                 faiss_index_id = current_index_count
                                 current_index_count += 1
