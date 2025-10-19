@@ -7,16 +7,10 @@ FROM public.ecr.aws/lambda/python:3.11 as builder
 # ============================================
 RUN yum update -y && \
     yum install -y \
-    gcc \
-    gcc-c++ \
-    make \
-    cmake \
-    pkgconfig \
     poppler-utils \
     curl \
     wget \
     && yum clean all
-
 
 # ============================================
 # Python Environment Setup
@@ -25,13 +19,13 @@ RUN yum update -y && \
 RUN pip install --upgrade pip
 
 # ============================================
-# Docling Installation
+# Docling Installation (Pre-compiled packages only)
 # ============================================
-# Install Docling and its dependencies
-RUN pip install --no-cache-dir docling
+# Install Docling using pre-compiled packages
+RUN pip install --no-cache-dir --only-binary=all docling
 
-# Install additional libraries for document processing
-RUN pip install --no-cache-dir \
+# Install additional libraries for document processing (pre-compiled)
+RUN pip install --no-cache-dir --only-binary=all \
     pytesseract \
     boto3
 
