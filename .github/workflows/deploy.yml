@@ -34,7 +34,7 @@ jobs:
           # Use jitesoft/tesseract-ocr as the base image, which provides Tesseract and sets a non-root user.
           FROM jitesoft/tesseract-ocr:5-alpine
           
-          # Fix: Switch to the root user to gain permissions for apk (package manager).
+          # Fix 1: Switch to the root user to gain permissions for apk (package manager).
           USER root
           
           # Install Python and its build dependencies using the Alpine package manager (apk).
@@ -46,23 +46,26 @@ jobs:
             build-base \
             && rm -rf /var/cache/apk/*
           
-          # Switch back to the non-root user (tesseract) for security and subsequent steps.
-          # The jitesoft images typically use 'tesseract' as the non-root user.
+          # Switch back to the non-root user ('tesseract') for security and subsequent steps.
           USER tesseract
           
           # Use 'python3' and 'pip3' on Alpine
           ENV PYTHONUNBUFFERED=1
-          ENV PATH="/usr/bin:${PATH}"
+          
+          # Fix 2: Add Python user bin to PATH so pip-installed executables (like uv) can be found.
+          # The user's Python bin directory is typically ~/.local/bin
+          ENV PATH="/home/tesseract/.local/bin:/usr/bin:${PATH}"
           
           # Fast pip install via uv
-          RUN python3 -m pip install --no-cache-dir uv
+          # Use the --user flag to install packages into the non-root user's home directory (~/.local/bin), 
+          # bypassing the "externally managed environment" error (PEP 668).
+          RUN python3 -m pip install --no-cache-dir --user uv
           
           WORKDIR /app
           
           # Core dependencies
-          # We use python3 -m pip because the python binary is likely named python3
-          # Installation will happen in the non-root user's home directory (if specified) or globally if allowed.
-          RUN python3 -m pip install --no-cache-dir "raganything[all]" docling
+          # Apply the --user flag here as well for all Python dependencies.
+          RUN python3 -m pip install --no-cache-dir --user "raganything[all]" docling
           
           ARG RAG_PARSER=docling
           COPY <<'SCRIPT' /app/entrypoint.sh
