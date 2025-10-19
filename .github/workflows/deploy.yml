@@ -1,4 +1,4 @@
-name: 🚀 Deploy Docker Images (RAG-Anything)
+name: 🚀 Deploy RAG-Anything Docker Image
 
 on:
   push:
@@ -6,39 +6,22 @@ on:
   pull_request:
     branches: [main]
   workflow_dispatch:
-    inputs:
-      tag:
-        description: "Custom Docker image tag"
-        required: false
-        default: "latest"
-      build_rag_anything:
-        description: "Build RAG-Anything image"
-        required: false
-        default: true
-        type: boolean
-      rag_anything_parser:
-        description: "Choose parser for RAG-Anything"
-        required: false
-        default: "docling"
-        type: choice
-        options: [docling, mineru]
 
 env:
   REGISTRY: ghcr.io
   IMAGE_NAME: punit87/rag-anything
-  DEFAULT_PARSER: docling
+  PARSER: docling
 
 jobs:
   build-rag-anything:
-    name: 🛠️ Build & Push RAG-Anything
+    name: 🛠️ Build & Push RAG-Anything (Docling)
     runs-on: ubuntu-latest
-    if: ${{ github.event.inputs.build_rag_anything != 'false' }}
     permissions:
       contents: read
       packages: write
 
     steps:
-      - name: 🧩 Checkout code
+      - name: 🧩 Checkout repository
         uses: actions/checkout@v4
 
       - name: ⚙️ Set up Docker Buildx
@@ -51,46 +34,36 @@ jobs:
           username: ${{ github.actor }}
           password: ${{ secrets.GITHUB_TOKEN }}
 
-      - name: 🧱 Generate RAG-Anything Dockerfile
+      - name: 🧱 Create Dockerfile for RAG-Anything (Docling)
         run: |
           mkdir -p rag-anything
           cat > rag-anything/Dockerfile << 'EOF'
           FROM python:3.11-slim
           ARG RAG_PARSER=docling
           ENV PYTHONUNBUFFERED=1
-          
-          # Install system dependencies
+
+          # System deps
           RUN apt-get update && apt-get install -y \
               git curl wget build-essential \
               && rm -rf /var/lib/apt/lists/*
-          
-          # Install UV (fast pip)
+
+          # Fast pip
           RUN pip install --no-cache-dir uv
-          
+
           WORKDIR /app
-          
-          # Install RAG-Anything and parser
-          RUN pip install --no-cache-dir "raganything[all]"
-          RUN if [ "$RAG_PARSER" = "docling" ]; then \
-                pip install --no-cache-dir docling; \
-              else \
-                pip install --no-cache-dir mineru; \
-              fi
-          
+
+          # Core dependencies
+          RUN pip install --no-cache-dir "raganything[all]" docling
+
           COPY <<'SCRIPT' /app/entrypoint.sh
           #!/bin/bash
-          echo "RAG-Anything container ready!"
+          echo "🚀 RAG-Anything container ready!"
           echo "Parser: ${RAG_PARSER}"
-          echo "Testing environment..."
           python -c "import raganything; print('✅ RAG-Anything OK')"
-          if [ "$RAG_PARSER" = "docling" ]; then
-            python -c "import docling; print('✅ Docling OK')"
-          else
-            python -c "import mineru; print('✅ Mineru OK')"
-          fi
+          python -c "import docling; print('✅ Docling OK')"
           exec "$@"
           SCRIPT
-          
+
           RUN chmod +x /app/entrypoint.sh
           ENTRYPOINT ["/app/entrypoint.sh"]
           CMD ["python", "-c", "import raganything; print('RAG-Anything is ready!')"]
@@ -104,12 +77,11 @@ jobs:
           platforms: linux/amd64,linux/arm64
           push: true
           build-args: |
-            RAG_PARSER=${{ github.event.inputs.rag_anything_parser || env.DEFAULT_PARSER }}
+            RAG_PARSER=${{ env.PARSER }}
           tags: |
             ${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}:latest
             ${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}:${{ github.ref_name }}
             ${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}:${{ github.sha }}
-            ${{ github.event.inputs.tag && format('{0}/{1}:{2}', env.REGISTRY, env.IMAGE_NAME, github.event.inputs.tag) || '' }}
           cache-from: type=gha
           cache-to: type=gha,mode=max
 
@@ -120,23 +92,20 @@ jobs:
     if: always()
 
     steps:
-      - name: 🪶 Generate Summary
+      - name: 🪶 Write Deployment Summary
         run: |
           {
-            echo "## 🚀 RAG-Anything Docker Image Deployed!"
+            echo "## 🚀 RAG-Anything Docker Image Deployed Successfully!"
             echo ""
             echo "### 🧩 Tags:"
             echo "- \`${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}:latest\`"
             echo "- \`${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}:${{ github.ref_name }}\`"
             echo "- \`${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}:${{ github.sha }}\`"
-            if [ -n "${{ github.event.inputs.tag }}" ]; then
-              echo "- \`${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}:${{ github.event.inputs.tag }}\`"
-            fi
             echo ""
             echo "### 🧰 Features"
-            echo "- ✅ Full RAG-Anything with all extras"
-            echo "- ✅ Parser: \`${{ github.event.inputs.rag_anything_parser || env.DEFAULT_PARSER }}\`"
-            echo "- ✅ Multi-arch (amd64, arm64)"
+            echo "- ✅ RAG-Anything with all optional dependencies"
+            echo "- ✅ Docling parser included"
+            echo "- ✅ Multi-architecture (amd64, arm64)"
             echo ""
             echo "### 🧪 Quick Usage"
             echo "\`\`\`bash"
