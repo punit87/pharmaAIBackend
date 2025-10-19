@@ -5,20 +5,23 @@ FROM python:3.11-slim
 # Build arguments
 ARG RAG_PARSER=docling
 
-# Install system dependencies including Tesseract OCR
+# Install basic system dependencies
 RUN apt-get update && apt-get install -y \
     git \
     curl \
     wget \
     build-essential \
+    && rm -rf /var/lib/apt/lists/*
+
+# Install Tesseract OCR
+RUN apt-get update && apt-get install -y \
     tesseract-ocr \
     tesseract-ocr-eng \
-    libtesseract-dev \
-    libgl1-mesa-glx \
+    && rm -rf /var/lib/apt/lists/*
+
+# Install minimal OpenCV dependencies
+RUN apt-get update && apt-get install -y \
     libglib2.0-0 \
-    libsm6 \
-    libxext6 \
-    libxrender-dev \
     libgomp1 \
     && rm -rf /var/lib/apt/lists/*
 
