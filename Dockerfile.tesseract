@@ -7,9 +7,25 @@ FROM public.ecr.aws/lambda/python:3.11
 # ============================================
 # Install Tesseract OCR and dependencies
 RUN yum update -y && \
-    yum install -y epel-release && \
-    yum install -y tesseract tesseract-devel curl && \
+    yum install -y gcc gcc-c++ make cmake pkgconfig \
+    leptonica leptonica-devel \
+    libpng-devel libjpeg-devel libtiff-devel \
+    zlib-devel freetype-devel \
+    curl wget && \
     yum clean all
+
+# Download and compile Tesseract from source
+RUN cd /tmp && \
+    wget https://github.com/tesseract-ocr/tesseract/archive/5.3.3.tar.gz && \
+    tar -xzf 5.3.3.tar.gz && \
+    cd tesseract-5.3.3 && \
+    ./autogen.sh && \
+    ./configure --prefix=/usr/local && \
+    make && \
+    make install && \
+    ldconfig && \
+    cd / && \
+    rm -rf /tmp/tesseract-5.3.3 /tmp/5.3.3.tar.gz
 
 # Download English language data if not available
 RUN mkdir -p /usr/share/tesseract-ocr/5/tessdata && \
@@ -36,14 +52,14 @@ RUN mkdir -p /opt/tesseract/bin \
     && mkdir -p /opt/tesseract/tessdata
 
 # Debug: Check what was actually installed
-RUN echo "Checking yum packages..." && \
-    (rpm -qa | grep tesseract || echo "No tesseract packages found") && \
+RUN echo "Checking /usr/local/bin..." && \
+    (ls -la /usr/local/bin/ | grep tesseract || echo "No tesseract in /usr/local/bin") && \
     echo "Checking /usr/bin..." && \
     (ls -la /usr/bin/ | grep tesseract || echo "No tesseract in /usr/bin") && \
-    echo "Checking /usr/sbin..." && \
-    (ls -la /usr/sbin/ | grep tesseract || echo "No tesseract in /usr/sbin") && \
     echo "Checking entire /usr for tesseract..." && \
-    (find /usr -name "*tesseract*" 2>/dev/null || echo "No tesseract files found")
+    (find /usr -name "*tesseract*" 2>/dev/null || echo "No tesseract files found") && \
+    echo "Testing tesseract command..." && \
+    (tesseract --version || echo "Tesseract command not found")
 
 # Find and copy Tesseract binaries and libraries to the prepared directories
 RUN find /usr -name "*tesseract*" -type f -executable 2>/dev/null | head -1 | xargs -I {} cp {} /opt/tesseract/bin/ \
