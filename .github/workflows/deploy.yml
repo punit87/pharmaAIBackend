@@ -1,4 +1,4 @@
-name: 🚀 Build RAG-Anything Container Images for Fargate/ECS
+name: 🚀 Build Tesseract OCR Lambda Image
 on:
   push:
     branches: [main, develop]
@@ -8,12 +8,11 @@ on:
 
 env:
   REGISTRY: ghcr.io
-  IMAGE_NAME: punit87/rag-anything
-  PARSER: docling
+  IMAGE_NAME: punit87/tesseract-lambda
 
 jobs:
-  build-rag-anything:
-    name: 🛠️ Build RAG-Anything Container Image (Fargate/ECS)
+  build-tesseract-lambda:
+    name: 🛠️ Build Tesseract OCR Lambda Image
     runs-on: ubuntu-latest
     permissions:
       contents: read
@@ -32,15 +31,13 @@ jobs:
           username: ${{ github.actor }}
           password: ${{ secrets.GITHUB_TOKEN }}
           
-      - name: 🐳 Build and Push Container Image (Fargate/ECS)
+      - name: 🐳 Build and Push Tesseract Lambda Image
         uses: docker/build-push-action@v5
         with:
           context: .
-          file: ./Dockerfile
-          platforms: linux/amd64,linux/arm64
+          file: ./Dockerfile.lambda
+          platforms: linux/amd64
           push: true
-          build-args: |
-            RAG_PARSER=${{ env.PARSER }}
           tags: |
             ${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}:latest
             ${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}:${{ github.ref_name }}
@@ -51,48 +48,46 @@ jobs:
   summary:
     name: 🧾 Deployment Summary
     runs-on: ubuntu-latest
-    needs: build-rag-anything
+    needs: build-tesseract-lambda
     if: always()
     steps:
       - name: 🪶 Write Deployment Summary
         run: |
           {
-            echo "## 🚀 RAG-Anything Container Images Built Successfully"
+            echo "## 🚀 Tesseract OCR Lambda Image Built Successfully"
             echo ""
-            echo "### 🎯 Container Images Built"
+            echo "### 🎯 Lambda Image Built"
             echo "- **Registry**: \`${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}\`"
             echo "- **Tags**: \`latest\`, \`${{ github.ref_name }}\`, \`${{ github.sha }}\`"
-            echo "- **Architectures**: amd64, arm64"
-            echo "- **Platform**: AWS Fargate/ECS (Container Images)"
+            echo "- **Architecture**: linux/amd64"
+            echo "- **Platform**: AWS Lambda (Container Images)"
             echo ""
-            echo "### ✨ Optimizations"
-            echo "- ✅ Multi-stage build with layer caching"
-            echo "- ✅ Tesseract OCR pre-installed"
-            echo "- ✅ FastAPI server with health checks"
-            echo "- ✅ Production-ready logging"
-            echo "- ✅ Optimized for Fargate/ECS deployment"
+            echo "### ✨ Features"
+            echo "- ✅ Tesseract OCR 5.x pre-installed"
+            echo "- ✅ English language pack included"
+            echo "- ✅ Python 3.11 Lambda runtime"
+            echo "- ✅ OpenCV and Pillow for image processing"
+            echo "- ✅ Boto3 and Requests for AWS integration"
+            echo "- ✅ Clean, minimal Lambda-compatible image"
             echo ""
-            echo "### 📊 Recommended ECS Configuration"
+            echo "### 📦 Image Contents"
+            echo "- **Tesseract OCR**: Latest version with English support"
+            echo "- **Python Libraries**: pytesseract, opencv-python-headless, pillow"
+            echo "- **AWS Libraries**: boto3, requests"
+            echo "- **Test Handler**: Built-in test function"
+            echo ""
+            echo "### 🚀 Usage"
+            echo "\`\`\`bash"
+            echo "# Pull the image"
+            echo "docker pull ${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}:latest"
+            echo ""
+            echo "# Test locally"
+            echo "docker run --rm ${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}:latest"
             echo "\`\`\`"
-            echo "CPU: 2048-4096 (2-4 vCPU)"
-            echo "Memory: 4096-8192 MB (4-8 GB)"
-            echo "Platform: Fargate"
-            echo "\`\`\`"
-            echo ""
-            echo "### 🚀 Deployment Options"
-            echo ""
-            echo "#### **Fargate/ECS Deployment:**"
-            echo "- Use the built container images above"
-            echo "- Deploy via ECS Task Definition"
-            echo "- Configure load balancer and auto-scaling"
-            echo ""
-            echo "#### **Lambda Deployment:**"
-            echo "- Use MCP API to deploy Lambda functions"
-            echo "- Lambda Dockerfile available: \`Dockerfile.lambda\`"
-            echo "- Deploy via AWS CLI or MCP tools"
             echo ""
             echo "### 📝 Next Steps"
-            echo "1. **Fargate**: Use container images for ECS deployment"
-            echo "2. **Lambda**: Use MCP API to deploy Lambda functions"
-            echo "3. **S3 Integration**: Configure S3 triggers for document processing"
+            echo "1. **Deploy to Lambda**: Use MCP API to create Lambda function"
+            echo "2. **Configure S3**: Set up S3 triggers for document processing"
+            echo "3. **Test OCR**: Upload documents and test Tesseract functionality"
+            echo "4. **Customize**: Add your own Lambda handler code"
           } >> $GITHUB_STEP_SUMMARY
