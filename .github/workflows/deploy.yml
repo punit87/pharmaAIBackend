@@ -35,7 +35,7 @@ jobs:
         uses: docker/build-push-action@v5
         with:
           context: .
-          file: ./Dockerfile.lambda
+          file: ./Dockerfile.tesseract
           platforms: linux/amd64
           push: true
           tags: |
@@ -66,15 +66,15 @@ jobs:
             echo "- ✅ Tesseract OCR 5.x pre-installed"
             echo "- ✅ English language pack included"
             echo "- ✅ Python 3.11 Lambda runtime"
-            echo "- ✅ OpenCV and Pillow for image processing"
-            echo "- ✅ Boto3 and Requests for AWS integration"
-            echo "- ✅ Clean, minimal Lambda-compatible image"
+            echo "- ✅ Clean, minimal Tesseract-only image"
+            echo "- ✅ Multi-stage build ready for import"
+            echo "- ✅ Organized directory structure for easy copying"
             echo ""
             echo "### 📦 Image Contents"
             echo "- **Tesseract OCR**: Latest version with English support"
-            echo "- **Python Libraries**: pytesseract, opencv-python-headless, pillow"
-            echo "- **AWS Libraries**: boto3, requests"
-            echo "- **Test Handler**: Built-in test function"
+            echo "- **Language Data**: English language pack included"
+            echo "- **Organized Structure**: Pre-prepared for multi-stage copying"
+            echo "- **Environment Variables**: TESSDATA_PREFIX and Tesseract paths set"
             echo ""
             echo "### 🚀 Usage"
             echo "\`\`\`bash"
