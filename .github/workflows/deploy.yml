@@ -31,30 +31,35 @@ jobs:
         run: |
           mkdir -p rag-anything
           cat > rag-anything/Dockerfile << 'EOF'
-          # Use Debian-based Python image for better compatibility with ML libraries
-          FROM python:3.11-slim-bookworm
+          # Use jitesoft/tesseract-ocr Ubuntu-based image (supports PyTorch wheels)
+          # Available tags: 5-24.04, 5-22.04, 5-20.04 for Ubuntu versions
+          FROM jitesoft/tesseract-ocr:5-24.04
           
-          # Install system dependencies including Tesseract
+          # Switch to root user to install packages
+          USER root
+          
+          # Install Python and build dependencies using apt (Ubuntu)
           RUN apt-get update && apt-get install -y --no-install-recommends \
-              tesseract-ocr \
-              tesseract-ocr-eng \
+              python3 \
+              python3-pip \
+              python3-venv \
               git \
               build-essential \
               && rm -rf /var/lib/apt/lists/*
           
-          # Create non-root user for security
-          RUN useradd -m -u 1000 appuser
+          # Create home directory for tesseract user
+          RUN mkdir -p /home/tesseract && chown tesseract:tesseract /home/tesseract
           
-          # Switch to non-root user
-          USER appuser
+          # Switch back to tesseract user for security
+          USER tesseract
           
           # Set up Python environment
           ENV PYTHONUNBUFFERED=1
-          ENV VIRTUAL_ENV=/home/appuser/venv
+          ENV VIRTUAL_ENV=/home/tesseract/venv
           ENV PATH="$VIRTUAL_ENV/bin:${PATH}"
           
           # Create virtual environment
-          RUN python -m venv $VIRTUAL_ENV
+          RUN python3 -m venv $VIRTUAL_ENV
           
           # Upgrade pip and install uv for faster package installation
           RUN pip install --no-cache-dir --upgrade pip uv
@@ -76,18 +81,18 @@ jobs:
           tesseract --version
           
           # Verify Python packages
-          python -c "import raganything; print('✅ RAG-Anything OK')"
-          python -c "import docling; print('✅ Docling OK')"
+          python3 -c "import raganything; print('✅ RAG-Anything OK')"
+          python3 -c "import docling; print('✅ Docling OK')"
           
           exec "$@"
           SCRIPT
           
           USER root
           RUN chmod +x /app/entrypoint.sh
-          USER appuser
+          USER tesseract
           
           ENTRYPOINT ["/app/entrypoint.sh"]
-          CMD ["python", "-c", "import raganything; print('RAG-Anything is ready!')"]
+          CMD ["python3", "-c", "import raganything; print('RAG-Anything is ready!')"]
           EOF
       - name: 🐳 Build and Push Docker Image
         uses: docker/build-push-action@v5
@@ -123,10 +128,10 @@ jobs:
             echo "### 🧰 Features"
             echo "- ✅ RAG-Anything with all optional dependencies"
             echo "- ✅ Docling parser included"
-            echo "- ✅ Pre-installed Tesseract OCR"
+            echo "- ✅ **Pre-installed Tesseract OCR via jitesoft/tesseract-ocr**"
             echo "- ✅ Multi-architecture (amd64, arm64)"
             echo "- ✅ Python virtual environment for clean package management"
-            echo "- ✅ Debian-based for better ML library compatibility"
+            echo "- ✅ Ubuntu 24.04 base for ML library compatibility"
             echo ""
             echo "### 🧪 Quick Usage"
             echo "\`\`\`bash"
