@@ -14,8 +14,6 @@ env:
 jobs:
   cleanup-and-build:
     runs-on: ubuntu-latest
-    env:
-      ECR_REGISTRY: ${{ steps.login-ecr.outputs.registry }}
     
     steps:
     - name: Checkout code
@@ -85,10 +83,10 @@ jobs:
     - name: Build and push Docling image
       run: |
         echo "🔨 Building Docling image with cleanup optimizations..."
-        docker build -f Dockerfile.docling -t $ECR_REGISTRY/$ECR_REPOSITORY:latest .
+        docker build -f Dockerfile.docling -t ${{ steps.login-ecr.outputs.registry }}/${{ env.ECR_REPOSITORY }}:latest .
         
         echo "📤 Pushing to ECR..."
-        docker push $ECR_REGISTRY/$ECR_REPOSITORY:latest
+        docker push ${{ steps.login-ecr.outputs.registry }}/${{ env.ECR_REPOSITORY }}:latest
         
     - name: Cleanup after build
       if: always()
