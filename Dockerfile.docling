@@ -40,8 +40,5 @@ RUN pip3 install --no-cache-dir --upgrade pip && \
 COPY lambda_function.py /var/task/
 COPY test_docling.py /var/task/
 
-# Run health check
-RUN python3 /var/task/test_docling.py
-
 # Set the CMD to your handler
 CMD ["python3", "/var/task/lambda_function.py"]

@@ -32,8 +32,5 @@ RUN pip3 install --no-cache-dir --upgrade pip && \
 # Copy test script
 COPY test_tesseract.py /var/task/
 
-# Run test
-RUN python3 /var/task/test_tesseract.py
-
 # Set default command
 CMD ["python3", "/var/task/test_tesseract.py"]
