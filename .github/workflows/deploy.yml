@@ -31,21 +31,24 @@ jobs:
         run: |
           mkdir -p rag-anything
           cat > rag-anything/Dockerfile << 'EOF'
-          # Use jitesoft/tesseract-ocr as the base image.
-          # We choose the '5-alpine' tag for a modern Tesseract version and smaller image size.
-          # The base image already includes Tesseract OCR.
+          # Use jitesoft/tesseract-ocr as the base image, which provides Tesseract and sets a non-root user.
           FROM jitesoft/tesseract-ocr:5-alpine
           
-          # Install Python dependencies and use the Alpine package manager (apk)
+          # Fix: Switch to the root user to gain permissions for apk (package manager).
+          USER root
+          
+          # Install Python and its build dependencies using the Alpine package manager (apk).
           RUN apk update \
-            # Install Python and its dependencies (Python is not included by default)
             && apk add --no-cache \
             python3 \
             py3-pip \
             git \
             build-base \
-            # Clean up
             && rm -rf /var/cache/apk/*
+          
+          # Switch back to the non-root user (tesseract) for security and subsequent steps.
+          # The jitesoft images typically use 'tesseract' as the non-root user.
+          USER tesseract
           
           # Use 'python3' and 'pip3' on Alpine
           ENV PYTHONUNBUFFERED=1
@@ -58,6 +61,7 @@ jobs:
           
           # Core dependencies
           # We use python3 -m pip because the python binary is likely named python3
+          # Installation will happen in the non-root user's home directory (if specified) or globally if allowed.
           RUN python3 -m pip install --no-cache-dir "raganything[all]" docling
           
           ARG RAG_PARSER=docling
@@ -66,7 +70,7 @@ jobs:
           echo "🚀 RAG-Anything container ready!"
           echo "Parser: ${RAG_PARSER}"
           
-          # Verify Tesseract installation (not required for Docling, but good for verification)
+          # Verify Tesseract installation
           tesseract --version
           
           # Verify Python packages
