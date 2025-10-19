@@ -94,6 +94,13 @@ jobs:
         cache-from: type=gha
         cache-to: type=gha,mode=max
 
+    - name: Wait for Tesseract image to be available
+      run: |
+        echo "Waiting for Tesseract image to be available in registry..."
+        sleep 10
+        docker pull ${{ env.REGISTRY }}/${{ env.TESSERACT_IMAGE }}:latest
+        echo "✅ Tesseract image is available and ready for Docling build"
+
     - name: Build and push Docling image
       uses: docker/build-push-action@v5
       with:

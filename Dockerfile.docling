@@ -83,18 +83,37 @@ RUN echo "Starting aggressive cleanup..." && \
     df -h
 
 # ============================================
-# Stage 2: Final Runtime Stage
+# Stage 2: Tesseract Stage (Fallback)
 # ============================================
-# Import Tesseract image from GitHub registry (created via GitHub Actions)
-FROM ghcr.io/punit87/tesseract-lambda:latest AS tesseract
+# Build Tesseract locally as fallback if registry image is not available
+FROM ubuntu:22.04 AS tesseract-fallback
+ENV DEBIAN_FRONTEND=noninteractive
+RUN apt-get update && \
+    apt-get install -y \
+    tesseract-ocr \
+    tesseract-ocr-eng \
+    libtesseract-dev \
+    libleptonica-dev \
+    && apt-get clean \
+    && rm -rf /var/lib/apt/lists/*
+RUN mkdir -p /opt/tesseract/bin \
+    && mkdir -p /opt/tesseract/lib \
+    && mkdir -p /opt/tesseract/share
+RUN cp /usr/bin/tesseract /opt/tesseract/bin/ \
+    && find /usr -name "libtesseract*" -type f -exec cp {} /opt/tesseract/lib/ \; 2>/dev/null || true \
+    && find /usr -name "liblept*" -type f -exec cp {} /opt/tesseract/lib/ \; 2>/dev/null || true \
+    && cp -r /usr/share/tesseract-ocr /opt/tesseract/share/
 
+# ============================================
+# Stage 3: Final Runtime Stage
+# ============================================
 # Use the base Lambda Python runtime (matching the builder Python version)
 FROM public.ecr.aws/lambda/python:3.10 AS runtime
 
-# Copy Tesseract and its dependencies from the prepared GitHub registry image
-COPY --from=tesseract /opt/tesseract/bin/tesseract /usr/bin/tesseract
-COPY --from=tesseract /opt/tesseract/lib/ /usr/lib64/
-COPY --from=tesseract /opt/tesseract/share/tesseract-ocr /usr/share/tesseract-ocr
+# Copy Tesseract and its dependencies from the fallback stage
+COPY --from=tesseract-fallback /opt/tesseract/bin/tesseract /usr/bin/tesseract
+COPY --from=tesseract-fallback /opt/tesseract/lib/ /usr/lib64/
+COPY --from=tesseract-fallback /opt/tesseract/share/tesseract-ocr /usr/share/tesseract-ocr
 
 # ============================================
 # Copy Python Dependencies
