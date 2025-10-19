@@ -14,6 +14,10 @@ class QueryRequest(BaseModel):
     query: str
     document: str = None
 
+class DocumentRequest(BaseModel):
+    document: str
+    document_type: str = "url"  # "url" or "base64"
+
 class QueryResponse(BaseModel):
     query: str
     answer: str
@@ -73,8 +77,50 @@ async def query_rag(request: QueryRequest):
         
         # Process document if provided
         if request.document:
-            # This would need to be implemented based on your document processing needs
-            pass
+            try:
+                # Handle different document types
+                if request.document.startswith('http'):
+                    # Download document from URL
+                    import requests
+                    response = requests.get(request.document)
+                    if response.status_code == 200:
+                        # Save to temporary file
+                        import tempfile
+                        with tempfile.NamedTemporaryFile(delete=False, suffix='.pdf') as tmp_file:
+                            tmp_file.write(response.content)
+                            document_path = tmp_file.name
+                    else:
+                        raise HTTPException(status_code=400, detail="Failed to download document from URL")
+                else:
+                    # Assume document is base64 encoded content
+                    import base64
+                    import tempfile
+                    try:
+                        # Decode base64 content
+                        document_content = base64.b64decode(request.document)
+                        # Save to temporary file
+                        with tempfile.NamedTemporaryFile(delete=False, suffix='.pdf') as tmp_file:
+                            tmp_file.write(document_content)
+                            document_path = tmp_file.name
+                    except Exception as e:
+                        raise HTTPException(status_code=400, detail=f"Invalid document format: {str(e)}")
+                
+                # Process document with RAG-Anything
+                print(f"Processing document: {document_path}")
+                
+                # Use RAG-Anything to process the document
+                # This will create embeddings and store them in the working directory
+                rag.insert(document_path)
+                
+                # Clean up temporary file
+                import os
+                os.unlink(document_path)
+                
+                print("Document processed successfully")
+                
+            except Exception as e:
+                print(f"Error processing document: {str(e)}")
+                raise HTTPException(status_code=500, detail=f"Document processing failed: {str(e)}")
         
         # Query the RAG system
         result = rag.query(request.query, mode="hybrid")
@@ -87,6 +133,62 @@ async def query_rag(request: QueryRequest):
         
     except Exception as e:
         raise HTTPException(status_code=500, detail=str(e))
+
+@app.post("/process-document")
+async def process_document(request: DocumentRequest):
+    """Process a document and add it to the RAG system"""
+    try:
+        rag = get_rag_instance()
+        
+        # Handle different document types
+        if request.document_type == "url":
+            # Download document from URL
+            import requests
+            response = requests.get(request.document)
+            if response.status_code == 200:
+                # Save to temporary file
+                import tempfile
+                with tempfile.NamedTemporaryFile(delete=False, suffix='.pdf') as tmp_file:
+                    tmp_file.write(response.content)
+                    document_path = tmp_file.name
+            else:
+                raise HTTPException(status_code=400, detail="Failed to download document from URL")
+        else:
+            # Assume document is base64 encoded content
+            import base64
+            import tempfile
+            try:
+                # Decode base64 content
+                document_content = base64.b64decode(request.document)
+                # Save to temporary file
+                with tempfile.NamedTemporaryFile(delete=False, suffix='.pdf') as tmp_file:
+                    tmp_file.write(document_content)
+                    document_path = tmp_file.name
+            except Exception as e:
+                raise HTTPException(status_code=400, detail=f"Invalid document format: {str(e)}")
+        
+        # Process document with RAG-Anything
+        print(f"Processing document: {document_path}")
+        
+        # Use RAG-Anything to process the document
+        # This will create embeddings and store them in the working directory
+        rag.insert(document_path)
+        
+        # Clean up temporary file
+        import os
+        os.unlink(document_path)
+        
+        print("Document processed successfully")
+        
+        return {
+            "status": "success",
+            "message": "Document processed and added to RAG system",
+            "document_type": request.document_type
+        }
+        
+    except Exception as e:
+        print(f"Error processing document: {str(e)}")
+        raise HTTPException(status_code=500, detail=f"Document processing failed: {str(e)}")
 
 @app.get("/")
 async def root():

@@ -61,8 +61,62 @@ def lambda_handler(event, context):
         
         # Process document if provided
         if document:
-            # This would need to be implemented based on your document processing needs
-            pass
+            try:
+                # Handle different document types
+                if document.startswith('http'):
+                    # Download document from URL
+                    import requests
+                    response = requests.get(document)
+                    if response.status_code == 200:
+                        # Save to temporary file
+                        import tempfile
+                        with tempfile.NamedTemporaryFile(delete=False, suffix='.pdf') as tmp_file:
+                            tmp_file.write(response.content)
+                            document_path = tmp_file.name
+                    else:
+                        return {
+                            'statusCode': 400,
+                            'body': json.dumps({'error': 'Failed to download document from URL'})
+                        }
+                else:
+                    # Assume document is base64 encoded content
+                    import base64
+                    import tempfile
+                    try:
+                        # Decode base64 content
+                        document_content = base64.b64decode(document)
+                        # Save to temporary file
+                        with tempfile.NamedTemporaryFile(delete=False, suffix='.pdf') as tmp_file:
+                            tmp_file.write(document_content)
+                            document_path = tmp_file.name
+                    except Exception as e:
+                        return {
+                            'statusCode': 400,
+                            'body': json.dumps({'error': f'Invalid document format: {str(e)}'})
+                        }
+                
+                # Process document with RAG-Anything
+                print(f"Processing document: {document_path}")
+                
+                # Use RAG-Anything to process the document
+                # This will create embeddings and store them in the working directory
+                rag.insert(document_path)
+                
+                # Clean up temporary file
+                import os
+                os.unlink(document_path)
+                
+                print("Document processed successfully")
+                
+            except Exception as e:
+                print(f"Error processing document: {str(e)}")
+                return {
+                    'statusCode': 500,
+                    'body': json.dumps({
+                        'error': 'Document processing failed',
+                        'message': str(e)
+                    })
+                }
         
         # Query the RAG system
         result = rag.query(query, mode="hybrid")
