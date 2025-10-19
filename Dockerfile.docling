@@ -1,7 +1,7 @@
 # Multi-stage Dockerfile for Docling with Tesseract OCR
 # Stage 1: Builder stage for installing dependencies and building Docling
 # Use Ubuntu base image which has better package availability
-FROM ubuntu:22.04 as builder
+FROM ubuntu:22.04 AS builder
 
 # ============================================
 # System Dependencies for Builder
@@ -24,14 +24,14 @@ RUN apt-get update && \
 # ============================================
 # Python Environment Setup
 # ============================================
-# Upgrade pip (suppress root user warning in Docker)
-RUN python3 -m pip install --upgrade pip --root-user-action=ignore
+# Upgrade pip
+RUN python3 -m pip install --upgrade pip
 
 # ============================================
 # Docling Installation (Pre-compiled packages only)
 # ============================================
 # Install Docling and dependencies using pre-compiled packages
-RUN python3 -m pip install --no-cache-dir --only-binary=all --root-user-action=ignore \
+RUN python3 -m pip install --no-cache-dir --only-binary=all \
     numpy \
     scipy \
     pandas \
@@ -66,10 +66,10 @@ RUN python3 -m pip cache purge && \
 # Stage 2: Final Runtime Stage
 # ============================================
 # Import Tesseract image from GitHub registry (created via GitHub Actions)
-FROM ghcr.io/punit87/tesseract-lambda:latest as tesseract
+FROM ghcr.io/punit87/tesseract-lambda:latest AS tesseract
 
 # Use the base Lambda Python runtime
-FROM public.ecr.aws/lambda/python:3.11 as runtime
+FROM public.ecr.aws/lambda/python:3.11 AS runtime
 
 # Copy Tesseract and its dependencies from the prepared GitHub registry image
 COPY --from=tesseract /opt/tesseract/bin/tesseract /usr/bin/tesseract
