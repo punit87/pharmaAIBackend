@@ -124,19 +124,22 @@ COPY lambda_function.py ${LAMBDA_TASK_ROOT}/lambda_function.py
 # ============================================
 # Health Check
 # ============================================
-RUN echo 'import json\n\
-from docling.document_converter import DocumentConverter\n\
-\ndef test_docling():\n\
-    try:\n\
-        converter = DocumentConverter()\n\
-        print("Docling initialized successfully")\n\
-        return True\n\
-    except Exception as e:\n\
-        print(f"Docling initialization failed: {e}")\n\
-        return False\n\
-\n\
-if __name__ == "__main__":\n\
-    test_docling()' > ${LAMBDA_TASK_ROOT}/test_docling.py
+RUN cat > ${LAMBDA_TASK_ROOT}/test_docling.py << 'EOF'
+import json
+from docling.document_converter import DocumentConverter
+
+def test_docling():
+    try:
+        converter = DocumentConverter()
+        print("Docling initialized successfully")
+        return True
+    except Exception as e:
+        print(f"Docling initialization failed: {e}")
+        return False
+
+if __name__ == "__main__":
+    test_docling()
+EOF
 
 # Run health check
 RUN python ${LAMBDA_TASK_ROOT}/test_docling.py
