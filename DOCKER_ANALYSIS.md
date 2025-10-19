@@ -4,22 +4,18 @@
 
 Based on the dependencies and configurations:
 
-### **Docling Image**
-- **Base**: `python:3.11-slim` (~150MB)
-- **Dependencies**: `docling` + system packages (~200MB)
-- **Total Estimated Size**: **~350MB**
+### **RAG-Anything Image (All Features + LibreOffice)**
+- **Base**: `libreofficedocker/libreoffice-unoserver:latest` (~400MB)
+- **Python 3.11**: Additional Python installation (~100MB)
+- **Python Dependencies**: `raganything` + all optional packages (~400MB)
+- **Additional Libraries**: Pillow + ReportLab + system packages (~200MB)
+- **Total Estimated Size**: **~1.1GB**
 
-### **RAG-Anything Image (Basic)**
-- **Base**: `python:3.11-slim` (~150MB)
-- **System Dependencies**: LibreOffice + build tools (~800MB)
-- **Python Dependencies**: `raganything` + core packages (~300MB)
-- **Total Estimated Size**: **~1.25GB**
-
-### **RAG-Anything Image (All Features)**
-- **Base**: `python:3.11-slim` (~150MB)
-- **System Dependencies**: LibreOffice + build tools (~800MB)
-- **Python Dependencies**: `raganything[all]` + Pillow + ReportLab (~500MB)
-- **Total Estimated Size**: **~1.45GB**
+### **Key Optimizations**
+- ✅ **Multi-stage build** reduces final image size
+- ✅ **Official LibreOffice image** as base (more reliable)
+- ✅ **Headless LibreOffice** (optimized for serverless)
+- ✅ **All features included** by default
 
 ## 🏗️ **Complete Requirements Analysis**
 
@@ -47,8 +43,6 @@ pip install raganything
 **All Features Configuration:**
 ```bash
 pip install 'raganything[all]'
-# OR
-pip install raganything[image,text]
 ```
 
 **Individual Optional Dependencies:**
