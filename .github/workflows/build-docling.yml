@@ -9,7 +9,7 @@ on:
 
 env:
   REGISTRY: ghcr.io
-  DOCLING_IMAGE: ${{ github.repository_owner }}/pharma-ai-backend
+  DOCLING_IMAGE: ${{ github.repository_owner }}/docling
   TESSERACT_IMAGE: ${{ github.repository_owner }}/tesseract-lambda
 
 jobs:
