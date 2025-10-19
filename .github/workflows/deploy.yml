@@ -68,8 +68,10 @@ jobs:
           
           WORKDIR /app
           
-          # Core dependencies (using pip from virtual environment)
-          RUN pip install --no-cache-dir "raganything[all]" docling
+          # Use uv for better dependency resolution and handle conflicts
+          # Install docling first, then raganything[all]
+          RUN uv pip install --no-cache docling
+          RUN uv pip install --no-cache "raganything[all]"
           
           ARG RAG_PARSER=docling
           COPY <<'SCRIPT' /app/entrypoint.sh
