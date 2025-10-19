@@ -33,19 +33,71 @@ jobs:
         username: ${{ github.actor }}
         password: ${{ secrets.GITHUB_TOKEN }}
 
-    - name: Checkout RAG-Anything repository
-      uses: actions/checkout@v4
-      with:
-        repository: HKUDS/RAG-Anything
-        ref: main
-        path: rag-anything
+    - name: Create RAG-Anything Dockerfile
+      run: |
+        mkdir -p rag-anything
+        cat > rag-anything/Dockerfile << 'EOF'
+        FROM python:3.11-slim
+        
+        # Install system dependencies
+        RUN apt-get update && apt-get install -y \
+            git \
+            curl \
+            && rm -rf /var/lib/apt/lists/*
+        
+        # Install uv
+        RUN pip install uv
+        
+        # Set working directory
+        WORKDIR /app
+        
+        # Install RAG-Anything using uv
+        RUN uv pip install rag-anything
+        
+        # Create a simple entrypoint script
+        RUN echo '#!/bin/bash\n\
+        echo "RAG-Anything is ready!"\n\
+        echo "Available commands:"\n\
+        echo "  python -c \"import rag_anything; print(\\\"RAG-Anything imported successfully\\\")\""\n\
+        echo "  python -m rag_anything --help"\n\
+        exec "$@"' > /app/entrypoint.sh && chmod +x /app/entrypoint.sh
+        
+        ENTRYPOINT ["/app/entrypoint.sh"]
+        CMD ["python", "-c", "import rag_anything; print('RAG-Anything is ready!')"]
+        EOF
 
-    - name: Checkout Docling repository
-      uses: actions/checkout@v4
-      with:
-        repository: docling-project/docling
-        ref: main
-        path: docling
+    - name: Create Docling Dockerfile
+      run: |
+        mkdir -p docling
+        cat > docling/Dockerfile << 'EOF'
+        FROM python:3.11-slim
+        
+        # Install system dependencies
+        RUN apt-get update && apt-get install -y \
+            git \
+            curl \
+            && rm -rf /var/lib/apt/lists/*
+        
+        # Install uv
+        RUN pip install uv
+        
+        # Set working directory
+        WORKDIR /app
+        
+        # Install Docling using uv
+        RUN uv pip install docling
+        
+        # Create a simple entrypoint script
+        RUN echo '#!/bin/bash\n\
+        echo "Docling is ready!"\n\
+        echo "Available commands:"\n\
+        echo "  python -c \"import docling; print(\\\"Docling imported successfully\\\")\""\n\
+        echo "  docling --help"\n\
+        exec "$@"' > /app/entrypoint.sh && chmod +x /app/entrypoint.sh
+        
+        ENTRYPOINT ["/app/entrypoint.sh"]
+        CMD ["python", "-c", "import docling; print('Docling is ready!')"]
+        EOF
 
     - name: Build and push RAG-Anything image
       uses: docker/build-push-action@v5
