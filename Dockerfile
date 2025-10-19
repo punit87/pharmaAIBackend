@@ -1,50 +1,59 @@
 # RAG-Anything with Docling parser
-# Use Python base and install Tesseract
-FROM python:3.11-slim
+# Multi-stage build for optimized caching
+FROM python:3.11-slim AS base
 
 # Build arguments
 ARG RAG_PARSER=docling
 
-# Install basic system dependencies
+# ============================================
+# System Dependencies Stage
+# ============================================
+FROM base AS system-deps
+
+# Install all system dependencies in one layer
 RUN apt-get update && apt-get install -y \
     git \
     curl \
     wget \
     build-essential \
-    && rm -rf /var/lib/apt/lists/*
-
-# Install Tesseract OCR
-RUN apt-get update && apt-get install -y \
     tesseract-ocr \
     tesseract-ocr-eng \
-    && rm -rf /var/lib/apt/lists/*
-
-# Install minimal OpenCV dependencies
-RUN apt-get update && apt-get install -y \
     libglib2.0-0 \
     libgomp1 \
-    && rm -rf /var/lib/apt/lists/*
+    && rm -rf /var/lib/apt/lists/* \
+    && apt-get clean
 
-# Install uv
-RUN pip install uv
+# ============================================
+# Python Dependencies Stage
+# ============================================
+FROM system-deps AS python-deps
+
+# Install uv first (cached layer)
+RUN pip install --no-cache-dir uv
 
 # Set working directory
 WORKDIR /app
 
-# Install RAG-Anything from PyPI with all features
-RUN pip install 'raganything[all]'
+# Install Python packages in order of stability (most stable first)
+# This allows better layer caching when requirements change
+RUN pip install --no-cache-dir pytesseract opencv-python-headless pillow
 
-# Install Tesseract Python bindings (minimal OpenCV)
-RUN pip install pytesseract opencv-python-headless pillow
+# Install RAG-Anything (large package, install separately for better caching)
+RUN pip install --no-cache-dir 'raganything[all]'
 
-# Install parser based on build argument
+# Install parser based on build argument (conditional layer)
 RUN if [ "$RAG_PARSER" = "docling" ]; then \
-        pip install docling; \
+        pip install --no-cache-dir docling; \
     else \
-        pip install mineru; \
+        pip install --no-cache-dir mineru; \
     fi
 
-# Create a simple entrypoint script
+# ============================================
+# Final Runtime Stage
+# ============================================
+FROM python-deps AS runtime
+
+# Create entrypoint script (cached layer)
 RUN echo '#!/bin/bash\n\
 echo "RAG-Anything container ready!"\n\
 echo "Parser: ${RAG_PARSER}"\n\
@@ -58,6 +67,14 @@ else\n\
   python -c "import mineru; print(\"✅ Mineru OK\")"\n\
 fi\n\
 exec "$@"' > /app/entrypoint.sh && chmod +x /app/entrypoint.sh
+
+# Set environment variables for better performance
+ENV PYTHONUNBUFFERED=1 \
+    PYTHONDONTWRITEBYTECODE=1 \
+    TESSDATA_PREFIX=/usr/share/tesseract-ocr/5/tessdata
+
+# Expose port for container orchestration
+EXPOSE 8080
 
 ENTRYPOINT ["/app/entrypoint.sh"]
 CMD ["python", "-c", "import raganything; print('RAG-Anything is ready!')"]

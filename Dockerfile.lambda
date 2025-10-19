@@ -1,29 +1,50 @@
 # RAG-Anything optimized for AWS Lambda
-FROM public.ecr.aws/lambda/python:3.11
+# Multi-stage build with optimized layer caching
+FROM public.ecr.aws/lambda/python:3.11 AS base
 
 # Build arguments
 ARG RAG_PARSER=docling
 
-# Install Tesseract OCR and dependencies
+# ============================================
+# System Dependencies Stage
+# ============================================
+FROM base AS system-deps
+
+# Install Tesseract OCR and dependencies in one layer
 RUN yum update -y && \
     yum install -y tesseract tesseract-langpack-eng && \
     yum clean all
 
-# Install Python packages
-RUN pip install 'raganything[all]'
-RUN pip install pytesseract opencv-python-headless pillow
+# ============================================
+# Python Dependencies Stage
+# ============================================
+FROM system-deps AS python-deps
 
-# Install parser based on build argument
+# Install Python packages in order of stability for better layer caching
+# Core image processing libraries (stable)
+RUN pip install --no-cache-dir pytesseract opencv-python-headless pillow
+
+# RAG-Anything (large package, separate layer)
+RUN pip install --no-cache-dir 'raganything[all]'
+
+# Parser based on build argument (conditional layer)
 RUN if [ "$RAG_PARSER" = "docling" ]; then \
-        pip install docling; \
+        pip install --no-cache-dir docling; \
     else \
-        pip install mineru; \
+        pip install --no-cache-dir mineru; \
     fi
 
-# Set environment variables
-ENV TESSDATA_PREFIX="/usr/share/tesseract-ocr/5/tessdata"
+# ============================================
+# Final Runtime Stage
+# ============================================
+FROM python-deps AS runtime
 
-# Copy Lambda handler
+# Set environment variables
+ENV TESSDATA_PREFIX="/usr/share/tesseract-ocr/5/tessdata" \
+    PYTHONUNBUFFERED=1 \
+    PYTHONDONTWRITEBYTECODE=1
+
+# Copy Lambda handler (changes frequently, so last)
 COPY lambda_handler.py ${LAMBDA_TASK_ROOT}/
 
 # Set Lambda handler
