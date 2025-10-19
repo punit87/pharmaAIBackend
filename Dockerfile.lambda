@@ -7,8 +7,14 @@ FROM public.ecr.aws/lambda/python:3.11
 # ============================================
 # Install Tesseract OCR and dependencies
 RUN yum update -y && \
-    yum install -y tesseract tesseract-langpack-eng && \
+    yum install -y tesseract curl && \
     yum clean all
+
+# Download English language data if not available
+RUN mkdir -p /usr/share/tesseract-ocr/5/tessdata && \
+    if [ ! -f /usr/share/tesseract-ocr/5/tessdata/eng.traineddata ]; then \
+        curl -L https://github.com/tesseract-ocr/tessdata/raw/main/eng.traineddata -o /usr/share/tesseract-ocr/5/tessdata/eng.traineddata; \
+    fi
 
 # ============================================
 # Python Dependencies
