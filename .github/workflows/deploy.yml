@@ -1,17 +1,19 @@
-name: 🚀 Deploy RAG-Anything Docker Image
+name: 🚀 Deploy RAG-Anything for AWS Fargate/ECS
 on:
   push:
     branches: [main, develop]
   pull_request:
     branches: [main]
   workflow_dispatch:
+
 env:
   REGISTRY: ghcr.io
   IMAGE_NAME: punit87/rag-anything
   PARSER: docling
+
 jobs:
   build-rag-anything:
-    name: 🛠️ Build & Push RAG-Anything (Docling)
+    name: 🛠️ Build Optimized RAG-Anything Image
     runs-on: ubuntu-latest
     permissions:
       contents: read
@@ -19,86 +21,22 @@ jobs:
     steps:
       - name: 🧩 Checkout repository
         uses: actions/checkout@v4
+        
       - name: ⚙️ Set up Docker Buildx
         uses: docker/setup-buildx-action@v3
+        
       - name: 🔐 Log in to GHCR
         uses: docker/login-action@v3
         with:
           registry: ${{ env.REGISTRY }}
           username: ${{ github.actor }}
           password: ${{ secrets.GITHUB_TOKEN }}
-      - name: 🧱 Create Dockerfile for RAG-Anything (Docling)
-        run: |
-          mkdir -p rag-anything
-          cat > rag-anything/Dockerfile << 'EOF'
-          # Use jitesoft/tesseract-ocr Ubuntu-based image (supports PyTorch wheels)
-          # Available tags: 5-24.04, 5-22.04, 5-20.04 for Ubuntu versions
-          FROM jitesoft/tesseract-ocr:5-24.04
           
-          # Switch to root user to install packages
-          USER root
-          
-          # Install Python and build dependencies using apt (Ubuntu)
-          RUN apt-get update && apt-get install -y --no-install-recommends \
-              python3 \
-              python3-pip \
-              python3-venv \
-              git \
-              build-essential \
-              && rm -rf /var/lib/apt/lists/*
-          
-          # Create home directory for tesseract user
-          RUN mkdir -p /home/tesseract && chown tesseract:tesseract /home/tesseract
-          
-          # Switch back to tesseract user for security
-          USER tesseract
-          
-          # Set up Python environment
-          ENV PYTHONUNBUFFERED=1
-          ENV VIRTUAL_ENV=/home/tesseract/venv
-          ENV PATH="$VIRTUAL_ENV/bin:${PATH}"
-          
-          # Create virtual environment
-          RUN python3 -m venv $VIRTUAL_ENV
-          
-          # Upgrade pip and install uv for faster package installation
-          RUN pip install --no-cache-dir --upgrade pip uv
-          
-          WORKDIR /app
-          
-          # Use uv for fast dependency installation
-          # Install docling first, then raganything[all]
-          RUN uv pip install --no-cache docling
-          RUN uv pip install --no-cache "raganything[all]"
-          
-          ARG RAG_PARSER=docling
-          COPY <<'SCRIPT' /app/entrypoint.sh
-          #!/bin/bash
-          echo "🚀 RAG-Anything container ready!"
-          echo "Parser: ${RAG_PARSER}"
-          
-          # Verify Tesseract installation
-          tesseract --version
-          
-          # Verify Python packages
-          python3 -c "import raganything; print('✅ RAG-Anything OK')"
-          python3 -c "import docling; print('✅ Docling OK')"
-          
-          exec "$@"
-          SCRIPT
-          
-          USER root
-          RUN chmod +x /app/entrypoint.sh
-          USER tesseract
-          
-          ENTRYPOINT ["/app/entrypoint.sh"]
-          CMD ["python3", "-c", "import raganything; print('RAG-Anything is ready!')"]
-          EOF
-      - name: 🐳 Build and Push Docker Image
+      - name: 🐳 Build and Push Optimized Docker Image
         uses: docker/build-push-action@v5
         with:
-          context: ./rag-anything
-          file: ./rag-anything/Dockerfile
+          context: .
+          file: ./Dockerfile
           platforms: linux/amd64,linux/arm64
           push: true
           build-args: |
@@ -109,6 +47,7 @@ jobs:
             ${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}:${{ github.sha }}
           cache-from: type=gha
           cache-to: type=gha,mode=max
+          
   summary:
     name: 🧾 Deployment Summary
     runs-on: ubuntu-latest
@@ -118,24 +57,33 @@ jobs:
       - name: 🪶 Write Deployment Summary
         run: |
           {
-            echo "## 🚀 RAG-Anything Docker Image Deployed Successfully!"
+            echo "## 🚀 RAG-Anything Optimized for AWS Fargate/ECS"
             echo ""
-            echo "### 🧩 Tags:"
-            echo "- \`${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}:latest\`"
-            echo "- \`${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}:${{ github.ref_name }}\`"
-            echo "- \`${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}:${{ github.sha }}\`"
+            echo "### 🎯 Image Built Successfully"
+            echo "- **Registry**: \`${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}\`"
+            echo "- **Tags**: \`latest\`, \`${{ github.ref_name }}\`, \`${{ github.sha }}\`"
+            echo "- **Architectures**: amd64, arm64"
             echo ""
-            echo "### 🧰 Features"
-            echo "- ✅ RAG-Anything with all optional dependencies"
-            echo "- ✅ Docling parser included"
-            echo "- ✅ **Pre-installed Tesseract OCR via jitesoft/tesseract-ocr**"
-            echo "- ✅ Multi-architecture (amd64, arm64)"
-            echo "- ✅ Python virtual environment for clean package management"
-            echo "- ✅ Ubuntu 24.04 base for ML library compatibility"
+            echo "### ✨ Optimizations"
+            echo "- ✅ Multi-stage build for smaller image size"
+            echo "- ✅ CPU-only PyTorch (smaller, faster)"
+            echo "- ✅ Pre-installed Tesseract OCR via jitesoft"
+            echo "- ✅ FastAPI server with health checks"
+            echo "- ✅ Production-ready logging"
             echo ""
-            echo "### 🧪 Quick Usage"
+            echo "### 📊 Recommended ECS Configuration"
+            echo "\`\`\`"
+            echo "CPU: 2048-4096 (2-4 vCPU)"
+            echo "Memory: 4096-8192 MB (4-8 GB)"
+            echo "\`\`\`"
+            echo ""
+            echo "### 🚀 Quick Deploy"
             echo "\`\`\`bash"
-            echo "docker pull ${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}:latest"
-            echo "docker run --rm ${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}:latest"
+            echo "# Set environment variables"
+            echo "export AWS_ACCOUNT_ID=123456789012"
+            echo "export AWS_REGION=us-east-1"
+            echo ""
+            echo "# Run deployment script"
+            echo "./scripts/deploy-to-ecs.sh"
             echo "\`\`\`"
           } >> $GITHUB_STEP_SUMMARY
