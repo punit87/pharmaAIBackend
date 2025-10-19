@@ -16,6 +16,9 @@ jobs:
   # Main job that handles cleanup, building, and pushing Docker images
   build-and-push:
     runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      packages: write
     
     steps:
     - name: Checkout code
