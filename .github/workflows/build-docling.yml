@@ -1,6 +1,6 @@
-# Build Docling with Tesseract OCR for document processing
-# This workflow builds and pushes Docker images to GitHub Container Registry
-name: Build Docling with Tesseract
+# Build Tesseract and Docling Docker images for document processing
+# This workflow builds and pushes both images to GitHub Container Registry
+name: Build Tesseract and Docling Images
 
 on:
   push:
@@ -10,10 +10,11 @@ on:
 env:
   REGISTRY: ghcr.io
   DOCLING_IMAGE: ${{ github.repository_owner }}/docling
+  TESSERACT_IMAGE: ${{ github.repository_owner }}/tesseract-lambda
 
 jobs:
-  # Main job that builds Docling image (pulls Tesseract from registry)
-  build-docling:
+  # Main job that builds both Tesseract and Docling images
+  build-images:
     runs-on: ubuntu-latest
     permissions:
       contents: read
@@ -75,6 +76,14 @@ jobs:
         username: ${{ github.actor }}
         password: ${{ secrets.GITHUB_TOKEN }}
       
+    - name: Build and push Tesseract image
+      run: |
+        echo "🔨 Building Tesseract image..."
+        docker build -f Dockerfile.tesseract -t ${{ env.REGISTRY }}/${{ env.TESSERACT_IMAGE }}:latest .
+        
+        echo "📤 Pushing Tesseract image to GitHub Container Registry..."
+        docker push ${{ env.REGISTRY }}/${{ env.TESSERACT_IMAGE }}:latest
+        
     - name: Build and push Docling image
       run: |
         echo "🔨 Building Docling image with cleanup optimizations..."

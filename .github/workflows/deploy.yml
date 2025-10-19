@@ -49,9 +49,14 @@ jobs:
           ${{ env.REGISTRY }}/${{ env.TESSERACT_IMAGE }}:latest
           ${{ env.REGISTRY }}/${{ env.TESSERACT_IMAGE }}:${{ github.sha }}
           ${{ env.REGISTRY }}/${{ env.TESSERACT_IMAGE }}:${{ github.ref_name }}
-          ${{ env.REGISTRY }}/${{ env.TESSERACT_IMAGE }}:${{ github.event.inputs.tag }}
         cache-from: type=gha
         cache-to: type=gha,mode=max
+
+    - name: Tag with custom input (if provided)
+      if: github.event.inputs.tag != ''
+      run: |
+        docker tag ${{ env.REGISTRY }}/${{ env.TESSERACT_IMAGE }}:latest ${{ env.REGISTRY }}/${{ env.TESSERACT_IMAGE }}:${{ github.event.inputs.tag }}
+        docker push ${{ env.REGISTRY }}/${{ env.TESSERACT_IMAGE }}:${{ github.event.inputs.tag }}
 
     - name: Summary
       run: |
