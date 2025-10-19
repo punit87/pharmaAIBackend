@@ -24,19 +24,20 @@ jobs:
     - name: Checkout code
       uses: actions/checkout@v4
       
-    - name: Cleanup workspace before build
+    - name: Aggressive workspace cleanup before build
       run: |
-        echo "🧹 Cleaning up workspace before Docling build..."
+        echo "🧹 Starting aggressive workspace cleanup..."
         
-        # Clean up temporary files and caches
+        # Clean up system files
         sudo rm -rf /tmp/*
         sudo rm -rf /var/tmp/*
-        sudo rm -rf /var/cache/apt/archives/*
+        sudo rm -rf /var/cache/*
         sudo rm -rf /var/log/*
         sudo find /var/log -type f -name "*.log" -delete
         
-        # Clean up Docker system
+        # Clean up Docker system aggressively
         docker system prune -af --volumes
+        docker builder prune -af
         
         # Clean up any existing build artifacts
         rm -rf .dockerignore
@@ -67,7 +68,7 @@ jobs:
         df -h
         du -sh . || true
         
-        echo "✅ Workspace cleanup completed!"
+        echo "✅ Aggressive workspace cleanup completed!"
         
     - name: Log in to GitHub Container Registry
       uses: docker/login-action@v3

@@ -41,16 +41,31 @@ RUN python3 -m pip install --no-cache-dir --only-binary=all \
     pytesseract \
     boto3
 
-# ============================================
-# Cleanup and Space Optimization
-# ============================================
-# Remove unnecessary files to reduce image size
-RUN python3 -m pip cache purge && \
+# Immediate cleanup after package installation
+RUN echo "Cleaning up after package installation..." && \
+    python3 -m pip cache purge && \
     rm -rf /root/.cache/pip && \
     rm -rf /tmp/* && \
+    apt-get autoremove -y && \
+    apt-get autoclean && \
+    echo "Disk usage after package install:" && \
+    df -h
+
+# ============================================
+# Aggressive Cleanup and Space Optimization
+# ============================================
+# Remove unnecessary files to reduce image size and free space
+RUN echo "Starting aggressive cleanup..." && \
+    python3 -m pip cache purge && \
+    rm -rf /root/.cache/* && \
+    rm -rf /tmp/* && \
     rm -rf /var/tmp/* && \
-    rm -rf /var/cache/apt/archives/* && \
+    rm -rf /var/cache/* && \
     rm -rf /var/log/* && \
+    rm -rf /usr/share/doc/* && \
+    rm -rf /usr/share/man/* && \
+    rm -rf /usr/share/locale/* && \
+    rm -rf /usr/share/info/* && \
     find /var/log -type f -name "*.log" -delete && \
     find /usr -name "*.pyc" -delete && \
     find /usr -name "__pycache__" -type d -exec rm -rf {} + 2>/dev/null || true && \
@@ -60,7 +75,12 @@ RUN python3 -m pip cache purge && \
     find /usr -name "*_test.py" -type f -delete 2>/dev/null || true && \
     find /usr -name "tests" -type d -exec rm -rf {} + 2>/dev/null || true && \
     find /usr -name "*.dist-info" -type d -exec rm -rf {} + 2>/dev/null || true && \
-    find /usr -name "*.egg-info" -type d -exec rm -rf {} + 2>/dev/null || true
+    find /usr -name "*.egg-info" -type d -exec rm -rf {} + 2>/dev/null || true && \
+    find /usr -name "*.so" -size +10M -delete 2>/dev/null || true && \
+    apt-get autoremove -y && \
+    apt-get autoclean && \
+    echo "Cleanup completed. Disk usage:" && \
+    df -h
 
 # ============================================
 # Stage 2: Final Runtime Stage
