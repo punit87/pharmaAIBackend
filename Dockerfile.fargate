@@ -1,0 +1,45 @@
+# RAG-Anything optimized for AWS Fargate
+FROM python:3.11-slim
+
+# Build arguments
+ARG RAG_PARSER=docling
+
+# Install system dependencies
+RUN apt-get update && apt-get install -y \
+    git \
+    curl \
+    wget \
+    build-essential \
+    && rm -rf /var/lib/apt/lists/*
+
+# Install uv
+RUN pip install uv
+
+# Set working directory
+WORKDIR /app
+
+# Install RAG-Anything from PyPI with all features
+RUN pip install 'raganything[all]' --system
+
+# Install parser based on build argument
+RUN if [ "$RAG_PARSER" = "docling" ]; then \
+        pip install docling --system; \
+    else \
+        pip install mineru --system; \
+    fi
+
+# Install FastAPI for HTTP server
+RUN pip install fastapi uvicorn --system
+
+# Copy FastAPI application
+COPY fargate_app.py /app/main.py
+
+# Expose port for Fargate
+EXPOSE 8080
+
+# Health check
+HEALTHCHECK --interval=30s --timeout=10s --start-period=60s --retries=3 \
+    CMD curl -f http://localhost:8080/health || exit 1
+
+# Start FastAPI server
+CMD ["uvicorn", "main:app", "--host", "0.0.0.0", "--port", "8080"]

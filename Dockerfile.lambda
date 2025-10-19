@@ -1,0 +1,29 @@
+# RAG-Anything optimized for AWS Lambda
+FROM public.ecr.aws/lambda/python:3.11
+
+# Build arguments
+ARG RAG_PARSER=docling
+
+# Install system dependencies
+RUN yum update -y && \
+    yum install -y git curl wget gcc gcc-c++ make && \
+    yum clean all
+
+# Install uv
+RUN pip install uv
+
+# Install RAG-Anything from PyPI with all features
+RUN pip install 'raganything[all]' --system
+
+# Install parser based on build argument
+RUN if [ "$RAG_PARSER" = "docling" ]; then \
+        pip install docling --system; \
+    else \
+        pip install mineru --system; \
+    fi
+
+# Copy Lambda handler
+COPY lambda_handler.py ${LAMBDA_TASK_ROOT}/
+
+# Set Lambda handler
+CMD ["lambda_handler.lambda_handler"]
