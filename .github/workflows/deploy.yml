@@ -1,4 +1,4 @@
-name: 🚀 Deploy RAG-Anything for AWS Fargate/ECS
+name: 🚀 Build RAG-Anything Container Images for Fargate/ECS
 on:
   push:
     branches: [main, develop]
@@ -13,7 +13,7 @@ env:
 
 jobs:
   build-rag-anything:
-    name: 🛠️ Build Optimized RAG-Anything Image
+    name: 🛠️ Build RAG-Anything Container Image (Fargate/ECS)
     runs-on: ubuntu-latest
     permissions:
       contents: read
@@ -32,7 +32,7 @@ jobs:
           username: ${{ github.actor }}
           password: ${{ secrets.GITHUB_TOKEN }}
           
-      - name: 🐳 Build and Push Optimized Docker Image
+      - name: 🐳 Build and Push Container Image (Fargate/ECS)
         uses: docker/build-push-action@v5
         with:
           context: .
@@ -57,33 +57,42 @@ jobs:
       - name: 🪶 Write Deployment Summary
         run: |
           {
-            echo "## 🚀 RAG-Anything Optimized for AWS Fargate/ECS"
+            echo "## 🚀 RAG-Anything Container Images Built Successfully"
             echo ""
-            echo "### 🎯 Image Built Successfully"
+            echo "### 🎯 Container Images Built"
             echo "- **Registry**: \`${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}\`"
             echo "- **Tags**: \`latest\`, \`${{ github.ref_name }}\`, \`${{ github.sha }}\`"
             echo "- **Architectures**: amd64, arm64"
+            echo "- **Platform**: AWS Fargate/ECS (Container Images)"
             echo ""
             echo "### ✨ Optimizations"
-            echo "- ✅ Multi-stage build for smaller image size"
-            echo "- ✅ CPU-only PyTorch (smaller, faster)"
-            echo "- ✅ Pre-installed Tesseract OCR via jitesoft"
+            echo "- ✅ Multi-stage build with layer caching"
+            echo "- ✅ Tesseract OCR pre-installed"
             echo "- ✅ FastAPI server with health checks"
             echo "- ✅ Production-ready logging"
+            echo "- ✅ Optimized for Fargate/ECS deployment"
             echo ""
             echo "### 📊 Recommended ECS Configuration"
             echo "\`\`\`"
             echo "CPU: 2048-4096 (2-4 vCPU)"
             echo "Memory: 4096-8192 MB (4-8 GB)"
+            echo "Platform: Fargate"
             echo "\`\`\`"
             echo ""
-            echo "### 🚀 Quick Deploy"
-            echo "\`\`\`bash"
-            echo "# Set environment variables"
-            echo "export AWS_ACCOUNT_ID=123456789012"
-            echo "export AWS_REGION=us-east-1"
+            echo "### 🚀 Deployment Options"
             echo ""
-            echo "# Run deployment script"
-            echo "./scripts/deploy-to-ecs.sh"
-            echo "\`\`\`"
+            echo "#### **Fargate/ECS Deployment:**"
+            echo "- Use the built container images above"
+            echo "- Deploy via ECS Task Definition"
+            echo "- Configure load balancer and auto-scaling"
+            echo ""
+            echo "#### **Lambda Deployment:**"
+            echo "- Use MCP API to deploy Lambda functions"
+            echo "- Lambda Dockerfile available: \`Dockerfile.lambda\`"
+            echo "- Deploy via AWS CLI or MCP tools"
+            echo ""
+            echo "### 📝 Next Steps"
+            echo "1. **Fargate**: Use container images for ECS deployment"
+            echo "2. **Lambda**: Use MCP API to deploy Lambda functions"
+            echo "3. **S3 Integration**: Configure S3 triggers for document processing"
           } >> $GITHUB_STEP_SUMMARY
