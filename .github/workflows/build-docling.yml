@@ -26,60 +26,12 @@ jobs:
     - name: Checkout code
       uses: actions/checkout@v4
       
-    - name: Ultra-aggressive workspace cleanup before Tesseract build
+    - name: Basic cleanup before Tesseract build
       run: |
-        echo "🧹 Starting ULTRA-AGGRESSIVE workspace cleanup for Tesseract..."
-        
-        # Clean up system files aggressively
-        sudo rm -rf /tmp/* 2>/dev/null || true
-        sudo rm -rf /var/tmp/* 2>/dev/null || true
-        sudo rm -rf /var/cache/* 2>/dev/null || true
-        sudo rm -rf /var/log/* 2>/dev/null || true
-        sudo find /var/log -type f -name "*.log" -delete 2>/dev/null || true
-        
-        # Clean up Docker system ULTRA aggressively
-        docker system prune -af --volumes 2>/dev/null || true
-        docker builder prune -af 2>/dev/null || true
-        docker container prune -f 2>/dev/null || true
-        docker image prune -af 2>/dev/null || true
-        docker volume prune -f 2>/dev/null || true
-        docker network prune -f 2>/dev/null || true
-        
-        # Clean up any existing build artifacts
-        rm -rf .dockerignore 2>/dev/null || true
-        rm -rf *.log 2>/dev/null || true
-        rm -rf build/ 2>/dev/null || true
-        rm -rf dist/ 2>/dev/null || true
-        rm -rf node_modules/ 2>/dev/null || true
-        rm -rf .pytest_cache/ 2>/dev/null || true
-        rm -rf __pycache__/ 2>/dev/null || true
-        rm -rf .coverage 2>/dev/null || true
-        rm -rf .mypy_cache/ 2>/dev/null || true
-        
-        # Clean up Python cache files
-        find . -name "*.pyc" -delete 2>/dev/null || true
-        find . -name "__pycache__" -type d -exec rm -rf {} + 2>/dev/null || true
-        find . -name "*.pyo" -delete 2>/dev/null || true
-        find . -name "*.pyd" -delete 2>/dev/null || true
-        find . -name "*.egg-info" -type d -exec rm -rf {} + 2>/dev/null || true
-        find . -name "*.dist-info" -type d -exec rm -rf {} + 2>/dev/null || true
-        
-        # Clean up any test files
-        find . -name "test_*" -type f -delete 2>/dev/null || true
-        find . -name "*_test.py" -type f -delete 2>/dev/null || true
-        find . -name "tests" -type d -exec rm -rf {} + 2>/dev/null || true
-        
-        # Clean up large files that might be taking space
-        find . -name "*.so" -size +5M -delete 2>/dev/null || true
-        find . -name "*.dylib" -size +5M -delete 2>/dev/null || true
-        find . -name "*.dll" -size +5M -delete 2>/dev/null || true
-        
-        # Show disk usage before build
+        echo "🧹 Basic cleanup before Tesseract build..."
+        docker system prune -f
         echo "📊 Disk usage before Tesseract build:"
         df -h
-        du -sh . || true
-        
-        echo "✅ ULTRA-AGGRESSIVE workspace cleanup completed!"
         
     - name: Log in to GitHub Container Registry
       uses: docker/login-action@v3
@@ -130,60 +82,12 @@ jobs:
     - name: Checkout code
       uses: actions/checkout@v4
       
-    - name: Ultra-aggressive workspace cleanup before Docling build
+    - name: Basic cleanup before Docling build
       run: |
-        echo "🧹 Starting ULTRA-AGGRESSIVE workspace cleanup for Docling..."
-        
-        # Clean up system files aggressively
-        sudo rm -rf /tmp/* 2>/dev/null || true
-        sudo rm -rf /var/tmp/* 2>/dev/null || true
-        sudo rm -rf /var/cache/* 2>/dev/null || true
-        sudo rm -rf /var/log/* 2>/dev/null || true
-        sudo find /var/log -type f -name "*.log" -delete 2>/dev/null || true
-        
-        # Clean up Docker system ULTRA aggressively
-        docker system prune -af --volumes 2>/dev/null || true
-        docker builder prune -af 2>/dev/null || true
-        docker container prune -f 2>/dev/null || true
-        docker image prune -af 2>/dev/null || true
-        docker volume prune -f 2>/dev/null || true
-        docker network prune -f 2>/dev/null || true
-        
-        # Clean up any existing build artifacts
-        rm -rf .dockerignore 2>/dev/null || true
-        rm -rf *.log 2>/dev/null || true
-        rm -rf build/ 2>/dev/null || true
-        rm -rf dist/ 2>/dev/null || true
-        rm -rf node_modules/ 2>/dev/null || true
-        rm -rf .pytest_cache/ 2>/dev/null || true
-        rm -rf __pycache__/ 2>/dev/null || true
-        rm -rf .coverage 2>/dev/null || true
-        rm -rf .mypy_cache/ 2>/dev/null || true
-        
-        # Clean up Python cache files
-        find . -name "*.pyc" -delete 2>/dev/null || true
-        find . -name "__pycache__" -type d -exec rm -rf {} + 2>/dev/null || true
-        find . -name "*.pyo" -delete 2>/dev/null || true
-        find . -name "*.pyd" -delete 2>/dev/null || true
-        find . -name "*.egg-info" -type d -exec rm -rf {} + 2>/dev/null || true
-        find . -name "*.dist-info" -type d -exec rm -rf {} + 2>/dev/null || true
-        
-        # Clean up any test files
-        find . -name "test_*" -type f -delete 2>/dev/null || true
-        find . -name "*_test.py" -type f -delete 2>/dev/null || true
-        find . -name "tests" -type d -exec rm -rf {} + 2>/dev/null || true
-        
-        # Clean up large files that might be taking space
-        find . -name "*.so" -size +5M -delete 2>/dev/null || true
-        find . -name "*.dylib" -size +5M -delete 2>/dev/null || true
-        find . -name "*.dll" -size +5M -delete 2>/dev/null || true
-        
-        # Show disk usage before build
+        echo "🧹 Basic cleanup before Docling build..."
+        docker system prune -f
         echo "📊 Disk usage before Docling build:"
         df -h
-        du -sh . || true
-        
-        echo "✅ ULTRA-AGGRESSIVE workspace cleanup completed!"
         
     - name: Log in to GitHub Container Registry
       uses: docker/login-action@v3

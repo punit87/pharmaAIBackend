@@ -1,205 +1,45 @@
-# Multi-stage Dockerfile for Docling with Tesseract OCR
-# Stage 1: Builder stage for installing dependencies and building Docling
-# Use Ubuntu base image which has better package availability
-FROM ubuntu:22.04 AS builder
-
 # ============================================
-# System Dependencies for Builder
+# Docling Dockerfile - Ultra-minimal approach
 # ============================================
-RUN apt-get update && \
-    apt-get install -y \
-    poppler-utils \
-    python3 \
-    python3-pip \
-    curl \
-    wget \
-    && apt-get clean \
-    && rm -rf /var/lib/apt/lists/* \
-    && rm -rf /tmp/* \
-    && rm -rf /var/tmp/* \
-    && rm -rf /var/cache/apt/archives/* \
-    && rm -rf /var/log/* \
-    && find /var/log -type f -name "*.log" -delete
-
-# ============================================
-# Python Environment Setup
-# ============================================
-# Upgrade pip
-RUN python3 -m pip install --upgrade pip
-
-# ============================================
-# Docling Installation (Pre-compiled packages only)
-# ============================================
-# Install Docling and dependencies using pre-compiled packages
-RUN python3 -m pip install --no-cache-dir --only-binary=all \
-    numpy \
-    scipy \
-    pandas \
-    pillow \
-    opencv-python-headless \
-    docling \
-    pytesseract \
-    boto3 && \
-    echo "Cleaning up pip cache immediately..." && \
-    python3 -m pip cache purge && \
-    rm -rf /root/.cache/pip && \
-    echo "Package installation completed"
-
-# Immediate cleanup after package installation
-RUN echo "Cleaning up after package installation..." && \
-    python3 -m pip cache purge && \
-    rm -rf /root/.cache/pip && \
-    rm -rf /tmp/* && \
-    apt-get autoremove -y && \
-    apt-get autoclean && \
-    echo "Disk usage after package install:" && \
-    df -h
-
-# ============================================
-# Aggressive Cleanup and Space Optimization
-# ============================================
-# Remove unnecessary files to reduce image size and free space
-RUN echo "Starting aggressive cleanup..." && \
-    python3 -m pip cache purge && \
-    rm -rf /root/.cache/* && \
-    rm -rf /tmp/* && \
-    rm -rf /var/tmp/* && \
-    rm -rf /var/cache/* && \
-    rm -rf /var/log/* && \
-    rm -rf /usr/share/doc/* && \
-    rm -rf /usr/share/man/* && \
-    rm -rf /usr/share/locale/* && \
-    rm -rf /usr/share/info/* && \
-    find /var/log -type f -name "*.log" -delete && \
-    find /usr -name "*.pyc" -delete && \
-    find /usr -name "__pycache__" -type d -exec rm -rf {} + 2>/dev/null || true && \
-    find /usr -name "*.pyo" -delete && \
-    find /usr -name "*.pyd" -delete && \
-    find /usr -name "test_*" -type f -delete 2>/dev/null || true && \
-    find /usr -name "*_test.py" -type f -delete 2>/dev/null || true && \
-    find /usr -name "tests" -type d -exec rm -rf {} + 2>/dev/null || true && \
-    find /usr -name "*.dist-info" -type d -exec rm -rf {} + 2>/dev/null || true && \
-    find /usr -name "*.egg-info" -type d -exec rm -rf {} + 2>/dev/null || true && \
-    find /usr -name "*.so" -size +10M -delete 2>/dev/null || true && \
-    apt-get autoremove -y && \
-    apt-get autoclean && \
-    echo "Cleanup completed. Disk usage:" && \
-    df -h
-
-# ============================================
-# Stage 2: Tesseract Stage (Fallback)
-# ============================================
-# Build Tesseract locally as fallback if registry image is not available
-FROM ubuntu:22.04 AS tesseract-fallback
-ENV DEBIAN_FRONTEND=noninteractive
-RUN apt-get update && \
-    apt-get install -y \
-    tesseract-ocr \
-    tesseract-ocr-eng \
-    libtesseract-dev \
-    libleptonica-dev \
-    && apt-get clean \
-    && rm -rf /var/lib/apt/lists/*
-RUN mkdir -p /opt/tesseract/bin \
-    && mkdir -p /opt/tesseract/lib \
-    && mkdir -p /opt/tesseract/share
-RUN cp /usr/bin/tesseract /opt/tesseract/bin/ \
-    && find /usr -name "libtesseract*" -type f -exec cp {} /opt/tesseract/lib/ \; 2>/dev/null || true \
-    && find /usr -name "liblept*" -type f -exec cp {} /opt/tesseract/lib/ \; 2>/dev/null || true \
-    && cp -r /usr/share/tesseract-ocr /opt/tesseract/share/
-
-# ============================================
-# Stage 3: Final Runtime Stage
-# ============================================
-# Use the base Lambda Python runtime (matching the builder Python version)
+# Use the smallest possible base image to minimize space usage
 FROM public.ecr.aws/lambda/python:3.10 AS runtime
 
-# Copy Tesseract and its dependencies from the fallback stage
-COPY --from=tesseract-fallback /opt/tesseract/bin/tesseract /usr/bin/tesseract
-COPY --from=tesseract-fallback /opt/tesseract/lib/ /usr/lib64/
-COPY --from=tesseract-fallback /opt/tesseract/share/tesseract-ocr /usr/share/tesseract-ocr
-
-# ============================================
-# Copy Python Dependencies
-# ============================================
-# Copy installed packages from builder stage
-# Now using matching Python 3.10 versions
-COPY --from=builder /usr/local/lib/python3.10/dist-packages /var/lang/lib/python3.10/site-packages
-COPY --from=builder /usr/local/bin /var/lang/bin
-
-# ============================================
-# Verify Package Installation
-# ============================================
-# Check that packages are properly copied and accessible
-RUN echo "Checking Python packages..." && \
-    python3 -c "import sys; print('Python version:', sys.version)" && \
-    python3 -c "import sys; print('Python path:', sys.path)" && \
-    ls -la /var/lang/lib/python3.10/site-packages/ | head -10 && \
-    echo "Checking for docling..." && \
-    ls -la /var/lang/lib/python3.10/site-packages/ | grep -i docling || echo "Docling not found in site-packages" && \
-    echo "Checking for numpy..." && \
-    ls -la /var/lang/lib/python3.10/site-packages/ | grep -i numpy || echo "NumPy not found in site-packages" && \
-    echo "Checking for pytesseract..." && \
-    ls -la /var/lang/lib/python3.10/site-packages/ | grep -i tesseract || echo "Pytesseract not found in site-packages"
-
-# ============================================
-# Final Cleanup and Space Optimization
-# ============================================
-# Remove unnecessary files from the final image
-RUN rm -rf /tmp/* && \
-    rm -rf /var/tmp/* && \
-    rm -rf /var/cache/* && \
-    rm -rf /var/log/* && \
-    find /var/log -type f -name "*.log" -delete && \
-    find /var/lang -name "*.pyc" -delete && \
-    find /var/lang -name "__pycache__" -type d -exec rm -rf {} + 2>/dev/null || true && \
-    find /var/lang -name "*.pyo" -delete && \
-    find /var/lang -name "*.pyd" -delete && \
-    find /var/lang -name "test_*" -type f -delete 2>/dev/null || true && \
-    find /var/lang -name "*_test.py" -type f -delete 2>/dev/null || true && \
-    find /var/lang -name "tests" -type d -exec rm -rf {} + 2>/dev/null || true && \
-    find /var/lang -name "*.dist-info" -type d -exec rm -rf {} + 2>/dev/null || true && \
-    find /var/lang -name "*.egg-info" -type d -exec rm -rf {} + 2>/dev/null || true && \
-    find /usr -name "*.pyc" -delete && \
-    find /usr -name "__pycache__" -type d -exec rm -rf {} + 2>/dev/null || true
-
-# ============================================
-# Environment Variables
-# ============================================
-# Tesseract environment variables are inherited from the tesseract image
-# Only set Docling-specific environment variables
+# Set environment variables
 ENV PYTHONUNBUFFERED=1 \
     PYTHONDONTWRITEBYTECODE=1 \
     PYTHONPATH="/var/lang/lib/python3.10/site-packages" \
     LANG=C.UTF-8 \
     LC_ALL=C.UTF-8
 
-# ============================================
-# Copy Lambda Handler
-# ============================================
-# Copy the comprehensive Lambda handler
-COPY lambda_function.py ${LAMBDA_TASK_ROOT}/lambda_function.py
+# Install only essential system dependencies
+RUN yum update -y && \
+    yum install -y \
+        tesseract \
+        tesseract-langpack-eng \
+        libtesseract-dev \
+        libleptonica-dev \
+    && yum clean all \
+    && rm -rf /var/cache/yum
 
-# ============================================
-# Test Package Imports (with error handling)
-# ============================================
-# Test each package individually to identify which one fails
-RUN echo "Testing package imports..." && \
-    (python3 -c "import numpy; print('✓ NumPy imported successfully')" || echo "✗ NumPy import failed") && \
-    (python3 -c "import pandas; print('✓ Pandas imported successfully')" || echo "✗ Pandas import failed") && \
-    (python3 -c "import PIL; print('✓ PIL imported successfully')" || echo "✗ PIL import failed") && \
-    (python3 -c "import pytesseract; print('✓ Pytesseract imported successfully')" || echo "✗ Pytesseract import failed") && \
-    (python3 -c "import docling; print('✓ Docling imported successfully')" || echo "✗ Docling import failed") && \
-    echo "Package import testing completed"
+# Install Python dependencies with minimal packages
+RUN pip install --no-cache-dir --upgrade pip && \
+    pip install --no-cache-dir \
+        numpy \
+        pandas \
+        Pillow \
+        pytesseract \
+        docling \
+    && pip cache purge \
+    && rm -rf /root/.cache/pip
 
-# ============================================
-# Final Configuration
-# ============================================
-# Set Lambda handler
+# Copy the Lambda function
+COPY lambda_function.py ${LAMBDA_TASK_ROOT}/
+
+# Create a simple health check script
+RUN printf 'import sys\nimport json\n\ndef test_imports():\n    try:\n        import numpy\n        import pandas\n        import PIL\n        import pytesseract\n        from docling.document_converter import DocumentConverter\n        converter = DocumentConverter()\n        print("✅ All imports successful")\n        return True\n    except Exception as e:\n        print(f"❌ Import failed: {e}")\n        return False\n\nif __name__ == "__main__":\n    success = test_imports()\n    sys.exit(0 if success else 1)\n' > ${LAMBDA_TASK_ROOT}/test_docling.py
+
+# Run health check
+RUN python ${LAMBDA_TASK_ROOT}/test_docling.py
+
+# Set the CMD to your handler
 CMD ["lambda_function.lambda_handler"]
-
-# Add labels for metadata
-LABEL maintainer="PharmaAI Team" \
-      version="1.0.0" \
-      description="Docling document processing with Tesseract OCR for AWS Lambda" \
-      docling_version="latest"

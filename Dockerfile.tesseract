@@ -1,55 +1,35 @@
-# Tesseract OCR optimized for AWS Lambda
-# Use Ubuntu base image and install Tesseract
-FROM ubuntu:22.04
+# ============================================
+# Tesseract Dockerfile - Ultra-minimal approach
+# ============================================
+FROM public.ecr.aws/lambda/python:3.10
 
-# ============================================
-# Environment Setup
-# ============================================
 # Set environment variables
 ENV TESSDATA_PREFIX="/usr/share/tesseract-ocr" \
     PYTHONUNBUFFERED=1 \
-    PYTHONDONTWRITEBYTECODE=1 \
-    DEBIAN_FRONTEND=noninteractive
+    PYTHONDONTWRITEBYTECODE=1
 
-# ============================================
-# Install Tesseract and Dependencies
-# ============================================
-RUN apt-get update && \
-    apt-get install -y \
-    tesseract-ocr \
-    tesseract-ocr-eng \
-    libtesseract-dev \
-    libleptonica-dev \
-    && apt-get clean \
-    && rm -rf /var/lib/apt/lists/*
+# Install Tesseract and dependencies
+RUN yum update -y && \
+    yum install -y \
+        tesseract \
+        tesseract-langpack-eng \
+        libtesseract-dev \
+        libleptonica-dev \
+    && yum clean all \
+    && rm -rf /var/cache/yum
 
-# ============================================
-# Prepare for Multi-stage Usage
-# ============================================
-# Create a directory structure that can be easily copied to other images
-RUN mkdir -p /opt/tesseract/bin \
-    && mkdir -p /opt/tesseract/lib \
-    && mkdir -p /opt/tesseract/share
+# Install Python dependencies
+RUN pip install --no-cache-dir --upgrade pip && \
+    pip install --no-cache-dir \
+        pytesseract \
+    && pip cache purge \
+    && rm -rf /root/.cache/pip
 
-# Copy Tesseract binaries and libraries to the prepared directories
-RUN cp /usr/bin/tesseract /opt/tesseract/bin/ \
-    && find /usr -name "libtesseract*" -type f -exec cp {} /opt/tesseract/lib/ \; 2>/dev/null || true \
-    && find /usr -name "liblept*" -type f -exec cp {} /opt/tesseract/lib/ \; 2>/dev/null || true \
-    && cp -r /usr/share/tesseract-ocr /opt/tesseract/share/
+# Create a simple test script
+RUN printf 'import sys\nimport pytesseract\nfrom PIL import Image\n\ndef test_tesseract():\n    try:\n        # Create a simple test image\n        img = Image.new("RGB", (100, 30), color="white")\n        result = pytesseract.image_to_string(img)\n        print("✅ Tesseract working correctly")\n        return True\n    except Exception as e:\n        print(f"❌ Tesseract test failed: {e}")\n        return False\n\nif __name__ == "__main__":\n    success = test_tesseract()\n    sys.exit(0 if success else 1)\n' > /var/task/test_tesseract.py
 
-# Set environment variable for the prepared structure
-ENV TESSERACT_BIN="/opt/tesseract/bin" \
-    TESSERACT_LIB="/opt/tesseract/lib" \
-    TESSERACT_SHARE="/opt/tesseract/share" \
-    TESSERACT_TESSDATA="/opt/tesseract/share/tessdata"
+# Run test
+RUN python /var/task/test_tesseract.py
 
-# ============================================
-# Verification
-# ============================================
-# Test Tesseract installation and display version
-RUN echo "Testing Tesseract installation..." && \
-    tesseract --version && \
-    echo "Tesseract installation successful!"
-
-# Set default command to show Tesseract version
-CMD ["tesseract", "--version"]
+# Set default command
+CMD ["python", "/var/task/test_tesseract.py"]
