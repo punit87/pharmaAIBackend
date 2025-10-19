@@ -34,10 +34,15 @@ RUN mkdir -p /opt/tesseract/bin \
     && mkdir -p /opt/tesseract/share \
     && mkdir -p /opt/tesseract/tessdata
 
-# Debug: Find where Tesseract is installed
-RUN echo "Searching for Tesseract..." && \
-    find /usr -name "*tesseract*" -type f 2>/dev/null && \
-    echo "Found Tesseract files above"
+# Debug: Check what was actually installed
+RUN echo "Checking yum packages..." && \
+    rpm -qa | grep tesseract && \
+    echo "Checking /usr/bin..." && \
+    ls -la /usr/bin/ | grep tesseract && \
+    echo "Checking /usr/sbin..." && \
+    ls -la /usr/sbin/ | grep tesseract && \
+    echo "Checking entire /usr for tesseract..." && \
+    find /usr -name "*tesseract*" 2>/dev/null
 
 # Find and copy Tesseract binaries and libraries to the prepared directories
 RUN find /usr -name "*tesseract*" -type f -executable 2>/dev/null | head -1 | xargs -I {} cp {} /opt/tesseract/bin/ \
