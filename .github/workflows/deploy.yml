@@ -19,11 +19,11 @@ on:
       rag_anything_parser:
         description: 'RAG-Anything parser selection'
         required: false
-        default: 'mineru'
+        default: 'docling'
         type: choice
         options:
-          - mineru
           - docling
+          - mineru
 
 env:
   REGISTRY: ghcr.io
@@ -51,24 +51,18 @@ jobs:
       run: |
         mkdir -p rag-anything
         cat > rag-anything/Dockerfile << 'EOF'
-        # Multi-stage build for RAG-Anything with LibreOffice
-        FROM python:3.11-slim as base
+        # RAG-Anything with Docling parser (no LibreOffice dependency)
+        FROM python:3.11-slim
         
         # Build arguments
-        ARG RAG_PARSER=mineru
+        ARG RAG_PARSER=docling
         
-        # Install system dependencies (without LibreOffice)
+        # Install system dependencies
         RUN apt-get update && apt-get install -y \
             git \
             curl \
             wget \
             build-essential \
-            libgl1-mesa-glx \
-            libglib2.0-0 \
-            libsm6 \
-            libxext6 \
-            libxrender-dev \
-            libgomp1 \
             && rm -rf /var/lib/apt/lists/*
         
         # Install uv
@@ -80,43 +74,23 @@ jobs:
         # Install RAG-Anything from PyPI with all features
         RUN pip install 'raganything[all]' --system
         
-        # Final stage: Use official LibreOffice headless image
-        FROM libreofficedocker/libreoffice-unoserver:3.20
-        
-        # Install Python 3.11 and uv
-        RUN apt-get update && apt-get install -y \
-            python3.11 \
-            python3.11-pip \
-            python3.11-dev \
-            && rm -rf /var/lib/apt/lists/*
-        
-        # Install uv
-        RUN pip3.11 install uv
-        
-        # Copy Python environment from base stage
-        COPY --from=base /usr/local/lib/python3.11/site-packages /usr/local/lib/python3.11/site-packages
-        COPY --from=base /app /app
-        
-        # Set working directory
-        WORKDIR /app
-        
-        # Install RAG-Anything with all optional dependencies
-        RUN echo "Installing RAG-Anything with all features..." && \
-            uv pip install 'raganything[all]'
+        # Install Docling for document parsing
+        RUN pip install docling --system
         
         # Create a simple entrypoint script
         RUN echo '#!/bin/bash\n\
-        echo "RAG-Anything with LibreOffice is ready!"\n\
+        echo "RAG-Anything with Docling is ready!"\n\
         echo "Available commands:"\n\
-        echo "  python3.11 -c \"import raganything; print(\\\"RAG-Anything imported successfully\\\")\""\n\
-        echo "  python3.11 -c \"from raganything import RAGAnything; print(\\\"RAGAnything class available\\\")\""\n\
-        echo "  libreoffice --version"\n\
-        echo "  python3.11 -c \"from PIL import Image; print(\\\"Pillow available\\\")\""\n\
-        echo "  python3.11 -c \"import reportlab; print(\\\"ReportLab available\\\")\""\n\
+        echo "  python -c \"import raganything; print(\\\"RAG-Anything imported successfully\\\")\""\n\
+        echo "  python -c \"from raganything import RAGAnything; print(\\\"RAGAnything class available\\\")\""\n\
+        echo "  python -c \"import docling; print(\\\"Docling imported successfully\\\")\""\n\
+        echo "  python -c \"from docling.document_converter import DocumentConverter; print(\\\"DocumentConverter available\\\")\""\n\
+        echo "  python -c \"from PIL import Image; print(\\\"Pillow available\\\")\""\n\
+        echo "  python -c \"import reportlab; print(\\\"ReportLab available\\\")\""\n\
         exec "$@"' > /app/entrypoint.sh && chmod +x /app/entrypoint.sh
         
         ENTRYPOINT ["/app/entrypoint.sh"]
-        CMD ["python", "-c", "import raganything; print('RAG-Anything is ready!')"]
+        CMD ["python", "-c", "import raganything; print('RAG-Anything with Docling is ready!')"]
         EOF
 
     - name: Build and push RAG-Anything image
@@ -147,23 +121,23 @@ jobs:
       run: |
         echo "## 🚀 RAG-Anything Docker Image Deployed Successfully!" >> $GITHUB_STEP_SUMMARY
         echo "" >> $GITHUB_STEP_SUMMARY
-        echo "### RAG-Anything (All Features + LibreOffice)" >> $GITHUB_STEP_SUMMARY
+        echo "### RAG-Anything (All Features + Docling Parser)" >> $GITHUB_STEP_SUMMARY
         echo "- \`${{ env.REGISTRY }}/punit87/rag-anything:latest\`" >> $GITHUB_STEP_SUMMARY
         echo "- \`${{ env.REGISTRY }}/punit87/rag-anything:${{ github.sha }}\`" >> $GITHUB_STEP_SUMMARY
         echo "- \`${{ env.REGISTRY }}/punit87/rag-anything:${{ github.ref_name }}\`" >> $GITHUB_STEP_SUMMARY
         echo "" >> $GITHUB_STEP_SUMMARY
         echo "### Features Included" >> $GITHUB_STEP_SUMMARY
         echo "- ✅ RAG-Anything with all optional dependencies" >> $GITHUB_STEP_SUMMARY
-        echo "- ✅ LibreOffice for Office document processing" >> $GITHUB_STEP_SUMMARY
+        echo "- ✅ Docling parser for document processing" >> $GITHUB_STEP_SUMMARY
         echo "- ✅ Pillow for extended image format support" >> $GITHUB_STEP_SUMMARY
         echo "- ✅ ReportLab for text file processing" >> $GITHUB_STEP_SUMMARY
-        echo "- ✅ MinerU and Docling parsers available" >> $GITHUB_STEP_SUMMARY
+        echo "- ✅ Support for PDF, DOCX, PPTX, XLSX, HTML, images" >> $GITHUB_STEP_SUMMARY
         echo "" >> $GITHUB_STEP_SUMMARY
         echo "### Usage" >> $GITHUB_STEP_SUMMARY
         echo "\`\`\`bash" >> $GITHUB_STEP_SUMMARY
-        echo "# Pull RAG-Anything with all features" >> $GITHUB_STEP_SUMMARY
+        echo "# Pull RAG-Anything with Docling parser" >> $GITHUB_STEP_SUMMARY
         echo "docker pull ${{ env.REGISTRY }}/punit87/rag-anything:latest" >> $GITHUB_STEP_SUMMARY
         echo "" >> $GITHUB_STEP_SUMMARY
-        echo "# Run with LibreOffice support" >> $GITHUB_STEP_SUMMARY
+        echo "# Run with Docling support" >> $GITHUB_STEP_SUMMARY
         echo "docker run --rm ${{ env.REGISTRY }}/punit87/rag-anything:latest" >> $GITHUB_STEP_SUMMARY
         echo "\`\`\`" >> $GITHUB_STEP_SUMMARY
