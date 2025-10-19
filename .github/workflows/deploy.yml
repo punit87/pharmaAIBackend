@@ -47,7 +47,7 @@ jobs:
             && rm -rf /var/cache/apk/*
           
           # FIX 3: Explicitly create the home directory for the 'tesseract' user, 
-          # which is required for 'pip install --user' to work.
+          # which is required for virtual environment.
           RUN mkdir -p /home/tesseract && chown tesseract:tesseract /home/tesseract
           
           # Switch back to the non-root user ('tesseract') for security and subsequent steps.
@@ -56,16 +56,20 @@ jobs:
           # Use 'python3' and 'pip3' on Alpine
           ENV PYTHONUNBUFFERED=1
           
-          # Fix 2: Add Python user bin to PATH so pip-installed executables (like uv) can be found.
-          ENV PATH="/home/tesseract/.local/bin:/usr/bin:${PATH}"
+          # FIX 4: Create and use a virtual environment to bypass PEP 668
+          ENV VIRTUAL_ENV=/home/tesseract/venv
+          ENV PATH="$VIRTUAL_ENV/bin:${PATH}"
           
-          # Fast pip install via uv
-          RUN python3 -m pip install --no-cache-dir --user uv
+          # Create virtual environment
+          RUN python3 -m venv $VIRTUAL_ENV
+          
+          # Fast pip install via uv (now works without restrictions)
+          RUN pip install --no-cache-dir uv
           
           WORKDIR /app
           
-          # Core dependencies
-          RUN python3 -m pip install --no-cache-dir --user "raganything[all]" docling
+          # Core dependencies (using pip from virtual environment)
+          RUN pip install --no-cache-dir "raganything[all]" docling
           
           ARG RAG_PARSER=docling
           COPY <<'SCRIPT' /app/entrypoint.sh
@@ -124,6 +128,7 @@ jobs:
             echo "- ✅ Docling parser included"
             echo "- ✅ **Pre-installed Tesseract via jitesoft/tesseract-ocr**"
             echo "- ✅ Multi-architecture (amd64, arm64)"
+            echo "- ✅ Python virtual environment for clean package management"
             echo ""
             echo "### 🧪 Quick Usage"
             echo "\`\`\`bash"
