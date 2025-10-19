@@ -4,8 +4,6 @@ name: Build Docling with Tesseract
 
 on:
   push:
-    branches: [ main, develop ]
-  pull_request:
     branches: [ main ]
   workflow_dispatch:
 
