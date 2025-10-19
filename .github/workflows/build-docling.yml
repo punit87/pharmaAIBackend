@@ -1,0 +1,114 @@
+name: Build Docling with Tesseract
+
+on:
+  push:
+    branches: [ main, develop ]
+  pull_request:
+    branches: [ main ]
+  workflow_dispatch:
+
+env:
+  AWS_REGION: us-east-1
+  ECR_REPOSITORY: pharma-ai-docling
+
+jobs:
+  cleanup-and-build:
+    runs-on: ubuntu-latest
+    
+    steps:
+    - name: Checkout code
+      uses: actions/checkout@v4
+      
+    - name: Cleanup workspace before build
+      run: |
+        echo "🧹 Cleaning up workspace before Docling build..."
+        
+        # Clean up temporary files and caches
+        sudo rm -rf /tmp/*
+        sudo rm -rf /var/tmp/*
+        sudo rm -rf /var/cache/apt/archives/*
+        sudo rm -rf /var/log/*
+        sudo find /var/log -type f -name "*.log" -delete
+        
+        # Clean up Docker system
+        docker system prune -af --volumes
+        
+        # Clean up any existing build artifacts
+        rm -rf .dockerignore
+        rm -rf *.log
+        rm -rf build/
+        rm -rf dist/
+        rm -rf node_modules/ 2>/dev/null || true
+        rm -rf .pytest_cache/ 2>/dev/null || true
+        rm -rf __pycache__/ 2>/dev/null || true
+        rm -rf .coverage 2>/dev/null || true
+        rm -rf .mypy_cache/ 2>/dev/null || true
+        
+        # Clean up Python cache files
+        find . -name "*.pyc" -delete
+        find . -name "__pycache__" -type d -exec rm -rf {} + 2>/dev/null || true
+        find . -name "*.pyo" -delete
+        find . -name "*.pyd" -delete
+        find . -name "*.egg-info" -type d -exec rm -rf {} + 2>/dev/null || true
+        find . -name "*.dist-info" -type d -exec rm -rf {} + 2>/dev/null || true
+        
+        # Clean up any test files
+        find . -name "test_*" -type f -delete 2>/dev/null || true
+        find . -name "*_test.py" -type f -delete 2>/dev/null || true
+        find . -name "tests" -type d -exec rm -rf {} + 2>/dev/null || true
+        
+        # Show disk usage before build
+        echo "📊 Disk usage before build:"
+        df -h
+        du -sh . || true
+        
+        echo "✅ Workspace cleanup completed!"
+        
+    - name: Configure AWS credentials
+      uses: aws-actions/configure-aws-credentials@v4
+      with:
+        aws-access-key-id: ${{ secrets.AWS_ACCESS_KEY_ID }}
+        aws-secret-access-key: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
+        aws-region: ${{ env.AWS_REGION }}
+        
+    - name: Login to Amazon ECR
+      id: login-ecr
+      uses: aws-actions/amazon-ecr-login@v2
+      
+    - name: Build Tesseract image
+      run: |
+        echo "🔨 Building Tesseract image..."
+        docker build -f Dockerfile.tesseract -t tesseract-lambda:latest .
+        
+    - name: Build and push Docling image
+      run: |
+        echo "🔨 Building Docling image with cleanup optimizations..."
+        docker build -f Dockerfile.docling -t $ECR_REGISTRY/$ECR_REPOSITORY:latest .
+        
+        echo "📤 Pushing to ECR..."
+        docker push $ECR_REGISTRY/$ECR_REPOSITORY:latest
+        
+    - name: Cleanup after build
+      if: always()
+      run: |
+        echo "🧹 Final cleanup after build..."
+        
+        # Remove Docker images to free space
+        docker rmi $(docker images -q) 2>/dev/null || true
+        docker system prune -af --volumes
+        
+        # Show final disk usage
+        echo "📊 Final disk usage:"
+        df -h
+        
+        echo "✅ Build cleanup completed!"
+        
+    - name: Upload build logs
+      if: failure()
+      uses: actions/upload-artifact@v4
+      with:
+        name: build-logs
+        path: |
+          *.log
+          build/
+        retention-days: 7
