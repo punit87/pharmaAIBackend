@@ -1,87 +1,45 @@
-# Multi-stage build for optimized image size
-FROM jitesoft/tesseract-ocr:5-24.04 AS builder
+# RAG-Anything with Docling parser
+FROM python:3.11-slim
 
-USER root
+# Build arguments
+ARG RAG_PARSER=docling
 
-# Install Python and build dependencies
-RUN apt-get update && apt-get install -y --no-install-recommends \
-    python3.12 \
-    python3.12-venv \
-    python3-pip \
+# Install system dependencies
+RUN apt-get update && apt-get install -y \
     git \
-    build-essential \
     curl \
+    wget \
+    build-essential \
     && rm -rf /var/lib/apt/lists/*
 
-# Create virtual environment
-RUN python3.12 -m venv /opt/venv
-ENV PATH="/opt/venv/bin:$PATH"
+# Install uv
+RUN pip install uv
 
-# Upgrade pip and install uv for fastest installation
-RUN pip install --no-cache-dir --upgrade pip setuptools wheel && \
-    pip install --no-cache-dir uv
-
-# Install dependencies with uv (much faster than pip)
-RUN uv pip install --no-cache \
-    torch --index-url https://download.pytorch.org/whl/cpu && \
-    uv pip install --no-cache docling "raganything[all]"
-
-# Install FastAPI and dependencies
-RUN uv pip install --no-cache fastapi uvicorn[standard] python-multipart boto3 requests
-
-# ============================================
-# Runtime stage - smaller final image
-# ============================================
-FROM jitesoft/tesseract-ocr:5-24.04
-
-USER root
-
-# Install only runtime dependencies (no build tools)
-RUN apt-get update && apt-get install -y --no-install-recommends \
-    python3.12 \
-    python3-pip \
-    libgomp1 \
-    libglib2.0-0 \
-    libsm6 \
-    libxext6 \
-    libxrender-dev \
-    libgl1 \
-    curl \
-    && rm -rf /var/lib/apt/lists/* \
-    && apt-get clean
-
-# Copy virtual environment from builder
-COPY --from=builder /opt/venv /opt/venv
-
-# Create app user
-RUN useradd -m -u 1000 appuser && \
-    mkdir -p /app /tmp/raganything && \
-    chown -R appuser:appuser /app /tmp/raganything
-
-# Set environment variables
-ENV PATH="/opt/venv/bin:$PATH" \
-    PYTHONUNBUFFERED=1 \
-    PYTHONDONTWRITEBYTECODE=1 \
-    TESSDATA_PREFIX=/usr/share/tesseract-ocr/5/tessdata \
-    RAG_PARSER=docling \
-    TEMP=/tmp/raganything \
-    TMPDIR=/tmp/raganything \
-    PORT=8080
-
+# Set working directory
 WORKDIR /app
 
-# Copy application files
-COPY app/ /app/
+# Install RAG-Anything from PyPI with all features
+RUN pip install 'raganything[all]' --system
 
-# Switch to non-root user
-USER appuser
+# Install parser based on build argument
+RUN if [ "$RAG_PARSER" = "docling" ]; then \
+        pip install docling --system; \
+    else \
+        pip install mineru --system; \
+    fi
 
-# Expose port for Fargate
-EXPOSE 8080
+# Create a simple entrypoint script
+RUN echo '#!/bin/bash\n\
+echo "RAG-Anything container ready!"\n\
+echo "Parser: ${RAG_PARSER}"\n\
+echo "Testing environment..."\n\
+python -c "import raganything; print(\"✅ RAG-Anything OK\")"\n\
+if [ "$RAG_PARSER" = "docling" ]; then\n\
+  python -c "import docling; print(\"✅ Docling OK\")"\n\
+else\n\
+  python -c "import mineru; print(\"✅ Mineru OK\")"\n\
+fi\n\
+exec "$@"' > /app/entrypoint.sh && chmod +x /app/entrypoint.sh
 
-# Health check
-HEALTHCHECK --interval=30s --timeout=10s --start-period=60s --retries=3 \
-    CMD curl -f http://localhost:8080/health || exit 1
-
-# Start application
-CMD ["python3", "main.py"]
+ENTRYPOINT ["/app/entrypoint.sh"]
+CMD ["python", "-c", "import raganything; print('RAG-Anything is ready!')"]
