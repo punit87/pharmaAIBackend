@@ -24,26 +24,30 @@ jobs:
     - name: Checkout code
       uses: actions/checkout@v4
       
-    - name: Aggressive workspace cleanup before build
+    - name: Ultra-aggressive workspace cleanup before build
       run: |
-        echo "🧹 Starting aggressive workspace cleanup..."
+        echo "🧹 Starting ULTRA-AGGRESSIVE workspace cleanup..."
         
-        # Clean up system files
-        sudo rm -rf /tmp/*
-        sudo rm -rf /var/tmp/*
-        sudo rm -rf /var/cache/*
-        sudo rm -rf /var/log/*
-        sudo find /var/log -type f -name "*.log" -delete
+        # Clean up system files aggressively
+        sudo rm -rf /tmp/* 2>/dev/null || true
+        sudo rm -rf /var/tmp/* 2>/dev/null || true
+        sudo rm -rf /var/cache/* 2>/dev/null || true
+        sudo rm -rf /var/log/* 2>/dev/null || true
+        sudo find /var/log -type f -name "*.log" -delete 2>/dev/null || true
         
-        # Clean up Docker system aggressively
-        docker system prune -af --volumes
-        docker builder prune -af
+        # Clean up Docker system ULTRA aggressively
+        docker system prune -af --volumes 2>/dev/null || true
+        docker builder prune -af 2>/dev/null || true
+        docker container prune -f 2>/dev/null || true
+        docker image prune -af 2>/dev/null || true
+        docker volume prune -f 2>/dev/null || true
+        docker network prune -f 2>/dev/null || true
         
         # Clean up any existing build artifacts
-        rm -rf .dockerignore
-        rm -rf *.log
-        rm -rf build/
-        rm -rf dist/
+        rm -rf .dockerignore 2>/dev/null || true
+        rm -rf *.log 2>/dev/null || true
+        rm -rf build/ 2>/dev/null || true
+        rm -rf dist/ 2>/dev/null || true
         rm -rf node_modules/ 2>/dev/null || true
         rm -rf .pytest_cache/ 2>/dev/null || true
         rm -rf __pycache__/ 2>/dev/null || true
@@ -51,10 +55,10 @@ jobs:
         rm -rf .mypy_cache/ 2>/dev/null || true
         
         # Clean up Python cache files
-        find . -name "*.pyc" -delete
+        find . -name "*.pyc" -delete 2>/dev/null || true
         find . -name "__pycache__" -type d -exec rm -rf {} + 2>/dev/null || true
-        find . -name "*.pyo" -delete
-        find . -name "*.pyd" -delete
+        find . -name "*.pyo" -delete 2>/dev/null || true
+        find . -name "*.pyd" -delete 2>/dev/null || true
         find . -name "*.egg-info" -type d -exec rm -rf {} + 2>/dev/null || true
         find . -name "*.dist-info" -type d -exec rm -rf {} + 2>/dev/null || true
         
@@ -63,12 +67,17 @@ jobs:
         find . -name "*_test.py" -type f -delete 2>/dev/null || true
         find . -name "tests" -type d -exec rm -rf {} + 2>/dev/null || true
         
+        # Clean up large files that might be taking space
+        find . -name "*.so" -size +5M -delete 2>/dev/null || true
+        find . -name "*.dylib" -size +5M -delete 2>/dev/null || true
+        find . -name "*.dll" -size +5M -delete 2>/dev/null || true
+        
         # Show disk usage before build
         echo "📊 Disk usage before build:"
         df -h
         du -sh . || true
         
-        echo "✅ Aggressive workspace cleanup completed!"
+        echo "✅ ULTRA-AGGRESSIVE workspace cleanup completed!"
         
     - name: Log in to GitHub Container Registry
       uses: docker/login-action@v3
@@ -80,12 +89,12 @@ jobs:
     - name: Set up Docker Buildx
       uses: docker/setup-buildx-action@v3
 
-    - name: Build and push Tesseract image
+    - name: Build and push Tesseract image (AMD64 only to save space)
       uses: docker/build-push-action@v5
       with:
         context: .
         file: ./Dockerfile.tesseract
-        platforms: linux/amd64,linux/arm64
+        platforms: linux/amd64
         push: true
         tags: |
           ${{ env.REGISTRY }}/${{ env.TESSERACT_IMAGE }}:latest
@@ -93,6 +102,14 @@ jobs:
           ${{ env.REGISTRY }}/${{ env.TESSERACT_IMAGE }}:${{ github.ref_name }}
         cache-from: type=gha
         cache-to: type=gha,mode=max
+        
+    - name: Clean up after Tesseract build
+      run: |
+        echo "🧹 Cleaning up after Tesseract build..."
+        docker system prune -f
+        docker builder prune -f
+        echo "📊 Disk usage after Tesseract build:"
+        df -h
 
     - name: Wait for Tesseract image to be available
       run: |
@@ -101,12 +118,12 @@ jobs:
         docker pull ${{ env.REGISTRY }}/${{ env.TESSERACT_IMAGE }}:latest
         echo "✅ Tesseract image is available and ready for Docling build"
 
-    - name: Build and push Docling image
+    - name: Build and push Docling image (AMD64 only to save space)
       uses: docker/build-push-action@v5
       with:
         context: .
         file: ./Dockerfile.docling
-        platforms: linux/amd64,linux/arm64
+        platforms: linux/amd64
         push: true
         tags: |
           ${{ env.REGISTRY }}/${{ env.DOCLING_IMAGE }}:latest
@@ -114,6 +131,18 @@ jobs:
           ${{ env.REGISTRY }}/${{ env.DOCLING_IMAGE }}:${{ github.ref_name }}
         cache-from: type=gha
         cache-to: type=gha,mode=max
+        
+    - name: Final cleanup after Docling build
+      run: |
+        echo "🧹 Final cleanup after Docling build..."
+        docker system prune -af --volumes
+        docker builder prune -af
+        docker container prune -f
+        docker image prune -af
+        docker volume prune -f
+        docker network prune -f
+        echo "📊 Final disk usage:"
+        df -h
         
     - name: Cleanup after build
       if: always()

@@ -39,7 +39,11 @@ RUN python3 -m pip install --no-cache-dir --only-binary=all \
     opencv-python-headless \
     docling \
     pytesseract \
-    boto3
+    boto3 && \
+    echo "Cleaning up pip cache immediately..." && \
+    python3 -m pip cache purge && \
+    rm -rf /root/.cache/pip && \
+    echo "Package installation completed"
 
 # Immediate cleanup after package installation
 RUN echo "Cleaning up after package installation..." && \
