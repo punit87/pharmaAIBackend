@@ -43,14 +43,6 @@ jobs:
         RUN apt-get update && apt-get install -y \
             git \
             curl \
-            wget \
-            build-essential \
-            libgl1-mesa-glx \
-            libglib2.0-0 \
-            libsm6 \
-            libxext6 \
-            libxrender-dev \
-            libgomp1 \
             && rm -rf /var/lib/apt/lists/*
         
         # Install uv
@@ -59,22 +51,8 @@ jobs:
         # Set working directory
         WORKDIR /app
         
-        # Clone RAG-Anything repository
-        RUN git clone https://github.com/HKUDS/RAG-Anything.git .
-        
-        # Install RAG-Anything and its dependencies using uv
-        RUN uv pip install -e .
-        
-        # Install additional dependencies for models
-        RUN uv pip install torch torchvision torchaudio --index-url https://download.pytorch.org/whl/cpu
-        RUN uv pip install transformers accelerate
-        RUN uv pip install sentence-transformers
-        RUN uv pip install faiss-cpu
-        RUN uv pip install openai
-        RUN uv pip install langchain
-        RUN uv pip install chromadb
-        RUN uv pip install pypdf
-        RUN uv pip install python-dotenv
+        # Install RAG-Anything using uv (let it handle dependencies)
+        RUN uv pip install rag-anything
         
         # Create a simple entrypoint script
         RUN echo '#!/bin/bash\n\
@@ -82,7 +60,6 @@ jobs:
         echo "Available commands:"\n\
         echo "  python -c \"import rag_anything; print(\\\"RAG-Anything imported successfully\\\")\""\n\
         echo "  python -m rag_anything --help"\n\
-        echo "  python -c \"from rag_anything import RAG; print(\\\"RAG class available\\\")\""\n\
         exec "$@"' > /app/entrypoint.sh && chmod +x /app/entrypoint.sh
         
         ENTRYPOINT ["/app/entrypoint.sh"]
@@ -99,27 +76,6 @@ jobs:
         RUN apt-get update && apt-get install -y \
             git \
             curl \
-            wget \
-            build-essential \
-            libgl1-mesa-glx \
-            libglib2.0-0 \
-            libsm6 \
-            libxext6 \
-            libxrender-dev \
-            libgomp1 \
-            libgstreamer1.0-0 \
-            libgstreamer-plugins-base1.0-0 \
-            libavcodec-dev \
-            libavformat-dev \
-            libswscale-dev \
-            libv4l-dev \
-            libxvidcore-dev \
-            libx264-dev \
-            libjpeg-dev \
-            libpng-dev \
-            libtiff-dev \
-            libatlas-base-dev \
-            gfortran \
             && rm -rf /var/lib/apt/lists/*
         
         # Install uv
@@ -128,32 +84,8 @@ jobs:
         # Set working directory
         WORKDIR /app
         
-        # Clone Docling repository
-        RUN git clone https://github.com/docling-project/docling.git .
-        
-        # Install Docling and its dependencies using uv
-        RUN uv pip install -e .
-        
-        # Install additional dependencies for document processing
-        RUN uv pip install torch torchvision torchaudio --index-url https://download.pytorch.org/whl/cpu
-        RUN uv pip install transformers accelerate
-        RUN uv pip install sentence-transformers
-        RUN uv pip install opencv-python
-        RUN uv pip install pillow
-        RUN uv pip install pdfplumber
-        RUN uv pip install pymupdf
-        RUN uv pip install python-docx
-        RUN uv pip install openpyxl
-        RUN uv pip install python-pptx
-        RUN uv pip install beautifulsoup4
-        RUN uv pip install lxml
-        RUN uv pip install tesseract
-        RUN uv pip install pytesseract
-        RUN uv pip install pydantic
-        RUN uv pip install pydantic-settings
-        
-        # Download and cache models
-        RUN python -c "from docling.document_converter import DocumentConverter; converter = DocumentConverter(); print('Models downloaded successfully')"
+        # Install Docling using uv (let it handle dependencies)
+        RUN uv pip install docling
         
         # Create a simple entrypoint script
         RUN echo '#!/bin/bash\n\
@@ -161,7 +93,6 @@ jobs:
         echo "Available commands:"\n\
         echo "  python -c \"import docling; print(\\\"Docling imported successfully\\\")\""\n\
         echo "  docling --help"\n\
-        echo "  python -c \"from docling.document_converter import DocumentConverter; print(\\\"DocumentConverter available\\\")\""\n\
         exec "$@"' > /app/entrypoint.sh && chmod +x /app/entrypoint.sh
         
         ENTRYPOINT ["/app/entrypoint.sh"]
