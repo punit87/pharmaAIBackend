@@ -35,7 +35,7 @@ RUN mkdir -p /opt/tesseract/bin \
     && mkdir -p /opt/tesseract/tessdata
 
 # Find and copy Tesseract binaries and libraries to the prepared directories
-RUN TESSERACT_PATH=$(which tesseract) && cp $TESSERACT_PATH /opt/tesseract/bin/ \
+RUN find /usr -name "tesseract" -type f -executable 2>/dev/null | head -1 | xargs -I {} cp {} /opt/tesseract/bin/ \
     && cp -r /usr/lib64/libtesseract* /opt/tesseract/lib/ 2>/dev/null || true \
     && cp -r /usr/lib64/liblept* /opt/tesseract/lib/ 2>/dev/null || true \
     && cp -r /usr/share/tesseract-ocr /opt/tesseract/share/ \
@@ -52,6 +52,7 @@ ENV TESSERACT_BIN="/opt/tesseract/bin" \
 # ============================================
 # Test Tesseract installation and display version
 RUN echo "Testing Tesseract installation..." && \
+    ls -la /opt/tesseract/bin/ && \
     /opt/tesseract/bin/tesseract --version && \
     echo "Tesseract installation successful!"
 
