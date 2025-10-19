@@ -1,4 +1,5 @@
 # RAG-Anything optimized for AWS Lambda
+# Use Lambda Python runtime with Tesseract
 FROM public.ecr.aws/lambda/python:3.11
 
 # Build arguments
@@ -15,8 +16,8 @@ RUN pip install uv
 # Install RAG-Anything from PyPI with all features
 RUN pip install 'raganything[all]'
 
-# Install Tesseract Python bindings
-RUN pip install pytesseract opencv-python pillow
+# Install Tesseract Python bindings (minimal OpenCV)
+RUN pip install pytesseract opencv-python-headless pillow
 
 # Install parser based on build argument
 RUN if [ "$RAG_PARSER" = "docling" ]; then \

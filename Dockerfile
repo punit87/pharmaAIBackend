@@ -1,32 +1,23 @@
 # RAG-Anything with Docling parser
-FROM python:3.11-slim
+# Use official Tesseract image as base
+FROM jitesoft/tesseract-ocr:5-24.04
 
 # Build arguments
 ARG RAG_PARSER=docling
 
-# Install basic system dependencies
+# Install Python and basic dependencies
 RUN apt-get update && apt-get install -y \
+    python3.11 \
+    python3.11-pip \
+    python3.11-venv \
     git \
     curl \
     wget \
     build-essential \
     && rm -rf /var/lib/apt/lists/*
 
-# Install Tesseract OCR
-RUN apt-get update && apt-get install -y \
-    tesseract-ocr \
-    tesseract-ocr-eng \
-    && rm -rf /var/lib/apt/lists/*
-
-# Install OpenCV and image processing dependencies
-RUN apt-get update && apt-get install -y \
-    libgl1-mesa-glx \
-    libglib2.0-0 \
-    libsm6 \
-    libxext6 \
-    libxrender-dev \
-    libgomp1 \
-    && rm -rf /var/lib/apt/lists/*
+# Create symlink for python3
+RUN ln -s /usr/bin/python3.11 /usr/bin/python3
 
 # Install uv
 RUN pip install uv
@@ -37,8 +28,8 @@ WORKDIR /app
 # Install RAG-Anything from PyPI with all features
 RUN pip install 'raganything[all]'
 
-# Install Tesseract Python bindings
-RUN pip install pytesseract opencv-python pillow
+# Install Tesseract Python bindings (minimal OpenCV)
+RUN pip install pytesseract opencv-python-headless pillow
 
 # Install parser based on build argument
 RUN if [ "$RAG_PARSER" = "docling" ]; then \
