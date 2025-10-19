@@ -1,42 +1,38 @@
 # Multi-stage Dockerfile for Docling with Tesseract OCR
 # Stage 1: Builder stage for installing dependencies and building Docling
-FROM public.ecr.aws/lambda/python:3.11 as builder
+# Use Ubuntu base image which has better package availability
+FROM ubuntu:22.04 as builder
 
 # ============================================
 # System Dependencies for Builder
 # ============================================
-RUN yum update -y && \
-    yum install -y \
+RUN apt-get update && \
+    apt-get install -y \
     poppler-utils \
+    python3 \
+    python3-pip \
     curl \
     wget \
-    && yum clean all
+    && apt-get clean \
+    && rm -rf /var/lib/apt/lists/*
 
 # ============================================
 # Python Environment Setup
 # ============================================
 # Upgrade pip
-RUN pip install --upgrade pip
+RUN python3 -m pip install --upgrade pip
 
 # ============================================
 # Docling Installation (Pre-compiled packages only)
 # ============================================
-# First install NumPy with a specific version that has pre-compiled wheels
-RUN pip install --no-cache-dir --only-binary=all numpy==1.24.3
-
-# Install other scientific packages that have pre-compiled wheels
-RUN pip install --no-cache-dir --only-binary=all \
+# Install Docling and dependencies using pre-compiled packages
+RUN python3 -m pip install --no-cache-dir --only-binary=all \
+    numpy \
     scipy \
-    scikit-learn \
     pandas \
     pillow \
-    opencv-python-headless
-
-# Install Docling using pre-compiled packages
-RUN pip install --no-cache-dir --only-binary=all docling
-
-# Install additional libraries for document processing (pre-compiled)
-RUN pip install --no-cache-dir --only-binary=all \
+    opencv-python-headless \
+    docling \
     pytesseract \
     boto3
 
@@ -58,8 +54,8 @@ COPY --from=tesseract /opt/tesseract/share/tesseract-ocr /usr/share/tesseract-oc
 # Copy Python Dependencies
 # ============================================
 # Copy installed packages from builder stage
-COPY --from=builder /var/lang/lib/python3.11/site-packages /var/lang/lib/python3.11/site-packages
-COPY --from=builder /var/lang/bin /var/lang/bin
+COPY --from=builder /usr/local/lib/python3.10/dist-packages /var/lang/lib/python3.11/site-packages
+COPY --from=builder /usr/local/bin /var/lang/bin
 
 # ============================================
 # Environment Variables
