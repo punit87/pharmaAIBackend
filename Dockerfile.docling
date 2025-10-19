@@ -36,30 +36,9 @@ RUN pip3 install --no-cache-dir --upgrade pip && \
     && pip3 cache purge \
     && rm -rf /root/.cache/pip
 
-# Copy the Lambda function
+# Copy the Lambda function and test script
 COPY lambda_function.py /var/task/
-
-# Create a simple health check script
-RUN echo 'import sys' > /var/task/test_docling.py && \
-    echo 'import json' >> /var/task/test_docling.py && \
-    echo '' >> /var/task/test_docling.py && \
-    echo 'def test_imports():' >> /var/task/test_docling.py && \
-    echo '    try:' >> /var/task/test_docling.py && \
-    echo '        import numpy' >> /var/task/test_docling.py && \
-    echo '        import pandas' >> /var/task/test_docling.py && \
-    echo '        import PIL' >> /var/task/test_docling.py && \
-    echo '        import pytesseract' >> /var/task/test_docling.py && \
-    echo '        from docling.document_converter import DocumentConverter' >> /var/task/test_docling.py && \
-    echo '        converter = DocumentConverter()' >> /var/task/test_docling.py && \
-    echo '        print("✅ All imports successful")' >> /var/task/test_docling.py && \
-    echo '        return True' >> /var/task/test_docling.py && \
-    echo '    except Exception as e:' >> /var/task/test_docling.py && \
-    echo '        print(f"❌ Import failed: {e}")' >> /var/task/test_docling.py && \
-    echo '        return False' >> /var/task/test_docling.py && \
-    echo '' >> /var/task/test_docling.py && \
-    echo 'if __name__ == "__main__":' >> /var/task/test_docling.py && \
-    echo '    success = test_imports()' >> /var/task/test_docling.py && \
-    echo '    sys.exit(0 if success else 1)' >> /var/task/test_docling.py
+COPY test_docling.py /var/task/
 
 # Run health check
 RUN python3 /var/task/test_docling.py
