@@ -10,11 +10,10 @@ on:
 env:
   REGISTRY: ghcr.io
   DOCLING_IMAGE: ${{ github.repository_owner }}/docling
-  TESSERACT_IMAGE: ${{ github.repository_owner }}/tesseract-lambda
 
 jobs:
-  # Main job that handles cleanup, building, and pushing Docker images
-  build-and-push:
+  # Main job that builds Docling image (pulls Tesseract from registry)
+  build-docling:
     runs-on: ubuntu-latest
     permissions:
       contents: read
@@ -76,14 +75,6 @@ jobs:
         username: ${{ github.actor }}
         password: ${{ secrets.GITHUB_TOKEN }}
       
-    - name: Build and push Tesseract image
-      run: |
-        echo "🔨 Building Tesseract image..."
-        docker build -f Dockerfile.tesseract -t ${{ env.REGISTRY }}/${{ env.TESSERACT_IMAGE }}:latest .
-        
-        echo "📤 Pushing Tesseract image to GitHub Container Registry..."
-        docker push ${{ env.REGISTRY }}/${{ env.TESSERACT_IMAGE }}:latest
-        
     - name: Build and push Docling image
       run: |
         echo "🔨 Building Docling image with cleanup optimizations..."
