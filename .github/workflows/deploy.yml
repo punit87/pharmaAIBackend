@@ -43,6 +43,8 @@ jobs:
         RUN apt-get update && apt-get install -y \
             git \
             curl \
+            wget \
+            build-essential \
             && rm -rf /var/lib/apt/lists/*
         
         # Install uv
@@ -51,19 +53,19 @@ jobs:
         # Set working directory
         WORKDIR /app
         
-        # Install RAG-Anything using uv (let it handle dependencies)
-        RUN uv pip install rag-anything
+        # Install RAG-Anything from PyPI with all optional dependencies
+        RUN uv pip install 'raganything[all]'
         
         # Create a simple entrypoint script
         RUN echo '#!/bin/bash\n\
         echo "RAG-Anything is ready!"\n\
         echo "Available commands:"\n\
-        echo "  python -c \"import rag_anything; print(\\\"RAG-Anything imported successfully\\\")\""\n\
-        echo "  python -m rag_anything --help"\n\
+        echo "  python -c \"import raganything; print(\\\"RAG-Anything imported successfully\\\")\""\n\
+        echo "  python -c \"from raganything import RAGAnything; print(\\\"RAGAnything class available\\\")\""\n\
         exec "$@"' > /app/entrypoint.sh && chmod +x /app/entrypoint.sh
         
         ENTRYPOINT ["/app/entrypoint.sh"]
-        CMD ["python", "-c", "import rag_anything; print('RAG-Anything is ready!')"]
+        CMD ["python", "-c", "import raganything; print('RAG-Anything is ready!')"]
         EOF
 
     - name: Create Docling Dockerfile
@@ -76,6 +78,8 @@ jobs:
         RUN apt-get update && apt-get install -y \
             git \
             curl \
+            wget \
+            build-essential \
             && rm -rf /var/lib/apt/lists/*
         
         # Install uv
@@ -84,7 +88,7 @@ jobs:
         # Set working directory
         WORKDIR /app
         
-        # Install Docling using uv (let it handle dependencies)
+        # Install Docling from PyPI
         RUN uv pip install docling
         
         # Create a simple entrypoint script
@@ -93,6 +97,7 @@ jobs:
         echo "Available commands:"\n\
         echo "  python -c \"import docling; print(\\\"Docling imported successfully\\\")\""\n\
         echo "  docling --help"\n\
+        echo "  python -c \"from docling.document_converter import DocumentConverter; print(\\\"DocumentConverter available\\\")\""\n\
         exec "$@"' > /app/entrypoint.sh && chmod +x /app/entrypoint.sh
         
         ENTRYPOINT ["/app/entrypoint.sh"]
