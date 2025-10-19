@@ -1,22 +1,6 @@
 # Tesseract OCR optimized for AWS Lambda
-# Use Ubuntu base image with Tesseract pre-installed
-FROM ubuntu:22.04
-
-# ============================================
-# System Dependencies
-# ============================================
-# Install Tesseract OCR and Python
-RUN apt-get update && \
-    apt-get install -y \
-    tesseract-ocr \
-    tesseract-ocr-eng \
-    python3 \
-    python3-pip \
-    curl && \
-    apt-get clean && \
-    rm -rf /var/lib/apt/lists/*
-
-# English language data is already included with tesseract-ocr-eng package
+# Use pre-built Tesseract image as base
+FROM tesseractshadow/tesseract4re:latest
 
 
 # ============================================
@@ -33,13 +17,12 @@ ENV TESSDATA_PREFIX="/usr/share/tesseract-ocr" \
 # Create a directory structure that can be easily copied to other images
 RUN mkdir -p /opt/tesseract/bin \
     && mkdir -p /opt/tesseract/lib \
-    && mkdir -p /opt/tesseract/share \
-    && mkdir -p /opt/tesseract/tessdata
+    && mkdir -p /opt/tesseract/share
 
 # Copy Tesseract binaries and libraries to the prepared directories
 RUN cp /usr/bin/tesseract /opt/tesseract/bin/ \
-    && cp -r /usr/lib/x86_64-linux-gnu/libtesseract* /opt/tesseract/lib/ 2>/dev/null || true \
-    && cp -r /usr/lib/x86_64-linux-gnu/liblept* /opt/tesseract/lib/ 2>/dev/null || true \
+    && find /usr -name "libtesseract*" -type f -exec cp {} /opt/tesseract/lib/ \; 2>/dev/null || true \
+    && find /usr -name "liblept*" -type f -exec cp {} /opt/tesseract/lib/ \; 2>/dev/null || true \
     && cp -r /usr/share/tesseract-ocr /opt/tesseract/share/
 
 # Set environment variable for the prepared structure
