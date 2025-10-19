@@ -124,22 +124,8 @@ COPY lambda_function.py ${LAMBDA_TASK_ROOT}/lambda_function.py
 # ============================================
 # Health Check
 # ============================================
-RUN cat > ${LAMBDA_TASK_ROOT}/test_docling.py << 'EOF'
-import json
-from docling.document_converter import DocumentConverter
-
-def test_docling():
-    try:
-        converter = DocumentConverter()
-        print("Docling initialized successfully")
-        return True
-    except Exception as e:
-        print(f"Docling initialization failed: {e}")
-        return False
-
-if __name__ == "__main__":
-    test_docling()
-EOF
+# Create test file using printf to avoid heredoc issues
+RUN printf 'import json\nfrom docling.document_converter import DocumentConverter\n\ndef test_docling():\n    try:\n        converter = DocumentConverter()\n        print("Docling initialized successfully")\n        return True\n    except Exception as e:\n        print(f"Docling initialization failed: {e}")\n        return False\n\nif __name__ == "__main__":\n    test_docling()\n' > ${LAMBDA_TASK_ROOT}/test_docling.py
 
 # Run health check
 RUN python ${LAMBDA_TASK_ROOT}/test_docling.py
