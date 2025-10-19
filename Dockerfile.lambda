@@ -4,9 +4,9 @@ FROM public.ecr.aws/lambda/python:3.11
 # Build arguments
 ARG RAG_PARSER=docling
 
-# Install system dependencies
+# Install system dependencies including Tesseract OCR
 RUN yum update -y && \
-    yum install -y git curl wget gcc gcc-c++ make && \
+    yum install -y git curl wget gcc gcc-c++ make tesseract tesseract-langpack-eng && \
     yum clean all
 
 # Install uv
@@ -14,6 +14,9 @@ RUN pip install uv
 
 # Install RAG-Anything from PyPI with all features
 RUN pip install 'raganything[all]'
+
+# Install Tesseract Python bindings
+RUN pip install pytesseract opencv-python pillow
 
 # Install parser based on build argument
 RUN if [ "$RAG_PARSER" = "docling" ]; then \

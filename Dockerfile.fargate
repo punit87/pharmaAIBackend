@@ -4,12 +4,21 @@ FROM python:3.11-slim
 # Build arguments
 ARG RAG_PARSER=docling
 
-# Install system dependencies
+# Install system dependencies including Tesseract OCR
 RUN apt-get update && apt-get install -y \
     git \
     curl \
     wget \
     build-essential \
+    tesseract-ocr \
+    tesseract-ocr-eng \
+    libtesseract-dev \
+    libgl1-mesa-glx \
+    libglib2.0-0 \
+    libsm6 \
+    libxext6 \
+    libxrender-dev \
+    libgomp1 \
     && rm -rf /var/lib/apt/lists/*
 
 # Install uv
@@ -20,6 +29,9 @@ WORKDIR /app
 
 # Install RAG-Anything from PyPI with all features
 RUN pip install 'raganything[all]'
+
+# Install Tesseract Python bindings
+RUN pip install pytesseract opencv-python pillow
 
 # Install parser based on build argument
 RUN if [ "$RAG_PARSER" = "docling" ]; then \
