@@ -1,26 +1,15 @@
 # RAG-Anything optimized for AWS Lambda
-# Multi-stage build: Tesseract base + Lambda runtime
-FROM jitesoft/tesseract-ocr:5-24.04 AS tesseract-base
+FROM public.ecr.aws/lambda/python:3.11
 
 # Build arguments
 ARG RAG_PARSER=docling
 
-# Install Python and dependencies in Tesseract base
-RUN apt-get update && apt-get install -y \
-    python3.11 \
-    python3.11-pip \
-    python3.11-venv \
-    git \
-    curl \
-    wget \
-    build-essential \
-    && rm -rf /var/lib/apt/lists/*
-
-# Create symlink for python3
-RUN ln -s /usr/bin/python3.11 /usr/bin/python3
+# Install Tesseract OCR and dependencies
+RUN yum update -y && \
+    yum install -y tesseract tesseract-langpack-eng && \
+    yum clean all
 
 # Install Python packages
-RUN pip install uv
 RUN pip install 'raganything[all]'
 RUN pip install pytesseract opencv-python-headless pillow
 
@@ -31,19 +20,8 @@ RUN if [ "$RAG_PARSER" = "docling" ]; then \
         pip install mineru; \
     fi
 
-# Final stage: Lambda runtime
-FROM public.ecr.aws/lambda/python:3.11
-
-# Copy Tesseract and Python environment from base
-COPY --from=tesseract-base /usr/bin/tesseract /usr/bin/tesseract
-COPY --from=tesseract-base /usr/share/tesseract-ocr /usr/share/tesseract-ocr
-COPY --from=tesseract-base /usr/lib/x86_64-linux-gnu/libtesseract* /usr/lib/x86_64-linux-gnu/
-COPY --from=tesseract-base /usr/lib/x86_64-linux-gnu/liblept* /usr/lib/x86_64-linux-gnu/
-COPY --from=tesseract-base /opt/venv /opt/venv
-
 # Set environment variables
-ENV PATH="/opt/venv/bin:$PATH" \
-    TESSDATA_PREFIX="/usr/share/tesseract-ocr/5/tessdata"
+ENV TESSDATA_PREFIX="/usr/share/tesseract-ocr/5/tessdata"
 
 # Copy Lambda handler
 COPY lambda_handler.py ${LAMBDA_TASK_ROOT}/
