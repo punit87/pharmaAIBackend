@@ -78,7 +78,7 @@ jobs:
         WORKDIR /app
         
         # Install RAG-Anything from PyPI with all features
-        RUN uv pip install 'raganything[all]' --system
+        RUN pip install 'raganything[all]' --system
         
         # Final stage: Use official LibreOffice headless image
         FROM libreofficedocker/libreoffice-unoserver:latest
@@ -102,7 +102,7 @@ jobs:
         
         # Install RAG-Anything with all optional dependencies
         RUN echo "Installing RAG-Anything with all features..." && \
-            uv pip install 'raganything[all]' --system
+            uv pip install 'raganything[all]'
         
         # Create a simple entrypoint script
         RUN echo '#!/bin/bash\n\
