@@ -1,45 +1,29 @@
 # Tesseract OCR optimized for AWS Lambda
-# Clean, minimal Lambda-compatible Tesseract image
-FROM public.ecr.aws/lambda/python:3.11
+# Use Ubuntu base image with Tesseract pre-installed
+FROM ubuntu:22.04
 
 # ============================================
 # System Dependencies
 # ============================================
-# Install Tesseract OCR and dependencies
-RUN yum update -y && \
-    yum install -y gcc gcc-c++ make cmake pkgconfig \
-    leptonica leptonica-devel \
-    libpng-devel libjpeg-devel libtiff-devel \
-    zlib-devel freetype-devel \
-    tar unzip autoconf automake libtool \
-    curl wget && \
-    yum clean all
+# Install Tesseract OCR and Python
+RUN apt-get update && \
+    apt-get install -y \
+    tesseract-ocr \
+    tesseract-ocr-eng \
+    python3 \
+    python3-pip \
+    curl && \
+    apt-get clean && \
+    rm -rf /var/lib/apt/lists/*
 
-# Download and compile Tesseract from source
-RUN cd /tmp && \
-    wget https://github.com/tesseract-ocr/tesseract/archive/5.3.3.tar.gz && \
-    tar -xzf 5.3.3.tar.gz && \
-    cd tesseract-5.3.3 && \
-    ./autogen.sh && \
-    ./configure --prefix=/usr/local && \
-    make && \
-    make install && \
-    ldconfig && \
-    cd / && \
-    rm -rf /tmp/tesseract-5.3.3 /tmp/5.3.3.tar.gz
-
-# Download English language data if not available
-RUN mkdir -p /usr/share/tesseract-ocr/5/tessdata && \
-    if [ ! -f /usr/share/tesseract-ocr/5/tessdata/eng.traineddata ]; then \
-        curl -L https://github.com/tesseract-ocr/tessdata/raw/main/eng.traineddata -o /usr/share/tesseract-ocr/5/tessdata/eng.traineddata; \
-    fi
+# English language data is already included with tesseract-ocr-eng package
 
 
 # ============================================
 # Environment Setup
 # ============================================
 # Set environment variables
-ENV TESSDATA_PREFIX="/usr/share/tesseract-ocr/5/tessdata" \
+ENV TESSDATA_PREFIX="/usr/share/tesseract-ocr" \
     PYTHONUNBUFFERED=1 \
     PYTHONDONTWRITEBYTECODE=1
 
@@ -52,37 +36,25 @@ RUN mkdir -p /opt/tesseract/bin \
     && mkdir -p /opt/tesseract/share \
     && mkdir -p /opt/tesseract/tessdata
 
-# Debug: Check what was actually installed
-RUN echo "Checking /usr/local/bin..." && \
-    (ls -la /usr/local/bin/ | grep tesseract || echo "No tesseract in /usr/local/bin") && \
-    echo "Checking /usr/bin..." && \
-    (ls -la /usr/bin/ | grep tesseract || echo "No tesseract in /usr/bin") && \
-    echo "Checking entire /usr for tesseract..." && \
-    (find /usr -name "*tesseract*" 2>/dev/null || echo "No tesseract files found") && \
-    echo "Testing tesseract command..." && \
-    (tesseract --version || echo "Tesseract command not found")
-
-# Find and copy Tesseract binaries and libraries to the prepared directories
-RUN find /usr -name "*tesseract*" -type f -executable 2>/dev/null | head -1 | xargs -I {} cp {} /opt/tesseract/bin/ \
-    && cp -r /usr/lib64/libtesseract* /opt/tesseract/lib/ 2>/dev/null || true \
-    && cp -r /usr/lib64/liblept* /opt/tesseract/lib/ 2>/dev/null || true \
-    && cp -r /usr/share/tesseract-ocr /opt/tesseract/share/ \
-    && cp -r /usr/share/tesseract-ocr/5/tessdata/* /opt/tesseract/tessdata/
+# Copy Tesseract binaries and libraries to the prepared directories
+RUN cp /usr/bin/tesseract /opt/tesseract/bin/ \
+    && cp -r /usr/lib/x86_64-linux-gnu/libtesseract* /opt/tesseract/lib/ 2>/dev/null || true \
+    && cp -r /usr/lib/x86_64-linux-gnu/liblept* /opt/tesseract/lib/ 2>/dev/null || true \
+    && cp -r /usr/share/tesseract-ocr /opt/tesseract/share/
 
 # Set environment variable for the prepared structure
 ENV TESSERACT_BIN="/opt/tesseract/bin" \
     TESSERACT_LIB="/opt/tesseract/lib" \
     TESSERACT_SHARE="/opt/tesseract/share" \
-    TESSERACT_TESSDATA="/opt/tesseract/tessdata"
+    TESSERACT_TESSDATA="/opt/tesseract/share/tessdata"
 
 # ============================================
 # Verification
 # ============================================
 # Test Tesseract installation and display version
 RUN echo "Testing Tesseract installation..." && \
-    ls -la /opt/tesseract/bin/ && \
-    /opt/tesseract/bin/tesseract --version && \
+    tesseract --version && \
     echo "Tesseract installation successful!"
 
 # Set default command to show Tesseract version
-CMD ["/opt/tesseract/bin/tesseract", "--version"]
+CMD ["tesseract", "--version"]
