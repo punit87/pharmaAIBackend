@@ -1,7 +1,6 @@
 # Tesseract OCR optimized for AWS Lambda
-# Use pre-built Tesseract image as base
-FROM tesseractshadow/tesseract4re:latest
-
+# Use Ubuntu base image and install Tesseract
+FROM ubuntu:22.04
 
 # ============================================
 # Environment Setup
@@ -9,7 +8,20 @@ FROM tesseractshadow/tesseract4re:latest
 # Set environment variables
 ENV TESSDATA_PREFIX="/usr/share/tesseract-ocr" \
     PYTHONUNBUFFERED=1 \
-    PYTHONDONTWRITEBYTECODE=1
+    PYTHONDONTWRITEBYTECODE=1 \
+    DEBIAN_FRONTEND=noninteractive
+
+# ============================================
+# Install Tesseract and Dependencies
+# ============================================
+RUN apt-get update && \
+    apt-get install -y \
+    tesseract-ocr \
+    tesseract-ocr-eng \
+    libtesseract-dev \
+    libleptonica-dev \
+    && apt-get clean \
+    && rm -rf /var/lib/apt/lists/*
 
 # ============================================
 # Prepare for Multi-stage Usage
