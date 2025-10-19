@@ -1,17 +1,14 @@
 name: 🚀 Deploy RAG-Anything Docker Image
-
 on:
   push:
     branches: [main, develop]
   pull_request:
     branches: [main]
   workflow_dispatch:
-
 env:
   REGISTRY: ghcr.io
   IMAGE_NAME: punit87/rag-anything
   PARSER: docling
-
 jobs:
   build-rag-anything:
     name: 🛠️ Build & Push RAG-Anything (Docling)
@@ -19,61 +16,76 @@ jobs:
     permissions:
       contents: read
       packages: write
-
     steps:
       - name: 🧩 Checkout repository
         uses: actions/checkout@v4
-
       - name: ⚙️ Set up Docker Buildx
         uses: docker/setup-buildx-action@v3
-
       - name: 🔐 Log in to GHCR
         uses: docker/login-action@v3
         with:
           registry: ${{ env.REGISTRY }}
           username: ${{ github.actor }}
           password: ${{ secrets.GITHUB_TOKEN }}
-
       - name: 🧱 Create Dockerfile for RAG-Anything (Docling)
         run: |
           mkdir -p rag-anything
           cat > rag-anything/Dockerfile << 'EOF'
-          FROM python:3.11-slim
-          ARG RAG_PARSER=docling
+          # Use jitesoft/tesseract-ocr as the base image.
+          # We choose the '5-alpine' tag for a modern Tesseract version and smaller image size.
+          # The base image already includes Tesseract OCR.
+          FROM jitesoft/tesseract-ocr:5-alpine
+          
+          # Install Python dependencies and use the Alpine package manager (apk)
+          RUN apk update \
+            # Install Python and its dependencies (Python is not included by default)
+            && apk add --no-cache \
+            python3 \
+            py3-pip \
+            git \
+            build-base \
+            # Clean up
+            && rm -rf /var/cache/apk/*
+          
+          # Use 'python3' and 'pip3' on Alpine
           ENV PYTHONUNBUFFERED=1
-
-          # System deps
-          RUN apt-get update && apt-get install -y \
-              git curl wget build-essential \
-              && rm -rf /var/lib/apt/lists/*
-
-          # Fast pip
-          RUN pip install --no-cache-dir uv
-
+          ENV PATH="/usr/bin:${PATH}"
+          
+          # Fast pip install via uv
+          RUN python3 -m pip install --no-cache-dir uv
+          
           WORKDIR /app
-
+          
           # Core dependencies
-          RUN pip install --no-cache-dir "raganything[all]" docling
-
+          # We use python3 -m pip because the python binary is likely named python3
+          RUN python3 -m pip install --no-cache-dir "raganything[all]" docling
+          
+          ARG RAG_PARSER=docling
           COPY <<'SCRIPT' /app/entrypoint.sh
           #!/bin/bash
           echo "🚀 RAG-Anything container ready!"
           echo "Parser: ${RAG_PARSER}"
-          python -c "import raganything; print('✅ RAG-Anything OK')"
-          python -c "import docling; print('✅ Docling OK')"
+          
+          # Verify Tesseract installation (not required for Docling, but good for verification)
+          tesseract --version
+          
+          # Verify Python packages
+          python3 -c "import raganything; print('✅ RAG-Anything OK')"
+          python3 -c "import docling; print('✅ Docling OK')"
+          
           exec "$@"
           SCRIPT
-
+          
           RUN chmod +x /app/entrypoint.sh
           ENTRYPOINT ["/app/entrypoint.sh"]
-          CMD ["python", "-c", "import raganything; print('RAG-Anything is ready!')"]
+          CMD ["python3", "-c", "import raganything; print('RAG-Anything is ready!')"]
           EOF
-
       - name: 🐳 Build and Push Docker Image
         uses: docker/build-push-action@v5
         with:
           context: ./rag-anything
           file: ./rag-anything/Dockerfile
+          # jitesoft/tesseract-ocr supports multi-platform building
           platforms: linux/amd64,linux/arm64
           push: true
           build-args: |
@@ -84,13 +96,11 @@ jobs:
             ${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}:${{ github.sha }}
           cache-from: type=gha
           cache-to: type=gha,mode=max
-
   summary:
     name: 🧾 Deployment Summary
     runs-on: ubuntu-latest
     needs: build-rag-anything
     if: always()
-
     steps:
       - name: 🪶 Write Deployment Summary
         run: |
@@ -105,6 +115,7 @@ jobs:
             echo "### 🧰 Features"
             echo "- ✅ RAG-Anything with all optional dependencies"
             echo "- ✅ Docling parser included"
+            echo "- ✅ **Pre-installed Tesseract via jitesoft/tesseract-ocr**"
             echo "- ✅ Multi-architecture (amd64, arm64)"
             echo ""
             echo "### 🧪 Quick Usage"
