@@ -7,6 +7,11 @@ FROM public.ecr.aws/lambda/python:3.11 as builder
 # ============================================
 RUN yum update -y && \
     yum install -y \
+    gcc \
+    gcc-c++ \
+    make \
+    cmake \
+    pkgconfig \
     poppler-utils \
     curl \
     wget \
