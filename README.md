@@ -1,4 +1,6 @@
-# Docker Image Build Automation
+# pharmaAIBackend
+
+## Docker Image Build Automation
 
 This repository contains a single GitHub Actions workflow to automatically build and publish Docker images for RAG-Anything and Docling projects to GitHub Container Registry.
 

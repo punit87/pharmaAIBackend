@@ -1,0 +1,62 @@
+FROM public.ecr.aws/lambda/python:3.12
+
+# Install system dependencies for Leptonica and Tesseract
+RUN dnf -y install \
+    gcc gcc-c++ make libffi-devel python3-devel xz git \
+    poppler-utils autoconf automake libtool pkgconfig \
+    glibc-devel libtiff libtiff-devel \
+    nss glibc fontconfig cups-libs glibc-common \
+    libpng libpng-devel libjpeg-turbo libjpeg-turbo-devel zlib zlib-devel \
+    glibc-langpack-en glibc-locale-source \
+    && dnf clean all && rm -rf /var/cache/dnf
+
+# Generate en_US.UTF-8 locale
+RUN localedef -i en_US -f UTF-8 en_US.UTF-8
+
+# Build and install Leptonica
+RUN curl -L -O https://github.com/DanBloomberg/leptonica/releases/download/1.83.1/leptonica-1.83.1.tar.gz && \
+    tar -xvzf leptonica-1.83.1.tar.gz && \
+    cd leptonica-1.83.1 && \
+    ./configure --prefix=/usr/local && make && make install && \
+    cd .. && rm -rf leptonica*
+
+# Update library paths for the linker
+RUN /sbin/ldconfig /usr/local/lib
+
+# Debug Leptonica installation
+RUN ls -l /usr/local/lib/lib*lept* && \
+    ls -l /usr/local/lib/pkgconfig/lept.pc && \
+    PKG_CONFIG_PATH=/usr/local/lib/pkgconfig:$PKG_CONFIG_PATH pkg-config --modversion lept
+
+# Build and install Tesseract
+RUN curl -L -O https://github.com/tesseract-ocr/tesseract/archive/refs/tags/5.3.1.tar.gz && \
+    tar -xvzf 5.3.1.tar.gz && \
+    cd tesseract-5.3.1 && \
+    export PKG_CONFIG_PATH=/usr/local/lib/pkgconfig && \
+    export LD_LIBRARY_PATH=/usr/local/lib && \
+    ./autogen.sh && \
+    ./configure --prefix=/usr/local && \
+    make && \
+    make install && \
+    cd .. && \
+    rm -rf tesseract*
+
+# Install Tesseract English language data
+RUN mkdir -p /usr/local/share/tessdata && \
+    curl -L -o /usr/local/share/tessdata/eng.traineddata https://github.com/tesseract-ocr/tessdata/raw/main/eng.traineddata
+
+# Test Tesseract install
+RUN tesseract --list-langs
+
+# Set environment variables for build tools and runtime
+ENV PKG_CONFIG_PATH=/usr/local/lib/pkgconfig \
+    LD_LIBRARY_PATH=/usr/local/lib:$LD_LIBRARY_PATH \
+    PATH=/usr/local/bin:$PATH \
+    TESSDATA_PREFIX=/usr/local/share/tessdata/ \
+    LANG=en_US.UTF-8 \
+    LANGUAGE=en_US:en \
+    LC_ALL=en_US.UTF-8 \
+    HOME=/tmp
+
+# Use CMD as a placeholder (will be overridden by the Lambda image)
+CMD ["/bin/bash"]
