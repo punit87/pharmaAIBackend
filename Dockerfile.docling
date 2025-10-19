@@ -84,6 +84,21 @@ COPY --from=builder /usr/local/lib/python3.10/dist-packages /var/lang/lib/python
 COPY --from=builder /usr/local/bin /var/lang/bin
 
 # ============================================
+# Verify Package Installation
+# ============================================
+# Check that packages are properly copied and accessible
+RUN echo "Checking Python packages..." && \
+    python3 -c "import sys; print('Python version:', sys.version)" && \
+    python3 -c "import sys; print('Python path:', sys.path)" && \
+    ls -la /var/lang/lib/python3.11/site-packages/ | head -10 && \
+    echo "Checking for docling..." && \
+    ls -la /var/lang/lib/python3.11/site-packages/ | grep -i docling || echo "Docling not found in site-packages" && \
+    echo "Checking for numpy..." && \
+    ls -la /var/lang/lib/python3.11/site-packages/ | grep -i numpy || echo "NumPy not found in site-packages" && \
+    echo "Checking for pytesseract..." && \
+    ls -la /var/lang/lib/python3.11/site-packages/ | grep -i tesseract || echo "Pytesseract not found in site-packages"
+
+# ============================================
 # Final Cleanup and Space Optimization
 # ============================================
 # Remove unnecessary files from the final image
@@ -111,7 +126,7 @@ RUN rm -rf /tmp/* && \
 # Only set Docling-specific environment variables
 ENV PYTHONUNBUFFERED=1 \
     PYTHONDONTWRITEBYTECODE=1 \
-    PYTHONPATH="/var/lang/lib/python3.11/site-packages" \
+    PYTHONPATH="/var/lang/lib/python3.11/site-packages:/var/lang/lib/python3.11/dist-packages" \
     LANG=C.UTF-8 \
     LC_ALL=C.UTF-8
 
@@ -122,13 +137,16 @@ ENV PYTHONUNBUFFERED=1 \
 COPY lambda_function.py ${LAMBDA_TASK_ROOT}/lambda_function.py
 
 # ============================================
-# Verify Installation
+# Test Package Imports
 # ============================================
-# Simple verification that packages are installed
-RUN python -c "import docling; print('Docling installed successfully')" && \
-    python -c "import pytesseract; print('Pytesseract installed successfully')" && \
-    python -c "import numpy; print('NumPy installed successfully')" && \
-    echo "✅ All core packages verified!"
+# Test that packages can be imported with proper PYTHONPATH
+RUN echo "Testing package imports..." && \
+    python3 -c "import numpy; print('✓ NumPy imported successfully')" && \
+    python3 -c "import pandas; print('✓ Pandas imported successfully')" && \
+    python3 -c "import PIL; print('✓ PIL imported successfully')" && \
+    python3 -c "import pytesseract; print('✓ Pytesseract imported successfully')" && \
+    python3 -c "import docling; print('✓ Docling imported successfully')" && \
+    echo "✅ All packages imported successfully!"
 
 # ============================================
 # Final Configuration
