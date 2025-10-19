@@ -29,7 +29,23 @@ RUN pip3 install --no-cache-dir --upgrade pip && \
     && rm -rf /root/.cache/pip
 
 # Create a simple test script
-RUN printf 'import sys\nimport pytesseract\nfrom PIL import Image\n\ndef test_tesseract():\n    try:\n        # Create a simple test image\n        img = Image.new("RGB", (100, 30), color="white")\n        result = pytesseract.image_to_string(img)\n        print("✅ Tesseract working correctly")\n        return True\n    except Exception as e:\n        print(f"❌ Tesseract test failed: {e}")\n        return False\n\nif __name__ == "__main__":\n    success = test_tesseract()\n    sys.exit(0 if success else 1)\n' > /var/task/test_tesseract.py
+RUN echo 'import sys' > /var/task/test_tesseract.py && \
+    echo 'import pytesseract' >> /var/task/test_tesseract.py && \
+    echo 'from PIL import Image' >> /var/task/test_tesseract.py && \
+    echo '' >> /var/task/test_tesseract.py && \
+    echo 'def test_tesseract():' >> /var/task/test_tesseract.py && \
+    echo '    try:' >> /var/task/test_tesseract.py && \
+    echo '        img = Image.new("RGB", (100, 30), color="white")' >> /var/task/test_tesseract.py && \
+    echo '        result = pytesseract.image_to_string(img)' >> /var/task/test_tesseract.py && \
+    echo '        print("✅ Tesseract working correctly")' >> /var/task/test_tesseract.py && \
+    echo '        return True' >> /var/task/test_tesseract.py && \
+    echo '    except Exception as e:' >> /var/task/test_tesseract.py && \
+    echo '        print(f"❌ Tesseract test failed: {e}")' >> /var/task/test_tesseract.py && \
+    echo '        return False' >> /var/task/test_tesseract.py && \
+    echo '' >> /var/task/test_tesseract.py && \
+    echo 'if __name__ == "__main__":' >> /var/task/test_tesseract.py && \
+    echo '    success = test_tesseract()' >> /var/task/test_tesseract.py && \
+    echo '    sys.exit(0 if success else 1)' >> /var/task/test_tesseract.py
 
 # Run test
 RUN python3 /var/task/test_tesseract.py

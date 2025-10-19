@@ -40,7 +40,26 @@ RUN pip3 install --no-cache-dir --upgrade pip && \
 COPY lambda_function.py /var/task/
 
 # Create a simple health check script
-RUN printf 'import sys\nimport json\n\ndef test_imports():\n    try:\n        import numpy\n        import pandas\n        import PIL\n        import pytesseract\n        from docling.document_converter import DocumentConverter\n        converter = DocumentConverter()\n        print("✅ All imports successful")\n        return True\n    except Exception as e:\n        print(f"❌ Import failed: {e}")\n        return False\n\nif __name__ == "__main__":\n    success = test_imports()\n    sys.exit(0 if success else 1)\n' > /var/task/test_docling.py
+RUN echo 'import sys' > /var/task/test_docling.py && \
+    echo 'import json' >> /var/task/test_docling.py && \
+    echo '' >> /var/task/test_docling.py && \
+    echo 'def test_imports():' >> /var/task/test_docling.py && \
+    echo '    try:' >> /var/task/test_docling.py && \
+    echo '        import numpy' >> /var/task/test_docling.py && \
+    echo '        import pandas' >> /var/task/test_docling.py && \
+    echo '        import PIL' >> /var/task/test_docling.py && \
+    echo '        import pytesseract' >> /var/task/test_docling.py && \
+    echo '        from docling.document_converter import DocumentConverter' >> /var/task/test_docling.py && \
+    echo '        converter = DocumentConverter()' >> /var/task/test_docling.py && \
+    echo '        print("✅ All imports successful")' >> /var/task/test_docling.py && \
+    echo '        return True' >> /var/task/test_docling.py && \
+    echo '    except Exception as e:' >> /var/task/test_docling.py && \
+    echo '        print(f"❌ Import failed: {e}")' >> /var/task/test_docling.py && \
+    echo '        return False' >> /var/task/test_docling.py && \
+    echo '' >> /var/task/test_docling.py && \
+    echo 'if __name__ == "__main__":' >> /var/task/test_docling.py && \
+    echo '    success = test_imports()' >> /var/task/test_docling.py && \
+    echo '    sys.exit(0 if success else 1)' >> /var/task/test_docling.py
 
 # Run health check
 RUN python3 /var/task/test_docling.py
