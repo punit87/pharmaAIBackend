@@ -24,14 +24,14 @@ RUN apt-get update && \
 # ============================================
 # Python Environment Setup
 # ============================================
-# Upgrade pip
-RUN python3 -m pip install --upgrade pip
+# Upgrade pip (suppress root user warning in Docker)
+RUN python3 -m pip install --upgrade pip --root-user-action=ignore
 
 # ============================================
 # Docling Installation (Pre-compiled packages only)
 # ============================================
 # Install Docling and dependencies using pre-compiled packages
-RUN python3 -m pip install --no-cache-dir --only-binary=all \
+RUN python3 -m pip install --no-cache-dir --only-binary=all --root-user-action=ignore \
     numpy \
     scipy \
     pandas \
