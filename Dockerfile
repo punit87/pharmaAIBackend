@@ -19,13 +19,13 @@ RUN pip install uv
 WORKDIR /app
 
 # Install RAG-Anything from PyPI with all features
-RUN pip install 'raganything[all]' --system
+RUN pip install 'raganything[all]'
 
 # Install parser based on build argument
 RUN if [ "$RAG_PARSER" = "docling" ]; then \
-        pip install docling --system; \
+        pip install docling; \
     else \
-        pip install mineru --system; \
+        pip install mineru; \
     fi
 
 # Create a simple entrypoint script
