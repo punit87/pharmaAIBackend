@@ -33,11 +33,25 @@ jobs:
         username: ${{ github.actor }}
         password: ${{ secrets.GITHUB_TOKEN }}
 
+    - name: Checkout RAG-Anything repository
+      uses: actions/checkout@v4
+      with:
+        repository: punit87/RAG-Anything
+        ref: main
+        path: rag-anything
+
+    - name: Checkout Docling repository
+      uses: actions/checkout@v4
+      with:
+        repository: punit87/docling
+        ref: main
+        path: docling
+
     - name: Build and push RAG-Anything image
       uses: docker/build-push-action@v5
       with:
-        context: https://github.com/punit87/RAG-Anything.git
-        file: https://github.com/punit87/RAG-Anything.git#main:Dockerfile
+        context: ./rag-anything
+        file: ./rag-anything/Dockerfile
         platforms: linux/amd64,linux/arm64
         push: true
         tags: |
@@ -51,8 +65,8 @@ jobs:
     - name: Build and push Docling image
       uses: docker/build-push-action@v5
       with:
-        context: https://github.com/punit87/docling.git
-        file: https://github.com/punit87/docling.git#main:Dockerfile
+        context: ./docling
+        file: ./docling/Dockerfile
         platforms: linux/amd64,linux/arm64
         push: true
         tags: |
