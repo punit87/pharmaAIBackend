@@ -1,20 +1,25 @@
 # RAG-Anything with Docling parser
-# Use official Tesseract image as base
-FROM jitesoft/tesseract-ocr:5-24.04
+# Use Python base and install Tesseract
+FROM python:3.11-slim
 
 # Build arguments
 ARG RAG_PARSER=docling
 
-# Install Python and basic dependencies
+# Install system dependencies including Tesseract OCR
 RUN apt-get update && apt-get install -y \
-    python3 \
-    python3-pip \
-    python3-venv \
-    python3-dev \
     git \
     curl \
     wget \
     build-essential \
+    tesseract-ocr \
+    tesseract-ocr-eng \
+    libtesseract-dev \
+    libgl1-mesa-glx \
+    libglib2.0-0 \
+    libsm6 \
+    libxext6 \
+    libxrender-dev \
+    libgomp1 \
     && rm -rf /var/lib/apt/lists/*
 
 # Install uv
