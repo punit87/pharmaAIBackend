@@ -81,7 +81,7 @@ jobs:
         RUN pip install 'raganything[all]' --system
         
         # Final stage: Use official LibreOffice headless image
-        FROM libreofficedocker/libreoffice-unoserver:latest
+        FROM libreofficedocker/libreoffice-unoserver:3.20
         
         # Install Python 3.11 and uv
         RUN apt-get update && apt-get install -y \
