@@ -7,7 +7,7 @@ FROM public.ecr.aws/lambda/python:3.11
 # ============================================
 # Install Tesseract OCR and dependencies
 RUN yum update -y && \
-    yum install -y tesseract curl && \
+    yum install -y tesseract tesseract-devel curl && \
     yum clean all
 
 # Download English language data if not available
@@ -36,13 +36,13 @@ RUN mkdir -p /opt/tesseract/bin \
 
 # Debug: Check what was actually installed
 RUN echo "Checking yum packages..." && \
-    rpm -qa | grep tesseract && \
+    (rpm -qa | grep tesseract || echo "No tesseract packages found") && \
     echo "Checking /usr/bin..." && \
-    ls -la /usr/bin/ | grep tesseract && \
+    (ls -la /usr/bin/ | grep tesseract || echo "No tesseract in /usr/bin") && \
     echo "Checking /usr/sbin..." && \
-    ls -la /usr/sbin/ | grep tesseract && \
+    (ls -la /usr/sbin/ | grep tesseract || echo "No tesseract in /usr/sbin") && \
     echo "Checking entire /usr for tesseract..." && \
-    find /usr -name "*tesseract*" 2>/dev/null
+    (find /usr -name "*tesseract*" 2>/dev/null || echo "No tesseract files found")
 
 # Find and copy Tesseract binaries and libraries to the prepared directories
 RUN find /usr -name "*tesseract*" -type f -executable 2>/dev/null | head -1 | xargs -I {} cp {} /opt/tesseract/bin/ \
