@@ -7,17 +7,15 @@ ARG RAG_PARSER=docling
 
 # Install Python and basic dependencies
 RUN apt-get update && apt-get install -y \
-    python3.11 \
-    python3.11-pip \
-    python3.11-venv \
+    python3 \
+    python3-pip \
+    python3-venv \
+    python3-dev \
     git \
     curl \
     wget \
     build-essential \
     && rm -rf /var/lib/apt/lists/*
-
-# Create symlink for python3
-RUN ln -s /usr/bin/python3.11 /usr/bin/python3
 
 # Install uv
 RUN pip install uv
