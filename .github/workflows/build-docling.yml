@@ -13,20 +13,22 @@ env:
   TESSERACT_IMAGE: ${{ github.repository_owner }}/tesseract-lambda
 
 jobs:
-  # Main job that builds both Tesseract and Docling images
-  build-images:
+  # Job 1: Build Tesseract image only
+  build-tesseract:
     runs-on: ubuntu-latest
     permissions:
       contents: read
       packages: write
+    outputs:
+      image-digest: ${{ steps.build.outputs.digest }}
     
     steps:
     - name: Checkout code
       uses: actions/checkout@v4
       
-    - name: Ultra-aggressive workspace cleanup before build
+    - name: Ultra-aggressive workspace cleanup before Tesseract build
       run: |
-        echo "🧹 Starting ULTRA-AGGRESSIVE workspace cleanup..."
+        echo "🧹 Starting ULTRA-AGGRESSIVE workspace cleanup for Tesseract..."
         
         # Clean up system files aggressively
         sudo rm -rf /tmp/* 2>/dev/null || true
@@ -73,7 +75,7 @@ jobs:
         find . -name "*.dll" -size +5M -delete 2>/dev/null || true
         
         # Show disk usage before build
-        echo "📊 Disk usage before build:"
+        echo "📊 Disk usage before Tesseract build:"
         df -h
         du -sh . || true
         
@@ -90,6 +92,7 @@ jobs:
       uses: docker/setup-buildx-action@v3
 
     - name: Build and push Tesseract image (AMD64 only to save space)
+      id: build
       uses: docker/build-push-action@v5
       with:
         context: .
@@ -106,15 +109,96 @@ jobs:
     - name: Clean up after Tesseract build
       run: |
         echo "🧹 Cleaning up after Tesseract build..."
-        docker system prune -f
-        docker builder prune -f
+        docker system prune -af --volumes
+        docker builder prune -af
+        docker container prune -f
+        docker image prune -af
+        docker volume prune -f
+        docker network prune -f
         echo "📊 Disk usage after Tesseract build:"
         df -h
+
+  # Job 2: Build Docling image (depends on Tesseract)
+  build-docling:
+    needs: build-tesseract
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      packages: write
+    
+    steps:
+    - name: Checkout code
+      uses: actions/checkout@v4
+      
+    - name: Ultra-aggressive workspace cleanup before Docling build
+      run: |
+        echo "🧹 Starting ULTRA-AGGRESSIVE workspace cleanup for Docling..."
+        
+        # Clean up system files aggressively
+        sudo rm -rf /tmp/* 2>/dev/null || true
+        sudo rm -rf /var/tmp/* 2>/dev/null || true
+        sudo rm -rf /var/cache/* 2>/dev/null || true
+        sudo rm -rf /var/log/* 2>/dev/null || true
+        sudo find /var/log -type f -name "*.log" -delete 2>/dev/null || true
+        
+        # Clean up Docker system ULTRA aggressively
+        docker system prune -af --volumes 2>/dev/null || true
+        docker builder prune -af 2>/dev/null || true
+        docker container prune -f 2>/dev/null || true
+        docker image prune -af 2>/dev/null || true
+        docker volume prune -f 2>/dev/null || true
+        docker network prune -f 2>/dev/null || true
+        
+        # Clean up any existing build artifacts
+        rm -rf .dockerignore 2>/dev/null || true
+        rm -rf *.log 2>/dev/null || true
+        rm -rf build/ 2>/dev/null || true
+        rm -rf dist/ 2>/dev/null || true
+        rm -rf node_modules/ 2>/dev/null || true
+        rm -rf .pytest_cache/ 2>/dev/null || true
+        rm -rf __pycache__/ 2>/dev/null || true
+        rm -rf .coverage 2>/dev/null || true
+        rm -rf .mypy_cache/ 2>/dev/null || true
+        
+        # Clean up Python cache files
+        find . -name "*.pyc" -delete 2>/dev/null || true
+        find . -name "__pycache__" -type d -exec rm -rf {} + 2>/dev/null || true
+        find . -name "*.pyo" -delete 2>/dev/null || true
+        find . -name "*.pyd" -delete 2>/dev/null || true
+        find . -name "*.egg-info" -type d -exec rm -rf {} + 2>/dev/null || true
+        find . -name "*.dist-info" -type d -exec rm -rf {} + 2>/dev/null || true
+        
+        # Clean up any test files
+        find . -name "test_*" -type f -delete 2>/dev/null || true
+        find . -name "*_test.py" -type f -delete 2>/dev/null || true
+        find . -name "tests" -type d -exec rm -rf {} + 2>/dev/null || true
+        
+        # Clean up large files that might be taking space
+        find . -name "*.so" -size +5M -delete 2>/dev/null || true
+        find . -name "*.dylib" -size +5M -delete 2>/dev/null || true
+        find . -name "*.dll" -size +5M -delete 2>/dev/null || true
+        
+        # Show disk usage before build
+        echo "📊 Disk usage before Docling build:"
+        df -h
+        du -sh . || true
+        
+        echo "✅ ULTRA-AGGRESSIVE workspace cleanup completed!"
+        
+    - name: Log in to GitHub Container Registry
+      uses: docker/login-action@v3
+      with:
+        registry: ${{ env.REGISTRY }}
+        username: ${{ github.actor }}
+        password: ${{ secrets.GITHUB_TOKEN }}
+      
+    - name: Set up Docker Buildx
+      uses: docker/setup-buildx-action@v3
 
     - name: Wait for Tesseract image to be available
       run: |
         echo "Waiting for Tesseract image to be available in registry..."
-        sleep 10
+        sleep 15
         docker pull ${{ env.REGISTRY }}/${{ env.TESSERACT_IMAGE }}:latest
         echo "✅ Tesseract image is available and ready for Docling build"
 
@@ -143,60 +227,3 @@ jobs:
         docker network prune -f
         echo "📊 Final disk usage:"
         df -h
-        
-    - name: Cleanup after build
-      if: always()
-      run: |
-        echo "🧹 Final cleanup after build..."
-        
-        # Remove Docker images to free space
-        docker rmi $(docker images -q) 2>/dev/null || true
-        docker system prune -af --volumes
-        
-        # Show final disk usage
-        echo "📊 Final disk usage:"
-        df -h
-        
-        echo "✅ Build cleanup completed!"
-
-    - name: Summary
-      run: |
-        echo "## 🚀 Docker Images Deployed Successfully!" >> $GITHUB_STEP_SUMMARY
-        echo "" >> $GITHUB_STEP_SUMMARY
-        echo "### Tesseract Lambda" >> $GITHUB_STEP_SUMMARY
-        echo "- \`${{ env.REGISTRY }}/${{ env.TESSERACT_IMAGE }}:latest\`" >> $GITHUB_STEP_SUMMARY
-        echo "- \`${{ env.REGISTRY }}/${{ env.TESSERACT_IMAGE }}:${{ github.sha }}\`" >> $GITHUB_STEP_SUMMARY
-        echo "- \`${{ env.REGISTRY }}/${{ env.TESSERACT_IMAGE }}:${{ github.ref_name }}\`" >> $GITHUB_STEP_SUMMARY
-        echo "" >> $GITHUB_STEP_SUMMARY
-        echo "### Docling" >> $GITHUB_STEP_SUMMARY
-        echo "- \`${{ env.REGISTRY }}/${{ env.DOCLING_IMAGE }}:latest\`" >> $GITHUB_STEP_SUMMARY
-        echo "- \`${{ env.REGISTRY }}/${{ env.DOCLING_IMAGE }}:${{ github.sha }}\`" >> $GITHUB_STEP_SUMMARY
-        echo "- \`${{ env.REGISTRY }}/${{ env.DOCLING_IMAGE }}:${{ github.ref_name }}\`" >> $GITHUB_STEP_SUMMARY
-        echo "" >> $GITHUB_STEP_SUMMARY
-        echo "### Usage" >> $GITHUB_STEP_SUMMARY
-        echo "\`\`\`bash" >> $GITHUB_STEP_SUMMARY
-        echo "# Pull Tesseract Lambda" >> $GITHUB_STEP_SUMMARY
-        echo "docker pull ${{ env.REGISTRY }}/${{ env.TESSERACT_IMAGE }}:latest" >> $GITHUB_STEP_SUMMARY
-        echo "" >> $GITHUB_STEP_SUMMARY
-        echo "# Pull Docling" >> $GITHUB_STEP_SUMMARY
-        echo "docker pull ${{ env.REGISTRY }}/${{ env.DOCLING_IMAGE }}:latest" >> $GITHUB_STEP_SUMMARY
-        echo "\`\`\`" >> $GITHUB_STEP_SUMMARY
-        
-    - name: Upload build logs
-      if: failure()
-      run: |
-        echo "📋 Collecting build logs for debugging..."
-        mkdir -p build-logs
-        find . -name "*.log" -exec cp {} build-logs/ \; 2>/dev/null || true
-        docker logs $(docker ps -aq) > build-logs/docker-logs.txt 2>/dev/null || true
-        echo "📊 Build artifacts collected:"
-        ls -la build-logs/ || echo "No logs found"
-        
-    - name: Upload artifacts
-      if: failure() && (contains(github.event.head_commit.message, 'debug') || contains(github.event.head_commit.message, 'logs'))
-      uses: actions/upload-artifact@v4
-      with:
-        name: build-logs
-        path: build-logs/
-        if-no-files-found: ignore
-        retention-days: 7
