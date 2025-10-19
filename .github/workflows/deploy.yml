@@ -44,7 +44,7 @@ jobs:
           ${{ env.REGISTRY }}/punit87/rag-anything:latest
           ${{ env.REGISTRY }}/punit87/rag-anything:${{ github.sha }}
           ${{ env.REGISTRY }}/punit87/rag-anything:${{ github.ref_name }}
-          ${{ env.REGISTRY }}/punit87/rag-anything:${{ github.event.inputs.tag }}
+          ${{ github.event.inputs.tag != '' && format('{0}/punit87/rag-anything:{1}', env.REGISTRY, github.event.inputs.tag) || '' }}
         cache-from: type=gha
         cache-to: type=gha,mode=max
 
@@ -59,7 +59,7 @@ jobs:
           ${{ env.REGISTRY }}/punit87/docling:latest
           ${{ env.REGISTRY }}/punit87/docling:${{ github.sha }}
           ${{ env.REGISTRY }}/punit87/docling:${{ github.ref_name }}
-          ${{ env.REGISTRY }}/punit87/docling:${{ github.event.inputs.tag }}
+          ${{ github.event.inputs.tag != '' && format('{0}/punit87/docling:{1}', env.REGISTRY, github.event.inputs.tag) || '' }}
         cache-from: type=gha
         cache-to: type=gha,mode=max
 
