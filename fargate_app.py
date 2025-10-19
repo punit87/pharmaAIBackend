@@ -1,6 +1,8 @@
 from fastapi import FastAPI, HTTPException
 from pydantic import BaseModel
 import os
+import boto3
+import tempfile
 from raganything import RAGAnything, RAGAnythingConfig
 from lightrag.llm.openai import openai_complete_if_cache, openai_embed
 from lightrag.utils import EmbeddingFunc
@@ -10,13 +12,54 @@ app = FastAPI(title="RAG-Anything API", version="1.0.0")
 # Global RAG instance
 rag_instance = None
 
+# Initialize S3 client
+s3_client = boto3.client('s3')
+
+def download_from_s3(bucket, key, local_path):
+    """Download file from S3 to local path"""
+    try:
+        s3_client.download_file(bucket, key, local_path)
+        return True
+    except Exception as e:
+        print(f"Error downloading from S3: {str(e)}")
+        return False
+
+def process_s3_document(bucket, key, rag):
+    """Process document from S3 using RAG-Anything"""
+    try:
+        # Create temporary file
+        with tempfile.NamedTemporaryFile(delete=False, suffix='.pdf') as tmp_file:
+            local_path = tmp_file.name
+        
+        # Download from S3
+        if not download_from_s3(bucket, key, local_path):
+            return False, "Failed to download document from S3"
+        
+        # Process with RAG-Anything
+        print(f"Processing S3 document: s3://{bucket}/{key}")
+        rag.insert(local_path)
+        
+        # Clean up
+        os.unlink(local_path)
+        
+        print("S3 document processed successfully")
+        return True, "Document processed successfully"
+        
+    except Exception as e:
+        print(f"Error processing S3 document: {str(e)}")
+        return False, str(e)
+
 class QueryRequest(BaseModel):
     query: str
     document: str = None
 
 class DocumentRequest(BaseModel):
     document: str
-    document_type: str = "url"  # "url" or "base64"
+    document_type: str = "url"  # "url", "base64", or "s3"
+
+class S3DocumentRequest(BaseModel):
+    bucket: str
+    key: str
 
 class QueryResponse(BaseModel):
     query: str
@@ -133,6 +176,29 @@ async def query_rag(request: QueryRequest):
         
     except Exception as e:
         raise HTTPException(status_code=500, detail=str(e))
+
+@app.post("/process-s3-document")
+async def process_s3_document_endpoint(request: S3DocumentRequest):
+    """Process a document from S3 and add it to the RAG system"""
+    try:
+        rag = get_rag_instance()
+        
+        # Process S3 document
+        success, message = process_s3_document(request.bucket, request.key, rag)
+        
+        if not success:
+            raise HTTPException(status_code=500, detail=f"S3 document processing failed: {message}")
+        
+        return {
+            "status": "success",
+            "message": "S3 document processed and added to RAG system",
+            "bucket": request.bucket,
+            "key": request.key
+        }
+        
+    except Exception as e:
+        print(f"Error processing S3 document: {str(e)}")
+        raise HTTPException(status_code=500, detail=f"S3 document processing failed: {str(e)}")
 
 @app.post("/process-document")
 async def process_document(request: DocumentRequest):
