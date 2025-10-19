@@ -1,6 +1,0 @@
-sentence-transformers==2.7.0
-faiss-cpu==1.7.4
-transformers==4.34.0
-numpy==1.26.4
-torch 
-torchvision

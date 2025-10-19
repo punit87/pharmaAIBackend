@@ -1,9 +1,0 @@
-FROM public.ecr.aws/lambda/python:3.12
-
-# Install Python dependencies for spaCy
-COPY requirements.txt .
-RUN pip3 install --no-cache-dir -r requirements.txt && \
-    python3 -m spacy download en_core_web_lg
-
-# Verify spaCy installation
-RUN python3 -c "import spacy; nlp = spacy.load('en_core_web_lg'); print('spaCy and en_core_web_lg loaded successfully')"

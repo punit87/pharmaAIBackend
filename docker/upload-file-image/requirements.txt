@@ -1,5 +1,0 @@
-chardet
-pandas
-requests_toolbelt
-openpyxl
-xlrd

@@ -1,4 +1,0 @@
-boto3
-pdf2image
-pillow
-requests

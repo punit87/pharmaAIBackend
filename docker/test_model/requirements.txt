@@ -1,4 +1,0 @@
-flask
-huggingface_hub
-transformers
-nltk
