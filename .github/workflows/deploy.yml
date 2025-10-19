@@ -36,14 +36,14 @@ jobs:
     - name: Checkout RAG-Anything repository
       uses: actions/checkout@v4
       with:
-        repository: punit87/RAG-Anything
+        repository: HKUDS/RAG-Anything
         ref: main
         path: rag-anything
 
     - name: Checkout Docling repository
       uses: actions/checkout@v4
       with:
-        repository: punit87/docling
+        repository: docling-project/docling
         ref: main
         path: docling
 
