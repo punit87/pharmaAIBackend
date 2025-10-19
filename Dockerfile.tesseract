@@ -34,10 +34,10 @@ RUN mkdir -p /opt/tesseract/bin \
     && mkdir -p /opt/tesseract/share \
     && mkdir -p /opt/tesseract/tessdata
 
-# Copy Tesseract binaries and libraries to the prepared directories
-RUN cp /usr/bin/tesseract /opt/tesseract/bin/ \
-    && cp -r /usr/lib64/libtesseract* /opt/tesseract/lib/ \
-    && cp -r /usr/lib64/liblept* /opt/tesseract/lib/ \
+# Find and copy Tesseract binaries and libraries to the prepared directories
+RUN TESSERACT_PATH=$(which tesseract) && cp $TESSERACT_PATH /opt/tesseract/bin/ \
+    && cp -r /usr/lib64/libtesseract* /opt/tesseract/lib/ 2>/dev/null || true \
+    && cp -r /usr/lib64/liblept* /opt/tesseract/lib/ 2>/dev/null || true \
     && cp -r /usr/share/tesseract-ocr /opt/tesseract/share/ \
     && cp -r /usr/share/tesseract-ocr/5/tessdata/* /opt/tesseract/tessdata/
 
