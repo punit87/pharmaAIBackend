@@ -76,21 +76,36 @@ jobs:
         username: ${{ github.actor }}
         password: ${{ secrets.GITHUB_TOKEN }}
       
+    - name: Set up Docker Buildx
+      uses: docker/setup-buildx-action@v3
+
     - name: Build and push Tesseract image
-      run: |
-        echo "🔨 Building Tesseract image..."
-        docker build -f Dockerfile.tesseract -t ${{ env.REGISTRY }}/${{ env.TESSERACT_IMAGE }}:latest .
-        
-        echo "📤 Pushing Tesseract image to GitHub Container Registry..."
-        docker push ${{ env.REGISTRY }}/${{ env.TESSERACT_IMAGE }}:latest
-        
+      uses: docker/build-push-action@v5
+      with:
+        context: .
+        file: ./Dockerfile.tesseract
+        platforms: linux/amd64,linux/arm64
+        push: true
+        tags: |
+          ${{ env.REGISTRY }}/${{ env.TESSERACT_IMAGE }}:latest
+          ${{ env.REGISTRY }}/${{ env.TESSERACT_IMAGE }}:${{ github.sha }}
+          ${{ env.REGISTRY }}/${{ env.TESSERACT_IMAGE }}:${{ github.ref_name }}
+        cache-from: type=gha
+        cache-to: type=gha,mode=max
+
     - name: Build and push Docling image
-      run: |
-        echo "🔨 Building Docling image with cleanup optimizations..."
-        docker build -f Dockerfile.docling -t ${{ env.REGISTRY }}/${{ env.DOCLING_IMAGE }}:latest .
-        
-        echo "📤 Pushing Docling image to GitHub Container Registry..."
-        docker push ${{ env.REGISTRY }}/${{ env.DOCLING_IMAGE }}:latest
+      uses: docker/build-push-action@v5
+      with:
+        context: .
+        file: ./Dockerfile.docling
+        platforms: linux/amd64,linux/arm64
+        push: true
+        tags: |
+          ${{ env.REGISTRY }}/${{ env.DOCLING_IMAGE }}:latest
+          ${{ env.REGISTRY }}/${{ env.DOCLING_IMAGE }}:${{ github.sha }}
+          ${{ env.REGISTRY }}/${{ env.DOCLING_IMAGE }}:${{ github.ref_name }}
+        cache-from: type=gha
+        cache-to: type=gha,mode=max
         
     - name: Cleanup after build
       if: always()
@@ -106,6 +121,29 @@ jobs:
         df -h
         
         echo "✅ Build cleanup completed!"
+
+    - name: Summary
+      run: |
+        echo "## 🚀 Docker Images Deployed Successfully!" >> $GITHUB_STEP_SUMMARY
+        echo "" >> $GITHUB_STEP_SUMMARY
+        echo "### Tesseract Lambda" >> $GITHUB_STEP_SUMMARY
+        echo "- \`${{ env.REGISTRY }}/${{ env.TESSERACT_IMAGE }}:latest\`" >> $GITHUB_STEP_SUMMARY
+        echo "- \`${{ env.REGISTRY }}/${{ env.TESSERACT_IMAGE }}:${{ github.sha }}\`" >> $GITHUB_STEP_SUMMARY
+        echo "- \`${{ env.REGISTRY }}/${{ env.TESSERACT_IMAGE }}:${{ github.ref_name }}\`" >> $GITHUB_STEP_SUMMARY
+        echo "" >> $GITHUB_STEP_SUMMARY
+        echo "### Docling" >> $GITHUB_STEP_SUMMARY
+        echo "- \`${{ env.REGISTRY }}/${{ env.DOCLING_IMAGE }}:latest\`" >> $GITHUB_STEP_SUMMARY
+        echo "- \`${{ env.REGISTRY }}/${{ env.DOCLING_IMAGE }}:${{ github.sha }}\`" >> $GITHUB_STEP_SUMMARY
+        echo "- \`${{ env.REGISTRY }}/${{ env.DOCLING_IMAGE }}:${{ github.ref_name }}\`" >> $GITHUB_STEP_SUMMARY
+        echo "" >> $GITHUB_STEP_SUMMARY
+        echo "### Usage" >> $GITHUB_STEP_SUMMARY
+        echo "\`\`\`bash" >> $GITHUB_STEP_SUMMARY
+        echo "# Pull Tesseract Lambda" >> $GITHUB_STEP_SUMMARY
+        echo "docker pull ${{ env.REGISTRY }}/${{ env.TESSERACT_IMAGE }}:latest" >> $GITHUB_STEP_SUMMARY
+        echo "" >> $GITHUB_STEP_SUMMARY
+        echo "# Pull Docling" >> $GITHUB_STEP_SUMMARY
+        echo "docker pull ${{ env.REGISTRY }}/${{ env.DOCLING_IMAGE }}:latest" >> $GITHUB_STEP_SUMMARY
+        echo "\`\`\`" >> $GITHUB_STEP_SUMMARY
         
     - name: Upload build logs
       if: failure()
