@@ -21,6 +21,17 @@ RUN pip install --upgrade pip
 # ============================================
 # Docling Installation (Pre-compiled packages only)
 # ============================================
+# First install NumPy with a specific version that has pre-compiled wheels
+RUN pip install --no-cache-dir --only-binary=all numpy==1.24.3
+
+# Install other scientific packages that have pre-compiled wheels
+RUN pip install --no-cache-dir --only-binary=all \
+    scipy \
+    scikit-learn \
+    pandas \
+    pillow \
+    opencv-python-headless
+
 # Install Docling using pre-compiled packages
 RUN pip install --no-cache-dir --only-binary=all docling
 
