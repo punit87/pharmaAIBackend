@@ -11,6 +11,7 @@ RUN yum update -y && \
     leptonica leptonica-devel \
     libpng-devel libjpeg-devel libtiff-devel \
     zlib-devel freetype-devel \
+    tar unzip autoconf automake libtool \
     curl wget && \
     yum clean all
 
