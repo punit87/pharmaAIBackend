@@ -1,0 +1,59 @@
+# Tesseract OCR optimized for AWS Lambda
+# Clean, minimal Lambda-compatible Tesseract image
+FROM public.ecr.aws/lambda/python:3.11
+
+# ============================================
+# System Dependencies
+# ============================================
+# Install Tesseract OCR and dependencies
+RUN yum update -y && \
+    yum install -y tesseract curl && \
+    yum clean all
+
+# Download English language data if not available
+RUN mkdir -p /usr/share/tesseract-ocr/5/tessdata && \
+    if [ ! -f /usr/share/tesseract-ocr/5/tessdata/eng.traineddata ]; then \
+        curl -L https://github.com/tesseract-ocr/tessdata/raw/main/eng.traineddata -o /usr/share/tesseract-ocr/5/tessdata/eng.traineddata; \
+    fi
+
+
+# ============================================
+# Environment Setup
+# ============================================
+# Set environment variables
+ENV TESSDATA_PREFIX="/usr/share/tesseract-ocr/5/tessdata" \
+    PYTHONUNBUFFERED=1 \
+    PYTHONDONTWRITEBYTECODE=1
+
+# ============================================
+# Prepare for Multi-stage Usage
+# ============================================
+# Create a directory structure that can be easily copied to other images
+RUN mkdir -p /opt/tesseract/bin \
+    && mkdir -p /opt/tesseract/lib \
+    && mkdir -p /opt/tesseract/share \
+    && mkdir -p /opt/tesseract/tessdata
+
+# Copy Tesseract binaries and libraries to the prepared directories
+RUN cp /usr/bin/tesseract /opt/tesseract/bin/ \
+    && cp -r /usr/lib64/libtesseract* /opt/tesseract/lib/ \
+    && cp -r /usr/lib64/liblept* /opt/tesseract/lib/ \
+    && cp -r /usr/share/tesseract-ocr /opt/tesseract/share/ \
+    && cp -r /usr/share/tesseract-ocr/5/tessdata/* /opt/tesseract/tessdata/
+
+# Set environment variable for the prepared structure
+ENV TESSERACT_BIN="/opt/tesseract/bin" \
+    TESSERACT_LIB="/opt/tesseract/lib" \
+    TESSERACT_SHARE="/opt/tesseract/share" \
+    TESSERACT_TESSDATA="/opt/tesseract/tessdata"
+
+# ============================================
+# Verification
+# ============================================
+# Test Tesseract installation and display version
+RUN echo "Testing Tesseract installation..." && \
+    tesseract --version && \
+    echo "Tesseract installation successful!"
+
+# Set default command to show Tesseract version
+CMD ["tesseract", "--version"]

@@ -1,0 +1,101 @@
+# Multi-stage Dockerfile for Docling with Tesseract OCR
+# Stage 1: Builder stage for installing dependencies and building Docling
+FROM public.ecr.aws/lambda/python:3.11 as builder
+
+# ============================================
+# System Dependencies for Builder
+# ============================================
+RUN yum update -y && \
+    yum install -y \
+    poppler-utils \
+    curl \
+    wget \
+    && yum clean all
+
+
+# ============================================
+# Python Environment Setup
+# ============================================
+# Upgrade pip
+RUN pip install --upgrade pip
+
+# ============================================
+# Docling Installation
+# ============================================
+# Install Docling and its dependencies
+RUN pip install --no-cache-dir docling
+
+# Install additional libraries for document processing
+RUN pip install --no-cache-dir \
+    pytesseract \
+    boto3
+
+# ============================================
+# Stage 2: Final Runtime Stage
+# ============================================
+# Import Tesseract image from GitHub registry (created via GitHub Actions)
+FROM ghcr.io/punit87/tesseract-lambda:latest as tesseract
+
+# Use the base Lambda Python runtime
+FROM public.ecr.aws/lambda/python:3.11 as runtime
+
+# Copy Tesseract and its dependencies from the prepared GitHub registry image
+COPY --from=tesseract /opt/tesseract/bin/tesseract /usr/bin/tesseract
+COPY --from=tesseract /opt/tesseract/lib/ /usr/lib64/
+COPY --from=tesseract /opt/tesseract/share/tesseract-ocr /usr/share/tesseract-ocr
+
+# ============================================
+# Copy Python Dependencies
+# ============================================
+# Copy installed packages from builder stage
+COPY --from=builder /var/lang/lib/python3.11/site-packages /var/lang/lib/python3.11/site-packages
+COPY --from=builder /var/lang/bin /var/lang/bin
+
+# ============================================
+# Environment Variables
+# ============================================
+# Tesseract environment variables are inherited from the tesseract image
+# Only set Docling-specific environment variables
+ENV PYTHONUNBUFFERED=1 \
+    PYTHONDONTWRITEBYTECODE=1 \
+    PYTHONPATH="/var/lang/lib/python3.11/site-packages" \
+    LANG=C.UTF-8 \
+    LC_ALL=C.UTF-8
+
+# ============================================
+# Copy Lambda Handler
+# ============================================
+# Copy the comprehensive Lambda handler
+COPY lambda_function.py ${LAMBDA_TASK_ROOT}/lambda_function.py
+
+# ============================================
+# Health Check
+# ============================================
+RUN echo 'import json\n\
+from docling.document_converter import DocumentConverter\n\
+\ndef test_docling():\n\
+    try:\n\
+        converter = DocumentConverter()\n\
+        print("Docling initialized successfully")\n\
+        return True\n\
+    except Exception as e:\n\
+        print(f"Docling initialization failed: {e}")\n\
+        return False\n\
+\n\
+if __name__ == "__main__":\n\
+    test_docling()' > ${LAMBDA_TASK_ROOT}/test_docling.py
+
+# Run health check
+RUN python ${LAMBDA_TASK_ROOT}/test_docling.py
+
+# ============================================
+# Final Configuration
+# ============================================
+# Set Lambda handler
+CMD ["lambda_function.lambda_handler"]
+
+# Add labels for metadata
+LABEL maintainer="PharmaAI Team" \
+      version="1.0.0" \
+      description="Docling document processing with Tesseract OCR for AWS Lambda" \
+      docling_version="latest"
