@@ -1,45 +1,49 @@
 # ============================================
-# Docling Dockerfile - Ultra-minimal approach
+# Docling Dockerfile - Minimal Ubuntu approach
 # ============================================
-# Use the smallest possible base image to minimize space usage
-FROM public.ecr.aws/lambda/python:3.10 AS runtime
+# Use Ubuntu base image for better package availability
+FROM ubuntu:22.04
 
 # Set environment variables
-ENV PYTHONUNBUFFERED=1 \
+ENV DEBIAN_FRONTEND=noninteractive \
+    PYTHONUNBUFFERED=1 \
     PYTHONDONTWRITEBYTECODE=1 \
-    PYTHONPATH="/var/lang/lib/python3.10/site-packages" \
+    PYTHONPATH="/usr/local/lib/python3.10/dist-packages" \
     LANG=C.UTF-8 \
     LC_ALL=C.UTF-8
 
-# Install only essential system dependencies
-RUN yum update -y && \
-    yum install -y \
-        tesseract \
-        tesseract-langpack-eng \
+# Install Python and essential system dependencies
+RUN apt-get update && \
+    apt-get install -y \
+        python3 \
+        python3-pip \
+        python3-dev \
+        tesseract-ocr \
+        tesseract-ocr-eng \
         libtesseract-dev \
         libleptonica-dev \
-    && yum clean all \
-    && rm -rf /var/cache/yum
+    && apt-get clean \
+    && rm -rf /var/lib/apt/lists/*
 
 # Install Python dependencies with minimal packages
-RUN pip install --no-cache-dir --upgrade pip && \
-    pip install --no-cache-dir \
+RUN pip3 install --no-cache-dir --upgrade pip && \
+    pip3 install --no-cache-dir \
         numpy \
         pandas \
         Pillow \
         pytesseract \
         docling \
-    && pip cache purge \
+    && pip3 cache purge \
     && rm -rf /root/.cache/pip
 
 # Copy the Lambda function
-COPY lambda_function.py ${LAMBDA_TASK_ROOT}/
+COPY lambda_function.py /var/task/
 
 # Create a simple health check script
-RUN printf 'import sys\nimport json\n\ndef test_imports():\n    try:\n        import numpy\n        import pandas\n        import PIL\n        import pytesseract\n        from docling.document_converter import DocumentConverter\n        converter = DocumentConverter()\n        print("✅ All imports successful")\n        return True\n    except Exception as e:\n        print(f"❌ Import failed: {e}")\n        return False\n\nif __name__ == "__main__":\n    success = test_imports()\n    sys.exit(0 if success else 1)\n' > ${LAMBDA_TASK_ROOT}/test_docling.py
+RUN printf 'import sys\nimport json\n\ndef test_imports():\n    try:\n        import numpy\n        import pandas\n        import PIL\n        import pytesseract\n        from docling.document_converter import DocumentConverter\n        converter = DocumentConverter()\n        print("✅ All imports successful")\n        return True\n    except Exception as e:\n        print(f"❌ Import failed: {e}")\n        return False\n\nif __name__ == "__main__":\n    success = test_imports()\n    sys.exit(0 if success else 1)\n' > /var/task/test_docling.py
 
 # Run health check
-RUN python ${LAMBDA_TASK_ROOT}/test_docling.py
+RUN python3 /var/task/test_docling.py
 
 # Set the CMD to your handler
-CMD ["lambda_function.lambda_handler"]
+CMD ["python3", "/var/task/lambda_function.py"]

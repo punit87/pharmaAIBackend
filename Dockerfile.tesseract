@@ -1,35 +1,38 @@
 # ============================================
-# Tesseract Dockerfile - Ultra-minimal approach
+# Tesseract Dockerfile - Minimal Ubuntu approach
 # ============================================
-FROM public.ecr.aws/lambda/python:3.10
+FROM ubuntu:22.04
 
 # Set environment variables
-ENV TESSDATA_PREFIX="/usr/share/tesseract-ocr" \
+ENV DEBIAN_FRONTEND=noninteractive \
+    TESSDATA_PREFIX="/usr/share/tesseract-ocr" \
     PYTHONUNBUFFERED=1 \
     PYTHONDONTWRITEBYTECODE=1
 
-# Install Tesseract and dependencies
-RUN yum update -y && \
-    yum install -y \
-        tesseract \
-        tesseract-langpack-eng \
+# Install Python and Tesseract dependencies
+RUN apt-get update && \
+    apt-get install -y \
+        python3 \
+        python3-pip \
+        tesseract-ocr \
+        tesseract-ocr-eng \
         libtesseract-dev \
         libleptonica-dev \
-    && yum clean all \
-    && rm -rf /var/cache/yum
+    && apt-get clean \
+    && rm -rf /var/lib/apt/lists/*
 
 # Install Python dependencies
-RUN pip install --no-cache-dir --upgrade pip && \
-    pip install --no-cache-dir \
+RUN pip3 install --no-cache-dir --upgrade pip && \
+    pip3 install --no-cache-dir \
         pytesseract \
-    && pip cache purge \
+    && pip3 cache purge \
     && rm -rf /root/.cache/pip
 
 # Create a simple test script
 RUN printf 'import sys\nimport pytesseract\nfrom PIL import Image\n\ndef test_tesseract():\n    try:\n        # Create a simple test image\n        img = Image.new("RGB", (100, 30), color="white")\n        result = pytesseract.image_to_string(img)\n        print("✅ Tesseract working correctly")\n        return True\n    except Exception as e:\n        print(f"❌ Tesseract test failed: {e}")\n        return False\n\nif __name__ == "__main__":\n    success = test_tesseract()\n    sys.exit(0 if success else 1)\n' > /var/task/test_tesseract.py
 
 # Run test
-RUN python /var/task/test_tesseract.py
+RUN python3 /var/task/test_tesseract.py
 
 # Set default command
-CMD ["python", "/var/task/test_tesseract.py"]
+CMD ["python3", "/var/task/test_tesseract.py"]
