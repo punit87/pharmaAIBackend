@@ -46,6 +46,10 @@ jobs:
             build-base \
             && rm -rf /var/cache/apk/*
           
+          # FIX 3: Explicitly create the home directory for the 'tesseract' user, 
+          # which is required for 'pip install --user' to work.
+          RUN mkdir -p /home/tesseract && chown tesseract:tesseract /home/tesseract
+          
           # Switch back to the non-root user ('tesseract') for security and subsequent steps.
           USER tesseract
           
@@ -53,18 +57,14 @@ jobs:
           ENV PYTHONUNBUFFERED=1
           
           # Fix 2: Add Python user bin to PATH so pip-installed executables (like uv) can be found.
-          # The user's Python bin directory is typically ~/.local/bin
           ENV PATH="/home/tesseract/.local/bin:/usr/bin:${PATH}"
           
           # Fast pip install via uv
-          # Use the --user flag to install packages into the non-root user's home directory (~/.local/bin), 
-          # bypassing the "externally managed environment" error (PEP 668).
           RUN python3 -m pip install --no-cache-dir --user uv
           
           WORKDIR /app
           
           # Core dependencies
-          # Apply the --user flag here as well for all Python dependencies.
           RUN python3 -m pip install --no-cache-dir --user "raganything[all]" docling
           
           ARG RAG_PARSER=docling
