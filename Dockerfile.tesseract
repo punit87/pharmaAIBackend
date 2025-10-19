@@ -52,8 +52,8 @@ ENV TESSERACT_BIN="/opt/tesseract/bin" \
 # ============================================
 # Test Tesseract installation and display version
 RUN echo "Testing Tesseract installation..." && \
-    tesseract --version && \
+    /opt/tesseract/bin/tesseract --version && \
     echo "Tesseract installation successful!"
 
 # Set default command to show Tesseract version
-CMD ["tesseract", "--version"]
+CMD ["/opt/tesseract/bin/tesseract", "--version"]
