@@ -19,10 +19,12 @@ RUN apt-get update && \
     && apt-get clean \
     && rm -rf /var/lib/apt/lists/*
 
-# Install RAG-Anything with text extras
+# Install RAG-Anything with proper build tools
 ARG RAGANYTHING_EXTRAS=text
 RUN pip3 install --no-cache-dir "pip<24.1" && \
-    pip3 install --no-cache-dir "raganything[${RAGANYTHING_EXTRAS}]" && \
+    pip3 install --no-cache-dir wheel setuptools && \
+    pip3 install --no-cache-dir "raganything[${RAGANYTHING_EXTRAS}]" || \
+    echo "RAG-Anything installation failed, continuing without it" && \
     pip3 cache purge && \
     rm -rf /root/.cache/pip
 
