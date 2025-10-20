@@ -12,6 +12,7 @@ env:
   DOCLING_IMAGE: ${{ github.repository_owner }}/docling
   TESSERACT_IMAGE: ${{ github.repository_owner }}/tesseract-lambda
   RAGANYTHING_IMAGE: ${{ github.repository_owner }}/raganything
+  RAGANYTHING_LAMBDA_IMAGE: ${{ github.repository_owner }}/raganything-lambda
 
 jobs:
   # Job 1: Build Tesseract image only
@@ -177,6 +178,40 @@ jobs:
         docker push ${{ env.REGISTRY }}/${{ env.RAGANYTHING_IMAGE }}:latest
         docker push ${{ env.REGISTRY }}/${{ env.RAGANYTHING_IMAGE }}:${{ github.sha }}
         docker push ${{ env.REGISTRY }}/${{ env.RAGANYTHING_IMAGE }}:${{ github.ref_name }}
+
+  # Job 4: Build Lambda-targeted RAG-Anything image only
+  build-raganything-lambda:
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      packages: write
+    steps:
+    - name: Checkout code
+      uses: actions/checkout@v4
+
+    - name: Basic cleanup before Lambda image build
+      run: |
+        echo "🧹 Basic cleanup before Lambda RAG-Anything build..."
+        docker system prune -f
+        df -h
+
+    - name: Log in to GitHub Container Registry
+      uses: docker/login-action@v3
+      with:
+        registry: ${{ env.REGISTRY }}
+        username: ${{ github.actor }}
+        password: ${{ secrets.GITHUB_TOKEN }}
+
+    - name: Build and push RAG-Anything Lambda image
+      run: |
+        echo "Building Lambda-targeted RAG-Anything image (extras=text) ..."
+        docker build --build-arg RAGANYTHING_EXTRAS=text -f ./Dockerfile.raganything.lambda -t ${{ env.REGISTRY }}/${{ env.RAGANYTHING_LAMBDA_IMAGE }}:latest .
+        docker tag ${{ env.REGISTRY }}/${{ env.RAGANYTHING_LAMBDA_IMAGE }}:latest ${{ env.REGISTRY }}/${{ env.RAGANYTHING_LAMBDA_IMAGE }}:${{ github.sha }}
+        docker tag ${{ env.REGISTRY }}/${{ env.RAGANYTHING_LAMBDA_IMAGE }}:latest ${{ env.REGISTRY }}/${{ env.RAGANYTHING_LAMBDA_IMAGE }}:${{ github.ref_name }}
+        echo "Pushing Lambda image..."
+        docker push ${{ env.REGISTRY }}/${{ env.RAGANYTHING_LAMBDA_IMAGE }}:latest
+        docker push ${{ env.REGISTRY }}/${{ env.RAGANYTHING_LAMBDA_IMAGE }}:${{ github.sha }}
+        docker push ${{ env.REGISTRY }}/${{ env.RAGANYTHING_LAMBDA_IMAGE }}:${{ github.ref_name }}
         
     - name: Smoke test RAG-Anything image imports
       run: |

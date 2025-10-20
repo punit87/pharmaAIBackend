@@ -1,0 +1,43 @@
+# ============================================
+# Docling Lambda Image (Python 3.10)
+# - AWS Lambda base image
+# - Attempts Tesseract install via EPEL on Amazon Linux 2
+# - Minimal deps, Lambda-compatible handler
+# ============================================
+FROM public.ecr.aws/lambda/python:3.10
+
+# Faster, safer builds
+ENV PYTHONUNBUFFERED=1 \
+    PYTHONDONTWRITEBYTECODE=1 \
+    PIP_NO_CACHE_DIR=1 \
+    PIP_DISABLE_PIP_VERSION_CHECK=1
+
+# Try to install Tesseract and English language pack on Amazon Linux 2 via EPEL
+# If EPEL not available, the install may fail; keep minimal/noiseless output
+RUN yum -y install amazon-linux-extras && \
+    amazon-linux-extras enable epel && \
+    yum clean metadata && \
+    yum -y install \
+      tesseract \
+      tesseract-langpack-eng \
+      leptonica \
+      leptonica-devel \
+      && true || true && \
+    yum clean all && rm -rf /var/cache/yum
+
+# Python dependencies (minimal set for Docling OCR path)
+RUN python3 -m pip install --upgrade pip && \
+    python3 -m pip install \
+      numpy \
+      pandas \
+      Pillow \
+      pytesseract \
+      docling
+
+# Copy Lambda handler code
+COPY lambda_function.py ${LAMBDA_TASK_ROOT}/
+
+# Lambda handler entrypoint
+CMD ["lambda_function.lambda_handler"]
+
+

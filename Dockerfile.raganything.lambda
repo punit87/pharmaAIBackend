@@ -1,0 +1,43 @@
+# ============================================
+# RAG-Anything Lambda Image (Python 3.10)
+# - AWS Lambda base image
+# - Installs Docling/Tesseract stack + raganything[text]
+# - Lambda-compatible handler
+# ============================================
+FROM public.ecr.aws/lambda/python:3.10
+
+ENV PYTHONUNBUFFERED=1 \
+    PYTHONDONTWRITEBYTECODE=1 \
+    PIP_NO_CACHE_DIR=1 \
+    PIP_DISABLE_PIP_VERSION_CHECK=1
+
+# Tesseract (attempt via EPEL). Non-fatal if unavailable (Docling can still parse non-OCR)
+RUN yum -y install amazon-linux-extras && \
+    amazon-linux-extras enable epel && \
+    yum clean metadata && \
+    yum -y install \
+      tesseract \
+      tesseract-langpack-eng \
+      leptonica \
+      leptonica-devel \
+      && true || true && \
+    yum clean all && rm -rf /var/cache/yum
+
+# Python deps: docling stack + raganything[text]
+ARG RAGANYTHING_EXTRAS=text
+RUN python3 -m pip install --upgrade pip && \
+    python3 -m pip install \
+      numpy \
+      pandas \
+      Pillow \
+      pytesseract \
+      docling \
+      "raganything[${RAGANYTHING_EXTRAS}]"
+
+# Copy Lambda handler that invokes RAG flow
+COPY lambda_function.py ${LAMBDA_TASK_ROOT}/
+
+# Lambda handler entrypoint
+CMD ["lambda_function.lambda_handler"]
+
+
