@@ -13,16 +13,15 @@ ENV PYTHONUNBUFFERED=1 \
 
 # Tesseract already available from base docling-lambda image
 
-# Python deps: docling stack + raganything[text]
-ARG RAGANYTHING_EXTRAS=text
-RUN python3 -m pip install --upgrade pip && \
+# Python deps: docling stack + raganything (no extras to avoid mineru/gradio dependency)
+RUN python3 -m pip install "pip<24.1" && \
     python3 -m pip install \
       numpy \
       pandas \
       Pillow \
       pytesseract \
       docling \
-      "raganything[${RAGANYTHING_EXTRAS}]"
+      raganything
 
 # Copy Lambda handler that invokes RAG flow
 COPY lambda_function.py ${LAMBDA_TASK_ROOT}/

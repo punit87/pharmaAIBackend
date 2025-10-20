@@ -51,7 +51,7 @@ jobs:
       - name: Build classic - raganything (FROM pharma/docling)
         if: matrix.variant == 'classic'
         run: |
-          docker build -t pharma/raganything:latest --build-arg RAGANYTHING_EXTRAS=text -f Dockerfile.raganything .
+          docker build -t pharma/raganything:latest -f Dockerfile.raganything .
 
       - name: Tag + push classic images to GHCR
         if: matrix.variant == 'classic'
@@ -89,7 +89,7 @@ jobs:
       - name: Build lambda - raganything (FROM pharma/docling-lambda)
         if: matrix.variant == 'lambda'
         run: |
-          docker build -t pharma/raganything-lambda:latest --build-arg RAGANYTHING_EXTRAS=text -f Dockerfile.raganything.lambda .
+          docker build -t pharma/raganything-lambda:latest -f Dockerfile.raganything.lambda .
 
       - name: Tag + push lambda images to GHCR
         if: matrix.variant == 'lambda'

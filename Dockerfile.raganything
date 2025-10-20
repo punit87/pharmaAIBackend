@@ -11,12 +11,9 @@ ENV PYTHONUNBUFFERED=1 \
     LANG=C.UTF-8 \
     LC_ALL=C.UTF-8
 
-# Select which RAG-Anything extras to install (default: text to reduce size)
-ARG RAGANYTHING_EXTRAS=text
-
-# Install RAG-Anything with selected extras
-RUN pip3 install --no-cache-dir --upgrade pip && \
-    pip3 install --no-cache-dir "raganything[${RAGANYTHING_EXTRAS}]" && \
+# Install RAG-Anything (no extras to avoid mineru/gradio dependency)
+RUN pip3 install --no-cache-dir "pip<24.1" && \
+    pip3 install --no-cache-dir raganything && \
     pip3 cache purge && \
     rm -rf /root/.cache/pip
 
