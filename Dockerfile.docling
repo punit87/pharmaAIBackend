@@ -1,25 +1,20 @@
 # ============================================
-# Docling Image - Official installation method
+# Docling Image - Clean installation with system dependencies
 # ============================================
-FROM ubuntu:22.04
+FROM python:3.12-slim
 
-# Set environment variables
-ENV DEBIAN_FRONTEND=noninteractive \
-    PYTHONUNBUFFERED=1 \
-    PYTHONDONTWRITEBYTECODE=1 \
-    LANG=C.UTF-8 \
-    LC_ALL=C.UTF-8
-
-# Install Python
-RUN apt-get update && \
-    apt-get install -y \
-        python3 \
-        python3-pip \
-    && apt-get clean \
+# Install system dependencies and Tesseract
+RUN apt-get update && apt-get install -y \
+    tesseract-ocr \
+    tesseract-ocr-eng \
+    libtesseract-dev \
+    libleptonica-dev \
+    pkg-config \
+    poppler-utils \
     && rm -rf /var/lib/apt/lists/*
 
-# Install docling using official method
-RUN pip3 install --no-cache-dir docling
+# Install Docling Python package
+RUN pip install --no-cache-dir docling
 
 # Copy test script
 COPY test_docling.py /var/task/
