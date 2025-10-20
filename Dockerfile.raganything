@@ -23,10 +23,10 @@ RUN apt-get update && \
     && apt-get clean \
     && rm -rf /var/lib/apt/lists/*
 
-# Install RAG-Anything (no extras to avoid mineru/gradio dependency)
+# Install RAG-Anything from GitHub (no extras to avoid mineru/gradio dependency)
 RUN pip3 install --no-cache-dir "pip<24.1" && \
     pip3 install --no-cache-dir setuptools wheel && \
-    pip3 install --no-cache-dir raganything && \
+    pip3 install --no-cache-dir git+https://github.com/HKUDS/RAG-Anything.git && \
     pip3 cache purge && \
     rm -rf /root/.cache/pip
 
