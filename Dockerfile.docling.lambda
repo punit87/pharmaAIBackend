@@ -11,12 +11,12 @@ ENV PYTHONUNBUFFERED=1 \
     TESSDATA_PREFIX=/tmp/tessdata
 
 # Install system dependencies
-RUN yum install -y \
+RUN microdnf install -y \
     tesseract \
     tesseract-langpack-eng \
     poppler-utils \
     which \
-    && yum clean all
+    && microdnf clean all
 
 # Create writable directories for easyocr and tesseract
 RUN mkdir -p /tmp/easyocr /tmp/tessdata
