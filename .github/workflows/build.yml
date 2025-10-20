@@ -1,4 +1,4 @@
-name: Build images
+name: Build ECS images
 
 on:
   push:
@@ -13,12 +13,8 @@ permissions:
 
 jobs:
   build:
-    name: Build pipelines (classic and lambda)
+    name: Build ECS images
     runs-on: ubuntu-latest
-    strategy:
-      fail-fast: false
-      matrix:
-        variant: [ classic, lambda ]
 
     steps:
       - name: Checkout
@@ -37,19 +33,18 @@ jobs:
           username: ${{ github.repository_owner }}
           password: ${{ secrets.GITHUB_TOKEN }}
 
-      # Classic pipeline: combined tesseract+docling, separate raganything
-      - name: Build classic - tesseract+docling combined
-        if: matrix.variant == 'classic'
+      # Build docling image
+      - name: Build docling image
         run: |
           docker build -t pharma/docling:latest -f Dockerfile.docling .
 
-      - name: Build classic - raganything (fresh Ubuntu)
-        if: matrix.variant == 'classic'
+      # Build raganything image
+      - name: Build raganything image
         run: |
           docker build -t pharma/raganything:latest -f Dockerfile.raganything .
 
-      - name: Tag + push classic images to GHCR
-        if: matrix.variant == 'classic'
+      # Tag and push images to GHCR
+      - name: Tag and push images to GHCR
         env:
           OWNER: ${{ github.repository_owner }}
         run: |
@@ -58,43 +53,15 @@ jobs:
           docker push ghcr.io/${OWNER}/docling:latest
           docker push ghcr.io/${OWNER}/raganything:latest
 
-      - name: Smoke - docling classic tesseract available
-        if: matrix.variant == 'classic'
+      # Smoke tests
+      - name: Smoke test - docling tesseract available
         run: |
           docker run --rm pharma/docling:latest tesseract --version
 
-      - name: Smoke - docling classic python imports
-        if: matrix.variant == 'classic'
+      - name: Smoke test - docling python imports
         run: |
           docker run --rm pharma/docling:latest python3 -c "import pytesseract, docling; print(pytesseract.get_tesseract_version())"
 
-      # Lambda pipeline: combined tesseract+docling, separate raganything
-      - name: Build lambda - tesseract+docling combined
-        if: matrix.variant == 'lambda'
+      - name: Smoke test - raganything python imports
         run: |
-          docker build -t pharma/docling-lambda:latest -f Dockerfile.docling.lambda .
-
-      - name: Build lambda - raganything (fresh AWS Python)
-        if: matrix.variant == 'lambda'
-        run: |
-          docker build -t pharma/raganything-lambda:latest -f Dockerfile.raganything.lambda .
-
-      - name: Tag + push lambda images to GHCR
-        if: matrix.variant == 'lambda'
-        env:
-          OWNER: ${{ github.repository_owner }}
-        run: |
-          docker tag pharma/docling-lambda:latest ghcr.io/${OWNER}/docling-lambda:latest
-          docker tag pharma/raganything-lambda:latest ghcr.io/${OWNER}/raganything-lambda:latest
-          docker push ghcr.io/${OWNER}/docling-lambda:latest
-          docker push ghcr.io/${OWNER}/raganything-lambda:latest
-
-      - name: Smoke - docling lambda tesseract available
-        if: matrix.variant == 'lambda'
-        run: |
-          docker run --rm --entrypoint /bin/sh pharma/docling-lambda:latest -lc "tesseract --version"
-
-      - name: Smoke - docling lambda python imports
-        if: matrix.variant == 'lambda'
-        run: |
-          docker run --rm --entrypoint /bin/sh pharma/docling-lambda:latest -lc "python3 -c 'import pytesseract, docling; print(pytesseract.get_tesseract_version())'"
+          docker run --rm pharma/raganything:latest python3 -c "import raganything; print('RAG-Anything imported successfully')"
