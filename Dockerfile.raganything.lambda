@@ -8,10 +8,9 @@ ENV PYTHONUNBUFFERED=1 \
     PIP_NO_CACHE_DIR=1 \
     PIP_DISABLE_PIP_VERSION_CHECK=1
 
-# Install RAG-Anything from GitHub (no extras to avoid mineru/gradio dependency)
+# Install RAG-Anything from PyPI (no extras to avoid mineru/gradio dependency)
 RUN python3 -m pip install "pip<24.1" && \
-    python3 -m pip install setuptools wheel && \
-    python3 -m pip install git+https://github.com/HKUDS/RAG-Anything.git
+    python3 -m pip install raganything
 
 # Copy Lambda handler that invokes RAG flow
 COPY lambda_function.py ${LAMBDA_TASK_ROOT}/
