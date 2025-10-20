@@ -13,6 +13,8 @@ env:
   TESSERACT_IMAGE: ${{ github.repository_owner }}/tesseract-lambda
   RAGANYTHING_IMAGE: ${{ github.repository_owner }}/raganything
   RAGANYTHING_LAMBDA_IMAGE: ${{ github.repository_owner }}/raganything-lambda
+  TESSERACT_LAMBDA_IMAGE: ${{ github.repository_owner }}/tesseract-lambda
+  DOCLING_LAMBDA_IMAGE: ${{ github.repository_owner }}/docling-lambda
 
 jobs:
   # Job 1: Build Tesseract image only
@@ -179,8 +181,8 @@ jobs:
         docker push ${{ env.REGISTRY }}/${{ env.RAGANYTHING_IMAGE }}:${{ github.sha }}
         docker push ${{ env.REGISTRY }}/${{ env.RAGANYTHING_IMAGE }}:${{ github.ref_name }}
 
-  # Job 4: Build Lambda-targeted RAG-Anything image only
-  build-raganything-lambda:
+  # Job A: Build Tesseract Lambda image
+  build-tesseract-lambda:
     runs-on: ubuntu-latest
     permissions:
       contents: read
@@ -189,7 +191,7 @@ jobs:
     - name: Checkout code
       uses: actions/checkout@v4
 
-    - name: Basic cleanup before Lambda image build
+    - name: Basic cleanup before Lambda image build (tesseract)
       run: |
         echo "🧹 Basic cleanup before Lambda RAG-Anything build..."
         docker system prune -f
@@ -202,6 +204,68 @@ jobs:
         username: ${{ github.actor }}
         password: ${{ secrets.GITHUB_TOKEN }}
 
+    - name: Build and push Tesseract Lambda image
+      run: |
+        echo "Building Tesseract Lambda image ..."
+        docker build -f ./Dockerfile.tesseract.lambda -t ${{ env.REGISTRY }}/${{ env.TESSERACT_LAMBDA_IMAGE }}:latest .
+        docker tag ${{ env.REGISTRY }}/${{ env.TESSERACT_LAMBDA_IMAGE }}:latest ${{ env.REGISTRY }}/${{ env.TESSERACT_LAMBDA_IMAGE }}:${{ github.sha }}
+        docker tag ${{ env.REGISTRY }}/${{ env.TESSERACT_LAMBDA_IMAGE }}:latest ${{ env.REGISTRY }}/${{ env.TESSERACT_LAMBDA_IMAGE }}:${{ github.ref_name }}
+        echo "Pushing Tesseract Lambda image..."
+        docker push ${{ env.REGISTRY }}/${{ env.TESSERACT_LAMBDA_IMAGE }}:latest
+        docker push ${{ env.REGISTRY }}/${{ env.TESSERACT_LAMBDA_IMAGE }}:${{ github.sha }}
+        docker push ${{ env.REGISTRY }}/${{ env.TESSERACT_LAMBDA_IMAGE }}:${{ github.ref_name }}
+
+  # Job B: Build Docling Lambda image (depends on Tesseract Lambda)
+  build-docling-lambda:
+    needs: build-tesseract-lambda
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      packages: write
+    steps:
+    - name: Checkout code
+      uses: actions/checkout@v4
+
+    - name: Basic cleanup before Lambda image build (docling)
+      run: |
+        echo "🧹 Basic cleanup before Lambda Docling build..."
+        docker system prune -f
+        df -h
+
+    - name: Log in to GitHub Container Registry
+      uses: docker/login-action@v3
+      with:
+        registry: ${{ env.REGISTRY }}
+        username: ${{ github.actor }}
+        password: ${{ secrets.GITHUB_TOKEN }}
+
+    - name: Build and push Docling Lambda image
+      run: |
+        echo "Building Docling Lambda image ..."
+        docker build -f ./Dockerfile.docling.lambda -t ${{ env.REGISTRY }}/${{ env.DOCLING_LAMBDA_IMAGE }}:latest .
+        docker tag ${{ env.REGISTRY }}/${{ env.DOCLING_LAMBDA_IMAGE }}:latest ${{ env.REGISTRY }}/${{ env.DOCLING_LAMBDA_IMAGE }}:${{ github.sha }}
+        docker tag ${{ env.REGISTRY }}/${{ env.DOCLING_LAMBDA_IMAGE }}:latest ${{ env.REGISTRY }}/${{ env.DOCLING_LAMBDA_IMAGE }}:${{ github.ref_name }}
+        echo "Pushing Docling Lambda image..."
+        docker push ${{ env.REGISTRY }}/${{ env.DOCLING_LAMBDA_IMAGE }}:latest
+        docker push ${{ env.REGISTRY }}/${{ env.DOCLING_LAMBDA_IMAGE }}:${{ github.sha }}
+        docker push ${{ env.REGISTRY }}/${{ env.DOCLING_LAMBDA_IMAGE }}:${{ github.ref_name }}
+
+  # Job C: Build RAG-Anything Lambda image (depends on Docling Lambda)
+  build-raganything-lambda:
+    needs: build-docling-lambda
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      packages: write
+    steps:
+    - name: Checkout code
+      uses: actions/checkout@v4
+
+    - name: Basic cleanup before Lambda image build (raganything)
+      run: |
+        echo "🧹 Basic cleanup before Lambda RAG-Anything build..."
+        docker system prune -f
+        df -h
     - name: Build and push RAG-Anything Lambda image
       run: |
         echo "Building Lambda-targeted RAG-Anything image (extras=text) ..."
