@@ -26,6 +26,13 @@ jobs:
       - name: Set up Docker Buildx
         uses: docker/setup-buildx-action@v3
 
+      - name: Login to GitHub Container Registry
+        uses: docker/login-action@v3
+        with:
+          registry: ghcr.io
+          username: ${{ github.repository_owner }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+
       # Classic pipeline: tesseract -> docling -> raganything
       - name: Build classic - tesseract
         if: matrix.variant == 'classic'
@@ -41,6 +48,18 @@ jobs:
         if: matrix.variant == 'classic'
         run: |
           docker build -t pharma/raganything:latest --build-arg RAGANYTHING_EXTRAS=text -f Dockerfile.raganything .
+
+      - name: Tag + push classic images to GHCR
+        if: matrix.variant == 'classic'
+        env:
+          OWNER: ${{ github.repository_owner }}
+        run: |
+          docker tag pharma/tesseract:latest ghcr.io/${OWNER}/tesseract:latest
+          docker tag pharma/docling:latest ghcr.io/${OWNER}/docling:latest
+          docker tag pharma/raganything:latest ghcr.io/${OWNER}/raganything:latest
+          docker push ghcr.io/${OWNER}/tesseract:latest
+          docker push ghcr.io/${OWNER}/docling:latest
+          docker push ghcr.io/${OWNER}/raganything:latest
 
       - name: Smoke - docling classic tesseract available
         if: matrix.variant == 'classic'
@@ -67,6 +86,18 @@ jobs:
         if: matrix.variant == 'lambda'
         run: |
           docker build -t pharma/raganything-lambda:latest --build-arg RAGANYTHING_EXTRAS=text -f Dockerfile.raganything.lambda .
+
+      - name: Tag + push lambda images to GHCR
+        if: matrix.variant == 'lambda'
+        env:
+          OWNER: ${{ github.repository_owner }}
+        run: |
+          docker tag pharma/tesseract-lambda:latest ghcr.io/${OWNER}/tesseract-lambda:latest
+          docker tag pharma/docling-lambda:latest ghcr.io/${OWNER}/docling-lambda:latest
+          docker tag pharma/raganything-lambda:latest ghcr.io/${OWNER}/raganything-lambda:latest
+          docker push ghcr.io/${OWNER}/tesseract-lambda:latest
+          docker push ghcr.io/${OWNER}/docling-lambda:latest
+          docker push ghcr.io/${OWNER}/raganything-lambda:latest
 
       - name: Smoke - docling lambda tesseract available
         if: matrix.variant == 'lambda'
