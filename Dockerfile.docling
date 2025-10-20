@@ -15,7 +15,7 @@ RUN apt-get update && apt-get install -y \
 
 # Install Python dependencies
 COPY requirements-docling.txt .
-RUN pip install --no-cache-dir -r requirements-docling.txt
+RUN pip install --no-cache-dir -r requirements-docling.txt --extra-index-url https://download.pytorch.org/whl/cpu
 
 # Copy test script
 COPY test_docling.py /var/task/

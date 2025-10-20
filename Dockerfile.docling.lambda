@@ -29,7 +29,7 @@ RUN mkdir -p /tmp/easyocr /tmp/tessdata
 
 # Install Python dependencies
 COPY requirements-docling.txt .
-RUN pip install --no-cache-dir -r requirements-docling.txt
+RUN pip install --no-cache-dir -r requirements-docling.txt --extra-index-url https://download.pytorch.org/whl/cpu
 
 # Copy Lambda handler code
 COPY lambda_function.py ${LAMBDA_TASK_ROOT}/
