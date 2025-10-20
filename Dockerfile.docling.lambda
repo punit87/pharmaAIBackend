@@ -16,7 +16,6 @@ ENV PYTHONUNBUFFERED=1 \
 
 # Install system dependencies
 RUN yum install -y \
-        dnf-plugins-core \
         wget \
         tar \
         gzip \
@@ -31,7 +30,7 @@ RUN yum install -y \
         pkgconfig \
         python3-devel \
         git \
-    && dnf config-manager --set-enabled epel \
+    && yum install -y epel-release \
     && yum install -y \
         tesseract \
         tesseract-langpack-eng \
