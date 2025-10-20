@@ -51,15 +51,6 @@ Resources:
           - Id: DeleteOldVersions
             Status: Enabled
             NoncurrentVersionExpirationInDays: 30
-      NotificationConfiguration:
-        LambdaConfigurations:
-          - Event: s3:ObjectCreated:*
-            Function: !GetAtt DocumentProcessorFunction.Arn
-            Filter:
-              S3Key:
-                Rules:
-                  - Name: prefix
-                    Value: uploads/
       PublicAccessBlockConfiguration:
         BlockPublicAcls: true
         BlockPublicPolicy: true
@@ -670,7 +661,7 @@ Resources:
       Principal: apigateway.amazonaws.com
       SourceArn: !Sub 'arn:aws:execute-api:${AWS::Region}:${AWS::AccountId}:${ApiGateway}/*/*'
 
-  # S3 Lambda permission
+  # S3 Lambda permission (for manual S3 notification setup)
   S3LambdaPermission:
     Type: AWS::Lambda::Permission
     Properties:
