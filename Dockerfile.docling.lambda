@@ -12,11 +12,17 @@ ENV PYTHONUNBUFFERED=1 \
 
 # Install system dependencies
 RUN microdnf install -y \
+    dnf \
+    && microdnf clean all
+
+# Enable EPEL repository and install packages
+RUN dnf install -y epel-release && \
+    dnf install -y \
     tesseract \
     tesseract-langpack-eng \
     poppler-utils \
     which \
-    && microdnf clean all
+    && dnf clean all
 
 # Create writable directories for easyocr and tesseract
 RUN mkdir -p /tmp/easyocr /tmp/tessdata
