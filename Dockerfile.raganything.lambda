@@ -8,10 +8,10 @@ ENV PYTHONUNBUFFERED=1 \
     PIP_NO_CACHE_DIR=1 \
     PIP_DISABLE_PIP_VERSION_CHECK=1
 
-# Skip RAG-Anything installation due to metadata issues
-# RUN python3 -m pip install "pip<24.1" && \
-#     python3 -m pip install raganything
-RUN echo "RAG-Anything installation skipped due to package metadata issues"
+# Install RAG-Anything with text extras
+ARG RAGANYTHING_EXTRAS=text
+RUN python3 -m pip install "pip<24.1" && \
+    python3 -m pip install "raganything[${RAGANYTHING_EXTRAS}]"
 
 # Copy Lambda handler that invokes RAG flow
 COPY lambda_function.py ${LAMBDA_TASK_ROOT}/
