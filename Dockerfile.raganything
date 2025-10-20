@@ -1,8 +1,8 @@
 # ============================================
 # RAG-Anything Dockerfile - Multi-stage build with Docling base
 # ============================================
-# Use the existing Docling image as base and add RAG-Anything on top
-FROM ghcr.io/punit87/docling:latest AS docling-base
+# Use the locally built Docling image as base to avoid reinstalling dependencies
+FROM pharma/docling:latest AS docling-base
 
 # Set environment variables
 ENV PYTHONUNBUFFERED=1 \
@@ -23,5 +23,5 @@ RUN pip3 install --no-cache-dir --upgrade pip && \
 # Copy RAG-Anything test script
 COPY test_raganything.py /var/task/
 
-# Set the CMD to your handler
-CMD ["python3", "/var/task/lambda_function.py"]
+# Set the CMD to run the test by default
+CMD ["python3", "/var/task/test_raganything.py"]

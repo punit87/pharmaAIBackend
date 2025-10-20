@@ -1,3 +1,63 @@
+name: Build images
+
+on:
+  push:
+    branches: [ main ]
+  pull_request:
+    branches: [ main ]
+  workflow_dispatch: {}
+
+jobs:
+  build:
+    name: Build pipelines (classic and lambda)
+    runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        variant: [ classic, lambda ]
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Set up QEMU
+        uses: docker/setup-qemu-action@v3
+
+      - name: Set up Docker Buildx
+        uses: docker/setup-buildx-action@v3
+
+      # Classic pipeline: tesseract -> docling -> raganything
+      - name: Build classic - tesseract
+        if: matrix.variant == 'classic'
+        run: |
+          docker build -t pharma/tesseract:latest -f Dockerfile.tesseract .
+
+      - name: Build classic - docling (FROM pharma/tesseract)
+        if: matrix.variant == 'classic'
+        run: |
+          docker build -t pharma/docling:latest -f Dockerfile.docling .
+
+      - name: Build classic - raganything (FROM pharma/docling)
+        if: matrix.variant == 'classic'
+        run: |
+          docker build -t pharma/raganything:latest --build-arg RAGANYTHING_EXTRAS=text -f Dockerfile.raganything .
+
+      # Lambda pipeline: tesseract-lambda -> docling-lambda -> raganything-lambda
+      - name: Build lambda - tesseract
+        if: matrix.variant == 'lambda'
+        run: |
+          docker build -t pharma/tesseract-lambda:latest -f Dockerfile.tesseract.lambda .
+
+      - name: Build lambda - docling (FROM pharma/tesseract-lambda)
+        if: matrix.variant == 'lambda'
+        run: |
+          docker build -t pharma/docling-lambda:latest -f Dockerfile.docling.lambda .
+
+      - name: Build lambda - raganything (FROM pharma/docling-lambda)
+        if: matrix.variant == 'lambda'
+        run: |
+          docker build -t pharma/raganything-lambda:latest --build-arg RAGANYTHING_EXTRAS=text -f Dockerfile.raganything.lambda .
+
 # Build Tesseract, Docling, and RAG-Anything Docker images for document processing
 # This workflow builds and pushes all three images to GitHub Container Registry
 name: Build Tesseract, Docling, and RAG-Anything Images

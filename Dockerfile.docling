@@ -1,8 +1,8 @@
 # ============================================
 # Docling Dockerfile - Minimal Ubuntu approach
 # ============================================
-# Use Ubuntu base image for better package availability
-FROM ubuntu:22.04
+# Build Docling on top of the locally built Tesseract image to reuse Tesseract
+FROM pharma/tesseract:latest
 
 # Set environment variables
 ENV DEBIAN_FRONTEND=noninteractive \
@@ -12,18 +12,7 @@ ENV DEBIAN_FRONTEND=noninteractive \
     LANG=C.UTF-8 \
     LC_ALL=C.UTF-8
 
-# Install Python and essential system dependencies
-RUN apt-get update && \
-    apt-get install -y \
-        python3 \
-        python3-pip \
-        python3-dev \
-        tesseract-ocr \
-        tesseract-ocr-eng \
-        libtesseract-dev \
-        libleptonica-dev \
-    && apt-get clean \
-    && rm -rf /var/lib/apt/lists/*
+# Python is already present in the base image; no need to reinstall system Tesseract
 
 # Install Python dependencies with minimal packages
 RUN pip3 install --no-cache-dir --upgrade pip && \
@@ -36,9 +25,8 @@ RUN pip3 install --no-cache-dir --upgrade pip && \
     && pip3 cache purge \
     && rm -rf /root/.cache/pip
 
-# Copy the Lambda function and test script
-COPY lambda_function.py /var/task/
+# Copy the test script only for container verification
 COPY test_docling.py /var/task/
 
-# Set the CMD to your handler
-CMD ["python3", "/var/task/lambda_function.py"]
+# Default command runs the docling test
+CMD ["python3", "/var/task/test_docling.py"]
