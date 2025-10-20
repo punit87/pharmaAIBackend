@@ -16,6 +16,7 @@ env:
 jobs:
   # Job 1: Build Tesseract image only
   build-tesseract:
+    if: ${{ false }} # temporarily disabled to save runner space
     runs-on: ubuntu-latest
     permissions:
       contents: read
@@ -73,6 +74,7 @@ jobs:
 
   # Job 2: Build Docling image (depends on Tesseract)
   build-docling:
+    if: ${{ false }} # temporarily disabled to save runner space
     needs: build-tesseract
     runs-on: ubuntu-latest
     permissions:
@@ -132,7 +134,7 @@ jobs:
         docker network prune -f
   # Job 3: Build RAG-Anything image (depends on Docling)
   build-raganything:
-    needs: build-docling
+    # run independently; will pull Docling from GHCR
     runs-on: ubuntu-latest
     permissions:
       contents: read

@@ -13,10 +13,9 @@ ENV PYTHONUNBUFFERED=1 \
 
 # Install RAG-Anything with all dependencies
 RUN pip3 install --no-cache-dir --upgrade pip && \
-    pip3 install --no-cache-dir \
-        'raganything[all]' \
-    && pip3 cache purge \
-    && rm -rf /root/.cache/pip
+    pip3 install --no-cache-dir 'raganything[all]' && \
+    pip3 cache purge && \
+    rm -rf /root/.cache/pip
 
 # Copy RAG-Anything test script
 COPY test_raganything.py /var/task/
