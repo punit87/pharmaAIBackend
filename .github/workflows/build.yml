@@ -71,4 +71,9 @@ jobs:
       - name: Smoke - docling lambda tesseract available
         if: matrix.variant == 'lambda'
         run: |
-          docker run --rm pharma/docling-lambda:latest tesseract --version
+          docker run --rm --entrypoint /bin/sh pharma/docling-lambda:latest -lc "tesseract --version"
+
+      - name: Smoke - docling lambda python imports
+        if: matrix.variant == 'lambda'
+        run: |
+          docker run --rm --entrypoint /bin/sh pharma/docling-lambda:latest -lc "python3 -c 'import pytesseract, docling; print(pytesseract.get_tesseract_version())'"
