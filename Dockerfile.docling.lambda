@@ -22,8 +22,8 @@ RUN yum install -y \
 RUN mkdir -p /tmp/easyocr /tmp/tessdata
 
 # Install Python dependencies
-COPY requirements.txt .
-RUN pip install --no-cache-dir -r requirements.txt
+COPY requirements-docling.txt .
+RUN pip install --no-cache-dir -r requirements-docling.txt
 
 # Copy Lambda handler code
 COPY lambda_function.py ${LAMBDA_TASK_ROOT}/

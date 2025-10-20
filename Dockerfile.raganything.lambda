@@ -8,16 +8,9 @@ ENV PYTHONUNBUFFERED=1 \
     PIP_NO_CACHE_DIR=1 \
     PIP_DISABLE_PIP_VERSION_CHECK=1
 
-# Install uv and RAG-Anything using official method
-RUN curl -LsSf https://astral.sh/uv/install.sh | sh && \
-    /root/.cargo/bin/uv --version
-
-# Clone and setup RAG-Anything with uv
-RUN git clone https://github.com/HKUDS/RAG-Anything.git /tmp/raganything && \
-    cd /tmp/raganything && \
-    /root/.cargo/bin/uv sync --extra text && \
-    cd / && \
-    rm -rf /tmp/raganything
+# Install Python dependencies
+COPY requirements-raganything.txt .
+RUN pip install --no-cache-dir -r requirements-raganything.txt
 
 # Copy Lambda handler that invokes RAG flow
 COPY lambda_function.py ${LAMBDA_TASK_ROOT}/

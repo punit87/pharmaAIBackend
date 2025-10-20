@@ -21,16 +21,9 @@ RUN apt-get update && \
     && apt-get clean \
     && rm -rf /var/lib/apt/lists/*
 
-# Install uv and RAG-Anything using official method
-RUN curl -LsSf https://astral.sh/uv/install.sh | sh && \
-    /root/.cargo/bin/uv --version
-
-# Clone and setup RAG-Anything with uv
-RUN git clone https://github.com/HKUDS/RAG-Anything.git /tmp/raganything && \
-    cd /tmp/raganything && \
-    /root/.cargo/bin/uv sync --extra text && \
-    cd / && \
-    rm -rf /tmp/raganything
+# Install Python dependencies
+COPY requirements-raganything.txt .
+RUN pip3 install --no-cache-dir -r requirements-raganything.txt
 
 # Copy RAG-Anything test script
 COPY test_raganything.py /var/task/
