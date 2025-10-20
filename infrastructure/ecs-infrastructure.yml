@@ -384,7 +384,7 @@ Resources:
     Properties:
       FunctionName: !Sub 'pharma-presigned-url-${Environment}'
       Runtime: python3.11
-      Handler: presigned_url.lambda_handler
+      Handler: index.lambda_handler
       Code:
         ZipFile: |
           import json
@@ -446,7 +446,7 @@ Resources:
     Properties:
       FunctionName: !Sub 'pharma-rag-query-${Environment}'
       Runtime: python3.11
-      Handler: rag_query.lambda_handler
+      Handler: index.lambda_handler
       Code:
         ZipFile: |
           import json
@@ -512,7 +512,7 @@ Resources:
     Properties:
       FunctionName: !Sub 'pharma-document-processor-${Environment}'
       Runtime: python3.11
-      Handler: document_processor.lambda_handler
+      Handler: index.lambda_handler
       Code:
         ZipFile: |
           import json
