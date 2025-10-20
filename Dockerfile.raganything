@@ -1,15 +1,23 @@
 # ============================================
-# RAG-Anything Dockerfile - Multi-stage build with Docling base
+# RAG-Anything Dockerfile - Fresh Ubuntu build
 # ============================================
-# Use the locally built Docling image as base to avoid reinstalling dependencies
-FROM pharma/docling:latest AS docling-base
+FROM ubuntu:22.04
 
 # Set environment variables
-ENV PYTHONUNBUFFERED=1 \
+ENV DEBIAN_FRONTEND=noninteractive \
+    PYTHONUNBUFFERED=1 \
     PYTHONDONTWRITEBYTECODE=1 \
     PYTHONPATH="/usr/local/lib/python3.10/dist-packages" \
     LANG=C.UTF-8 \
     LC_ALL=C.UTF-8
+
+# Install Python
+RUN apt-get update && \
+    apt-get install -y \
+        python3 \
+        python3-pip \
+    && apt-get clean \
+    && rm -rf /var/lib/apt/lists/*
 
 # Install RAG-Anything (no extras to avoid mineru/gradio dependency)
 RUN pip3 install --no-cache-dir "pip<24.1" && \

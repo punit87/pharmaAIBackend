@@ -1,27 +1,16 @@
 # ============================================
-# RAG-Anything Lambda Image (Python 3.10)
-# - AWS Lambda base image
-# - Installs Docling/Tesseract stack + raganything[text]
-# - Lambda-compatible handler
+# RAG-Anything Lambda Image - Fresh AWS Python build
 # ============================================
-FROM pharma/docling-lambda:latest
+FROM public.ecr.aws/lambda/python:3.10
 
 ENV PYTHONUNBUFFERED=1 \
     PYTHONDONTWRITEBYTECODE=1 \
     PIP_NO_CACHE_DIR=1 \
     PIP_DISABLE_PIP_VERSION_CHECK=1
 
-# Tesseract already available from base docling-lambda image
-
-# Python deps: docling stack + raganything (no extras to avoid mineru/gradio dependency)
+# Install RAG-Anything (no extras to avoid mineru/gradio dependency)
 RUN python3 -m pip install "pip<24.1" && \
-    python3 -m pip install \
-      numpy \
-      pandas \
-      Pillow \
-      pytesseract \
-      docling \
-      raganything
+    python3 -m pip install raganything
 
 # Copy Lambda handler that invokes RAG flow
 COPY lambda_function.py ${LAMBDA_TASK_ROOT}/

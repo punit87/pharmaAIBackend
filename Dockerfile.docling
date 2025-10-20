@@ -1,20 +1,30 @@
 # ============================================
-# Docling Dockerfile - Minimal Ubuntu approach
+# Combined Tesseract + Docling Image
 # ============================================
-# Build Docling on top of the locally built Tesseract image to reuse Tesseract
-FROM pharma/tesseract:latest
+FROM ubuntu:22.04
 
 # Set environment variables
 ENV DEBIAN_FRONTEND=noninteractive \
+    TESSDATA_PREFIX="/usr/share/tesseract-ocr" \
     PYTHONUNBUFFERED=1 \
     PYTHONDONTWRITEBYTECODE=1 \
     PYTHONPATH="/usr/local/lib/python3.10/dist-packages" \
     LANG=C.UTF-8 \
     LC_ALL=C.UTF-8
 
-# Python is already present in the base image; no need to reinstall system Tesseract
+# Install Python and Tesseract dependencies
+RUN apt-get update && \
+    apt-get install -y \
+        python3 \
+        python3-pip \
+        tesseract-ocr \
+        tesseract-ocr-eng \
+        libtesseract-dev \
+        libleptonica-dev \
+    && apt-get clean \
+    && rm -rf /var/lib/apt/lists/*
 
-# Install Python dependencies with minimal packages
+# Install Python dependencies (Tesseract + Docling)
 RUN pip3 install --no-cache-dir --upgrade pip && \
     pip3 install --no-cache-dir \
         numpy \
@@ -25,8 +35,8 @@ RUN pip3 install --no-cache-dir --upgrade pip && \
     && pip3 cache purge \
     && rm -rf /root/.cache/pip
 
-# Copy the test script only for container verification
+# Copy test script
 COPY test_docling.py /var/task/
 
-# Default command runs the docling test
+# Set default command
 CMD ["python3", "/var/task/test_docling.py"]

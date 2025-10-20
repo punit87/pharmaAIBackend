@@ -1,20 +1,27 @@
 # ============================================
-# Docling Lambda Image (Python 3.10)
-# - AWS Lambda base image
-# - Attempts Tesseract install via EPEL on Amazon Linux 2
-# - Minimal deps, Lambda-compatible handler
+# Combined Tesseract + Docling Lambda Image
 # ============================================
-FROM pharma/tesseract-lambda:latest
+FROM public.ecr.aws/lambda/python:3.10
 
-# Faster, safer builds
 ENV PYTHONUNBUFFERED=1 \
     PYTHONDONTWRITEBYTECODE=1 \
     PIP_NO_CACHE_DIR=1 \
-    PIP_DISABLE_PIP_VERSION_CHECK=1
+    PIP_DISABLE_PIP_VERSION_CHECK=1 \
+    TESSDATA_PREFIX=/usr/share/tesseract-ocr
 
-# Tesseract already provided by base image; skip reinstall
+# Install Tesseract (best-effort via EPEL on Amazon Linux 2)
+RUN yum -y install amazon-linux-extras && \
+    amazon-linux-extras install epel -y || true && \
+    yum clean metadata && \
+    yum -y install \
+      tesseract \
+      tesseract-langpack-eng \
+      leptonica \
+      leptonica-devel \
+      || true && \
+    yum clean all && rm -rf /var/cache/yum
 
-# Python dependencies (minimal set for Docling OCR path)
+# Python dependencies (Tesseract + Docling)
 RUN python3 -m pip install --upgrade pip && \
     python3 -m pip install \
       numpy \

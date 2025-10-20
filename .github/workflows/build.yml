@@ -37,18 +37,13 @@ jobs:
           username: ${{ github.repository_owner }}
           password: ${{ secrets.GITHUB_TOKEN }}
 
-      # Classic pipeline: tesseract -> docling -> raganything
-      - name: Build classic - tesseract
-        if: matrix.variant == 'classic'
-        run: |
-          docker build -t pharma/tesseract:latest -f Dockerfile.tesseract .
-
-      - name: Build classic - docling (FROM pharma/tesseract)
+      # Classic pipeline: combined tesseract+docling, separate raganything
+      - name: Build classic - tesseract+docling combined
         if: matrix.variant == 'classic'
         run: |
           docker build -t pharma/docling:latest -f Dockerfile.docling .
 
-      - name: Build classic - raganything (FROM pharma/docling)
+      - name: Build classic - raganything (fresh Ubuntu)
         if: matrix.variant == 'classic'
         run: |
           docker build -t pharma/raganything:latest -f Dockerfile.raganything .
@@ -58,10 +53,8 @@ jobs:
         env:
           OWNER: ${{ github.repository_owner }}
         run: |
-          docker tag pharma/tesseract:latest ghcr.io/${OWNER}/tesseract:latest
           docker tag pharma/docling:latest ghcr.io/${OWNER}/docling:latest
           docker tag pharma/raganything:latest ghcr.io/${OWNER}/raganything:latest
-          docker push ghcr.io/${OWNER}/tesseract:latest
           docker push ghcr.io/${OWNER}/docling:latest
           docker push ghcr.io/${OWNER}/raganything:latest
 
@@ -75,31 +68,24 @@ jobs:
         run: |
           docker run --rm pharma/docling:latest python3 -c "import pytesseract, docling; print(pytesseract.get_tesseract_version())"
 
-      # Lambda pipeline: tesseract-lambda -> docling-lambda -> raganything-lambda
-      - name: Build lambda - tesseract
-        if: matrix.variant == 'lambda'
-        run: |
-          docker build -t pharma/tesseract-lambda:latest -f Dockerfile.tesseract.lambda .
-
-      - name: Build lambda - docling (FROM pharma/tesseract-lambda)
+      # Lambda pipeline: combined tesseract+docling, separate raganything
+      - name: Build lambda - tesseract+docling combined
         if: matrix.variant == 'lambda'
         run: |
           docker build -t pharma/docling-lambda:latest -f Dockerfile.docling.lambda .
 
-      - name: Build lambda - raganything (FROM pharma/docling-lambda)
+      - name: Build lambda - raganything (fresh AWS Python)
         if: matrix.variant == 'lambda'
         run: |
-          docker build --no-cache -t pharma/raganything-lambda:latest -f Dockerfile.raganything.lambda .
+          docker build -t pharma/raganything-lambda:latest -f Dockerfile.raganything.lambda .
 
       - name: Tag + push lambda images to GHCR
         if: matrix.variant == 'lambda'
         env:
           OWNER: ${{ github.repository_owner }}
         run: |
-          docker tag pharma/tesseract-lambda:latest ghcr.io/${OWNER}/tesseract-lambda:latest
           docker tag pharma/docling-lambda:latest ghcr.io/${OWNER}/docling-lambda:latest
           docker tag pharma/raganything-lambda:latest ghcr.io/${OWNER}/raganything-lambda:latest
-          docker push ghcr.io/${OWNER}/tesseract-lambda:latest
           docker push ghcr.io/${OWNER}/docling-lambda:latest
           docker push ghcr.io/${OWNER}/raganything-lambda:latest
 
