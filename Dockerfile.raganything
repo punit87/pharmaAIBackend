@@ -18,8 +18,7 @@ RUN apt-get update && \
     && rm -rf /var/lib/apt/lists/*
 
 # Install Python dependencies
-COPY requirements-raganything.txt .
-RUN pip install --no-cache-dir -r requirements-raganything.txt
+RUN pip install --no-cache-dir 'raganything[text]'
 
 # Copy RAG-Anything test script
 COPY test_raganything.py /var/task/
