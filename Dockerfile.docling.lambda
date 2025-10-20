@@ -1,7 +1,7 @@
 # ============================================
-# Docling Lambda Image - AWS Python 3.12
+# Docling Lambda Image - AWS Python 3.11
 # ============================================
-FROM public.ecr.aws/lambda/python:3.12
+FROM public.ecr.aws/lambda/python:3.11
 
 ENV PYTHONUNBUFFERED=1 \
     PYTHONDONTWRITEBYTECODE=1 \
@@ -14,33 +14,29 @@ ENV PYTHONUNBUFFERED=1 \
     TESSDATA_PREFIX=/tmp/tessdata \
     OMP_NUM_THREADS=4
 
-# Install build dependencies
-RUN microdnf install -y \
-    gcc \
-    gcc-c++ \
-    make \
-    wget \
-    tar \
-    which \
-    && microdnf clean all
-
-# Install tesseract from source
-RUN cd /tmp && \
-    wget https://github.com/tesseract-ocr/tesseract/archive/5.3.0.tar.gz && \
-    tar -xzf 5.3.0.tar.gz && \
-    cd tesseract-5.3.0 && \
-    ./autogen.sh && \
-    ./configure && \
-    make && \
-    make install && \
-    ldconfig && \
-    cd / && \
-    rm -rf /tmp/tesseract-5.3.0 /tmp/5.3.0.tar.gz
-
-# Download English language data
-RUN mkdir -p /usr/share/tesseract-ocr/5/tessdata && \
-    cd /usr/share/tesseract-ocr/5/tessdata && \
-    wget https://github.com/tesseract-ocr/tessdata/raw/main/eng.traineddata
+# Install system dependencies
+RUN yum install -y \
+        dnf-plugins-core \
+        wget \
+        tar \
+        gzip \
+        bzip2 \
+        xz \
+        make \
+        gcc \
+        gcc-c++ \
+        automake \
+        autoconf \
+        libtool \
+        pkgconfig \
+        python3-devel \
+        git \
+    && dnf config-manager --set-enabled epel \
+    && yum install -y \
+        tesseract \
+        tesseract-langpack-eng \
+    && yum clean all \
+    && rm -rf /var/cache/yum
 
 # Create writable directories for models and data
 RUN mkdir -p /tmp/easyocr /tmp/tessdata

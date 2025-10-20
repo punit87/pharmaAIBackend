@@ -1,7 +1,7 @@
 # ============================================
-# Docling Image - Python 3.11 slim bookworm
+# Docling Image - Python 3.11 slim
 # ============================================
-FROM python:3.11-slim-bookworm
+FROM python:3.11-slim
 
 ENV GIT_SSH_COMMAND="ssh -o StrictHostKeyChecking=no" \
     HF_HOME=/tmp/ \
