@@ -14,7 +14,7 @@ ENV PYTHONUNBUFFERED=1 \
     TESSDATA_PREFIX=/tmp/tessdata \
     OMP_NUM_THREADS=4
 
-# Install system dependencies
+# Install system dependencies and enable EPEL
 RUN yum install -y \
         wget \
         tar \
@@ -30,7 +30,7 @@ RUN yum install -y \
         pkgconfig \
         python3-devel \
         git \
-    && yum install -y epel-release \
+    && amazon-linux-extras install epel -y \
     && yum install -y \
         tesseract \
         tesseract-langpack-eng \
