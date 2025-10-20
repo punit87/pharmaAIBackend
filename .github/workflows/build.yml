@@ -281,7 +281,7 @@ jobs:
     - name: Smoke test RAG-Anything image imports
       run: |
         echo "Running RAG-Anything import smoke test..."
-        docker run --rm ${{ env.REGISTRY }}/${{ env.RAGANYTHING_IMAGE }}:latest python3 /var/task/test_raganything.py || (
+        docker run --rm ${{ env.REGISTRY }}/${{ env.RAGANYTHING_LAMBDA_IMAGE }}:latest python3 /var/task/test_raganything.py || (
           echo "RAG-Anything import smoke test failed" && exit 1
         )
         
