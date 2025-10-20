@@ -54,9 +54,13 @@ jobs:
           docker push ghcr.io/${OWNER}/raganything:latest
 
       # Smoke tests
+      - name: Smoke test - docling tesseract available
+        run: |
+          docker run --rm pharma/docling:latest tesseract --version
+
       - name: Smoke test - docling python imports
         run: |
-          docker run --rm pharma/docling:latest python3 -c "import docling; print('Docling imported successfully')"
+          docker run --rm pharma/docling:latest python3 -c "import pytesseract, docling; print(pytesseract.get_tesseract_version())"
 
       - name: Smoke test - raganything python imports
         run: |
