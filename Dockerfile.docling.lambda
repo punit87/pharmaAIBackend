@@ -1,5 +1,5 @@
 # ============================================
-# Docling Lambda Image - Lambda Python 3.12 base
+# Docling Lambda Image - AWS Python 3.12
 # ============================================
 FROM public.ecr.aws/lambda/python:3.12
 
@@ -7,8 +7,12 @@ ENV PYTHONUNBUFFERED=1 \
     PYTHONDONTWRITEBYTECODE=1 \
     PIP_NO_CACHE_DIR=1 \
     PIP_DISABLE_PIP_VERSION_CHECK=1 \
+    GIT_SSH_COMMAND="ssh -o StrictHostKeyChecking=no" \
+    HF_HOME=/tmp/ \
+    TORCH_HOME=/tmp/ \
     EASYOCR_HOME=/tmp/easyocr \
-    TESSDATA_PREFIX=/tmp/tessdata
+    TESSDATA_PREFIX=/tmp/tessdata \
+    OMP_NUM_THREADS=4
 
 # Install system dependencies
 RUN microdnf install -y \
@@ -24,12 +28,14 @@ RUN dnf install -y epel-release && \
     which \
     && dnf clean all
 
-# Create writable directories for easyocr and tesseract
+# Create writable directories for models and data
 RUN mkdir -p /tmp/easyocr /tmp/tessdata
 
-# Install Python dependencies
-COPY requirements-docling.txt .
-RUN pip install --no-cache-dir -r requirements-docling.txt --extra-index-url https://download.pytorch.org/whl/cpu
+# Install docling with CPU-only PyTorch
+RUN pip install --no-cache-dir docling --extra-index-url https://download.pytorch.org/whl/cpu
+
+# Download docling models
+RUN docling-tools models download
 
 # Copy Lambda handler code
 COPY lambda_function.py ${LAMBDA_TASK_ROOT}/
