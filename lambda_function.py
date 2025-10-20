@@ -63,6 +63,9 @@ class DoclingLambdaHandler:
     def __init__(self):
         """Initialize the handler with Docling converter and configuration"""
         try:
+            # Configure Lambda-specific environment variables
+            self._configure_lambda_environment()
+            
             # Initialize Docling converter with optimized settings
             self.converter = DocumentConverter()
             
@@ -81,6 +84,24 @@ class DoclingLambdaHandler:
         except Exception as e:
             logger.error(f"Failed to initialize DoclingLambdaHandler: {str(e)}")
             raise
+    
+    def _configure_lambda_environment(self):
+        """Configure Lambda-specific environment variables"""
+        try:
+            # Set easyocr to use /tmp directory (writable in Lambda)
+            os.environ['EASYOCR_HOME'] = '/tmp/easyocr'
+            
+            # Set tesseract data to use /tmp directory
+            os.environ['TESSDATA_PREFIX'] = '/tmp/tessdata'
+            
+            # Create directories if they don't exist
+            os.makedirs('/tmp/easyocr', exist_ok=True)
+            os.makedirs('/tmp/tessdata', exist_ok=True)
+            
+            logger.info("Lambda environment configured successfully")
+            
+        except Exception as e:
+            logger.warning(f"Lambda environment configuration warning: {str(e)}")
     
     def _configure_tesseract(self):
         """Configure Tesseract OCR settings"""

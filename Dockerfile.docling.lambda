@@ -1,12 +1,17 @@
 # ============================================
-# Docling Lambda Image - Official installation method
+# Docling Lambda Image - Lambda-optimized installation
 # ============================================
 FROM public.ecr.aws/lambda/python:3.10
 
 ENV PYTHONUNBUFFERED=1 \
     PYTHONDONTWRITEBYTECODE=1 \
     PIP_NO_CACHE_DIR=1 \
-    PIP_DISABLE_PIP_VERSION_CHECK=1
+    PIP_DISABLE_PIP_VERSION_CHECK=1 \
+    EASYOCR_HOME=/tmp/easyocr \
+    TESSDATA_PREFIX=/tmp/tessdata
+
+# Create writable directories for easyocr and tesseract
+RUN mkdir -p /tmp/easyocr /tmp/tessdata
 
 # Install docling using official method
 RUN python3 -m pip install docling
