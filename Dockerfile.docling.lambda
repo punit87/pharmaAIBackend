@@ -1,5 +1,5 @@
 # ============================================
-# Docling Lambda Image - Clean installation with Python 3.12
+# Docling Lambda Image - Lambda Python 3.12 base
 # ============================================
 FROM public.ecr.aws/lambda/python:3.12
 
@@ -15,15 +15,15 @@ RUN yum install -y \
     tesseract \
     tesseract-langpack-eng \
     poppler-utils \
-    libtesseract-dev \
-    libleptonica-dev \
+    which \
     && yum clean all
 
 # Create writable directories for easyocr and tesseract
 RUN mkdir -p /tmp/easyocr /tmp/tessdata
 
-# Install Docling Python package
-RUN pip install --no-cache-dir docling
+# Install Python dependencies
+COPY requirements.txt .
+RUN pip install --no-cache-dir -r requirements.txt
 
 # Copy Lambda handler code
 COPY lambda_function.py ${LAMBDA_TASK_ROOT}/
