@@ -89,7 +89,7 @@ jobs:
       - name: Build lambda - raganything (FROM pharma/docling-lambda)
         if: matrix.variant == 'lambda'
         run: |
-          docker build -t pharma/raganything-lambda:latest -f Dockerfile.raganything.lambda .
+          docker build --no-cache -t pharma/raganything-lambda:latest -f Dockerfile.raganything.lambda .
 
       - name: Tag + push lambda images to GHCR
         if: matrix.variant == 'lambda'
