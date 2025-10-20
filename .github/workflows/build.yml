@@ -42,6 +42,16 @@ jobs:
         run: |
           docker build -t pharma/raganything:latest --build-arg RAGANYTHING_EXTRAS=text -f Dockerfile.raganything .
 
+      - name: Smoke - docling classic tesseract available
+        if: matrix.variant == 'classic'
+        run: |
+          docker run --rm pharma/docling:latest tesseract --version
+
+      - name: Smoke - docling classic python imports
+        if: matrix.variant == 'classic'
+        run: |
+          docker run --rm pharma/docling:latest python3 -c "import pytesseract, docling; print(pytesseract.get_tesseract_version())"
+
       # Lambda pipeline: tesseract-lambda -> docling-lambda -> raganything-lambda
       - name: Build lambda - tesseract
         if: matrix.variant == 'lambda'
@@ -57,3 +67,8 @@ jobs:
         if: matrix.variant == 'lambda'
         run: |
           docker build -t pharma/raganything-lambda:latest --build-arg RAGANYTHING_EXTRAS=text -f Dockerfile.raganything.lambda .
+
+      - name: Smoke - docling lambda tesseract available
+        if: matrix.variant == 'lambda'
+        run: |
+          docker run --rm pharma/docling-lambda:latest tesseract --version
