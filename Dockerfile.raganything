@@ -23,8 +23,7 @@ RUN apt-get update && \
 ARG RAGANYTHING_EXTRAS=text
 RUN pip3 install --no-cache-dir "pip<24.1" && \
     pip3 install --no-cache-dir wheel setuptools && \
-    pip3 install --no-cache-dir "raganything[${RAGANYTHING_EXTRAS}]" || \
-    echo "RAG-Anything installation failed, continuing without it" && \
+    pip3 install --no-cache-dir "raganything[${RAGANYTHING_EXTRAS}]" && \
     pip3 cache purge && \
     rm -rf /root/.cache/pip
 

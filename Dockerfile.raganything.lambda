@@ -12,8 +12,7 @@ ENV PYTHONUNBUFFERED=1 \
 ARG RAGANYTHING_EXTRAS=text
 RUN python3 -m pip install "pip<24.1" && \
     python3 -m pip install wheel setuptools && \
-    python3 -m pip install "raganything[${RAGANYTHING_EXTRAS}]" || \
-    echo "RAG-Anything installation failed, continuing without it"
+    python3 -m pip install "raganything[${RAGANYTHING_EXTRAS}]"
 
 # Copy Lambda handler that invokes RAG flow
 COPY lambda_function.py ${LAMBDA_TASK_ROOT}/
