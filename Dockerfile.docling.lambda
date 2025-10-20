@@ -1,5 +1,5 @@
 # ============================================
-# Docling Lambda Image - Built from source with embedded Tesseract
+# Docling Lambda Image - Official installation method
 # ============================================
 FROM public.ecr.aws/lambda/python:3.10
 
@@ -8,30 +8,8 @@ ENV PYTHONUNBUFFERED=1 \
     PIP_NO_CACHE_DIR=1 \
     PIP_DISABLE_PIP_VERSION_CHECK=1
 
-# Install build dependencies for docling
-RUN yum -y install amazon-linux-extras && \
-    amazon-linux-extras install epel -y || true && \
-    yum clean metadata && \
-    yum -y install \
-      git \
-      gcc \
-      gcc-c++ \
-      make \
-      cmake \
-      pkgconfig \
-      libtesseract \
-      leptonica \
-      leptonica-devel \
-      opencv \
-      || true && \
-    yum clean all && rm -rf /var/cache/yum
-
-# Clone and build docling from source
-RUN git clone https://github.com/docling-project/docling.git /tmp/docling && \
-    cd /tmp/docling && \
-    python3 -m pip install -e . && \
-    cd / && \
-    rm -rf /tmp/docling
+# Install docling using official method
+RUN python3 -m pip install docling
 
 # Copy Lambda handler code
 COPY lambda_function.py ${LAMBDA_TASK_ROOT}/
