@@ -1,5 +1,9 @@
 # Pharma RAG Infrastructure Deployment Workflow
 # 
+# Uses Docker images from GitHub Container Registry:
+# - ghcr.io/punit87/docling:latest
+# - ghcr.io/punit87/raganything:latest
+#
 # Required GitHub Secrets:
 # - AWS_ACCESS_KEY_ID: AWS access key for deployment
 # - AWS_SECRET_ACCESS_KEY: AWS secret key for deployment  
@@ -7,7 +11,6 @@
 # - NEO4J_PASSWORD: Neo4j database password
 #
 # Optional GitHub Secrets (with defaults):
-# - AWS_ACCOUNT_ID: AWS account ID (defaults to 864899869769)
 # - NEO4J_URI: Neo4j connection URI (defaults to neo4j+s://a16788ee.databases.neo4j.io)
 # - NEO4J_USERNAME: Neo4j username (defaults to neo4j)
 
@@ -45,9 +48,10 @@ permissions:
 env:
   AWS_REGION: us-east-1
   STACK_NAME: pharma-rag-infrastructure
-  ECR_REGISTRY: ${{ secrets.AWS_ACCOUNT_ID || '864899869769' }}.dkr.ecr.us-east-1.amazonaws.com
-  ECR_REPOSITORY_DOCLING: pharma-docling
-  ECR_REPOSITORY_RAGANYTHING: pharma-raganything
+  GITHUB_REGISTRY: ghcr.io
+  GITHUB_USERNAME: punit87
+  DOCLING_IMAGE: ghcr.io/punit87/docling:latest
+  RAGANYTHING_IMAGE: ghcr.io/punit87/raganything:latest
 
 jobs:
   deploy-infrastructure:
@@ -95,8 +99,8 @@ jobs:
             --capabilities CAPABILITY_IAM CAPABILITY_NAMED_IAM \
             --parameter-overrides \
               Environment=${{ github.event.inputs.environment || 'dev' }} \
-              DoclingImageUri=$ECR_REGISTRY/$ECR_REPOSITORY_DOCLING:latest \
-              RaganythingImageUri=$ECR_REGISTRY/$ECR_REPOSITORY_RAGANYTHING:latest \
+              DoclingImageUri=${{ env.DOCLING_IMAGE }} \
+              RaganythingImageUri=${{ env.RAGANYTHING_IMAGE }} \
               OpenAIApiKey=${{ secrets.OPENAI_API_KEY }} \
               Neo4jUri=${{ secrets.NEO4J_URI || 'neo4j+s://a16788ee.databases.neo4j.io' }} \
               Neo4jUsername=${{ secrets.NEO4J_USERNAME || 'neo4j' }} \

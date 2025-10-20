@@ -51,10 +51,10 @@ fi
 
 print_status "AWS Account ID: $AWS_ACCOUNT_ID"
 
-# Set ECR image URIs
-ECR_REGISTRY="$AWS_ACCOUNT_ID.dkr.ecr.$AWS_REGION.amazonaws.com"
-DOCLING_IMAGE_URI="$ECR_REGISTRY/pharma-docling:latest"
-RAGANYTHING_IMAGE_URI="$ECR_REGISTRY/pharma-raganything:latest"
+# Set GitHub Container Registry image URIs
+GITHUB_USERNAME="punit87"  # Replace with your GitHub username
+DOCLING_IMAGE_URI="ghcr.io/$GITHUB_USERNAME/docling:latest"
+RAGANYTHING_IMAGE_URI="ghcr.io/$GITHUB_USERNAME/raganything:latest"
 
 print_status "Docling Image URI: $DOCLING_IMAGE_URI"
 print_status "RAG-Anything Image URI: $RAGANYTHING_IMAGE_URI"

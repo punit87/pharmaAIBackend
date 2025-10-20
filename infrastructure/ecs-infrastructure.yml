@@ -10,13 +10,13 @@ Parameters:
   
   DoclingImageUri:
     Type: String
-    Description: ECR URI for Docling container image
-    Default: ''
+    Description: GitHub Container Registry URI for Docling container image
+    Default: 'ghcr.io/punit87/docling:latest'
   
   RaganythingImageUri:
     Type: String
-    Description: ECR URI for RAG-Anything container image
-    Default: ''
+    Description: GitHub Container Registry URI for RAG-Anything container image
+    Default: 'ghcr.io/punit87/raganything:latest'
   
   OpenAIApiKey:
     Type: String
