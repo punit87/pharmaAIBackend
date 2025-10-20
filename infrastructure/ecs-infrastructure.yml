@@ -452,50 +452,38 @@ Resources:
           import json
           import boto3
           import os
-          import requests
           
           def lambda_handler(event, context):
               try:
                   body = json.loads(event['body'])
                   query = body['query']
                   
-                  # Trigger ECS task for RAG processing
-                  ecs_client = boto3.client('ecs')
+                  # For now, return a mock response since ECS tasks need GitHub Container Registry authentication
+                  # TODO: Implement proper ECS task execution with GitHub Container Registry authentication
                   
-                  response = ecs_client.run_task(
-                      cluster=os.environ['ECS_CLUSTER'],
-                      taskDefinition=os.environ['RAGANYTHING_TASK_DEFINITION'],
-                      launchType='FARGATE',
-                      networkConfiguration={
-                          'awsvpcConfiguration': {
-                              'subnets': os.environ['SUBNETS'].split(','),
-                              'securityGroups': [os.environ['SECURITY_GROUP']],
-                              'assignPublicIp': 'ENABLED'
-                          }
-                      },
-                      overrides={
-                          'containerOverrides': [
-                              {
-                                  'name': 'raganything',
-                                  'environment': [
-                                      {'name': 'QUERY', 'value': query}
-                                  ]
-                              }
-                          ]
-                      }
-                  )
+                  mock_response = {
+                      'query': query,
+                      'answer': f'Mock response for query: "{query}". This is a placeholder response. The actual RAG system would process this query using the uploaded documents.',
+                      'sources': ['uploads/2025/10/20/195635/acf81ef0-4067-45de-93d3-6d32928446d1.pdf'],
+                      'confidence': 0.85,
+                      'status': 'mock_response'
+                  }
                   
                   return {
                       'statusCode': 200,
-                      'headers': {'Content-Type': 'application/json'},
-                      'body': json.dumps({
-                          'task_arn': response['tasks'][0]['taskArn'],
-                          'query': query
-                      })
+                      'headers': {
+                          'Content-Type': 'application/json',
+                          'Access-Control-Allow-Origin': '*',
+                          'Access-Control-Allow-Methods': 'GET, POST, OPTIONS',
+                          'Access-Control-Allow-Headers': 'Content-Type'
+                      },
+                      'body': json.dumps(mock_response)
                   }
               except Exception as e:
+                  print(f"Error processing RAG query: {str(e)}")
                   return {
                       'statusCode': 500,
+                      'headers': {'Content-Type': 'application/json'},
                       'body': json.dumps({'error': str(e)})
                   }
       Role: !GetAtt LambdaExecutionRole.Arn
