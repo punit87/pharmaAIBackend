@@ -10,6 +10,7 @@ ENV PYTHONUNBUFFERED=1 \
 
 # Install RAG-Anything (no extras to avoid mineru/gradio dependency)
 RUN python3 -m pip install "pip<24.1" && \
+    python3 -m pip install setuptools wheel && \
     python3 -m pip install raganything
 
 # Copy Lambda handler that invokes RAG flow
