@@ -137,6 +137,7 @@ jobs:
         docker network prune -f
   # Job 3: Build RAG-Anything image (depends on Docling)
   build-raganything:
+    if: ${{ false }} # temporarily disabled; use Lambda images instead
     # run independently; will pull Docling from GHCR
     runs-on: ubuntu-latest
     permissions:
