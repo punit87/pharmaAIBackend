@@ -30,7 +30,7 @@ RUN yum install -y \
         pkgconfig \
         python3-devel \
         git \
-    && amazon-linux-extras install epel -y \
+    && amazon-linux-extras enable epel \
     && yum install -y \
         tesseract \
         tesseract-langpack-eng \
