@@ -14,8 +14,8 @@ ENV PYTHONUNBUFFERED=1 \
     TESSDATA_PREFIX=/tmp/tessdata \
     OMP_NUM_THREADS=4
 
-# Install system dependencies and enable EPEL
-RUN yum install -y \
+# Install system dependencies
+RUN microdnf install -y \
         wget \
         tar \
         gzip \
@@ -30,13 +30,16 @@ RUN yum install -y \
         pkgconfig \
         python3-devel \
         git \
-    && amazon-linux-extras enable epel \
-    && yum install -y epel-release \
-    && yum install -y \
+    && microdnf clean all
+
+# Install EPEL repository for AL2023
+RUN wget https://dl.fedoraproject.org/pub/epel/epel-release-latest-9.noarch.rpm \
+    && microdnf install -y epel-release-latest-9.noarch.rpm \
+    && microdnf install -y \
         tesseract \
         tesseract-langpack-eng \
-    && yum clean all \
-    && rm -rf /var/cache/yum
+    && microdnf clean all \
+    && rm -f epel-release-latest-9.noarch.rpm
 
 # Create writable directories for models and data
 RUN mkdir -p /tmp/easyocr /tmp/tessdata
