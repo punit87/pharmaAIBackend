@@ -228,7 +228,7 @@ Resources:
                   - s3:DeleteObject
                   - s3:ListBucket
                 Resource:
-                  - !Sub '${DocumentBucket}/*'
+                  - !Sub 'arn:aws:s3:::${DocumentBucket}/*'
                   - !GetAtt DocumentBucket.Arn
 
   # ECS Task Role
@@ -251,7 +251,7 @@ Resources:
                 Action:
                   - s3:*
                 Resource:
-                  - !Sub '${DocumentBucket}/*'
+                  - !Sub 'arn:aws:s3:::${DocumentBucket}/*'
                   - !GetAtt DocumentBucket.Arn
         - PolicyName: ECSExecAccess
           PolicyDocument:
@@ -587,7 +587,7 @@ Resources:
                   - s3:DeleteObject
                   - s3:ListBucket
                 Resource:
-                  - !Sub '${DocumentBucket}/*'
+                  - !Sub 'arn:aws:s3:::${DocumentBucket}/*'
                   - !GetAtt DocumentBucket.Arn
 
   # API Gateway
