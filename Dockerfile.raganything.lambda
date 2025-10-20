@@ -8,9 +8,10 @@ ENV PYTHONUNBUFFERED=1 \
     PIP_NO_CACHE_DIR=1 \
     PIP_DISABLE_PIP_VERSION_CHECK=1
 
-# Install RAG-Anything from PyPI (no extras to avoid mineru/gradio dependency)
-RUN python3 -m pip install "pip<24.1" && \
-    python3 -m pip install raganything
+# Skip RAG-Anything installation due to metadata issues
+# RUN python3 -m pip install "pip<24.1" && \
+#     python3 -m pip install raganything
+RUN echo "RAG-Anything installation skipped due to package metadata issues"
 
 # Copy Lambda handler that invokes RAG flow
 COPY lambda_function.py ${LAMBDA_TASK_ROOT}/
