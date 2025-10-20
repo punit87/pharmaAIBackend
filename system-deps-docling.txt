@@ -1,0 +1,6 @@
+tesseract-ocr
+tesseract-ocr-eng
+poppler-utils
+libtesseract-dev
+libleptonica-dev
+curl

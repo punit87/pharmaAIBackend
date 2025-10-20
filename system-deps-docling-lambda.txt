@@ -1,0 +1,4 @@
+tesseract
+tesseract-langpack-eng
+poppler-utils
+which

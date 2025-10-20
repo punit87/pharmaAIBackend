@@ -11,12 +11,8 @@ ENV PYTHONUNBUFFERED=1 \
     TESSDATA_PREFIX=/tmp/tessdata
 
 # Install system dependencies
-RUN yum install -y \
-    tesseract \
-    tesseract-langpack-eng \
-    poppler-utils \
-    which \
-    && yum clean all
+COPY system-deps-docling-lambda.txt .
+RUN yum install -y $(cat system-deps-docling-lambda.txt) && yum clean all
 
 # Create writable directories for easyocr and tesseract
 RUN mkdir -p /tmp/easyocr /tmp/tessdata
