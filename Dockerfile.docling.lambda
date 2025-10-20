@@ -1,7 +1,7 @@
 # ============================================
-# Docling Lambda Image - Clean installation with system dependencies
+# Docling Lambda Image - Clean installation with Python 3.12
 # ============================================
-FROM public.ecr.aws/lambda/python:3.10
+FROM public.ecr.aws/lambda/python:3.12
 
 ENV PYTHONUNBUFFERED=1 \
     PYTHONDONTWRITEBYTECODE=1 \
@@ -10,25 +10,20 @@ ENV PYTHONUNBUFFERED=1 \
     EASYOCR_HOME=/tmp/easyocr \
     TESSDATA_PREFIX=/tmp/tessdata
 
-# Install system dependencies and Tesseract
-RUN yum -y install amazon-linux-extras && \
-    amazon-linux-extras install epel -y || true && \
-    yum clean metadata && \
-    yum -y install \
-      tesseract \
-      tesseract-langpack-eng \
-      leptonica \
-      leptonica-devel \
-      pkgconfig \
-      poppler-utils \
-      || true && \
-    yum clean all && rm -rf /var/cache/yum
+# Install system dependencies
+RUN yum install -y \
+    tesseract \
+    tesseract-langpack-eng \
+    poppler-utils \
+    libtesseract-dev \
+    libleptonica-dev \
+    && yum clean all
 
 # Create writable directories for easyocr and tesseract
 RUN mkdir -p /tmp/easyocr /tmp/tessdata
 
 # Install Docling Python package
-RUN python3 -m pip install docling
+RUN pip install --no-cache-dir docling
 
 # Copy Lambda handler code
 COPY lambda_function.py ${LAMBDA_TASK_ROOT}/
