@@ -1,0 +1,107 @@
+name: Deploy Infrastructure
+
+on:
+  push:
+    branches: [ main ]
+    paths:
+      - 'infrastructure/**'
+      - 'lambda/**'
+      - '.github/workflows/deployment.yml'
+  pull_request:
+    branches: [ main ]
+    paths:
+      - 'infrastructure/**'
+      - 'lambda/**'
+      - '.github/workflows/deployment.yml'
+  workflow_dispatch:
+    inputs:
+      environment:
+        description: 'Environment to deploy to'
+        required: true
+        default: 'dev'
+        type: choice
+        options:
+        - dev
+        - staging
+        - prod
+
+permissions:
+  contents: read
+  id-token: write
+
+env:
+  AWS_REGION: us-east-1
+  STACK_NAME: pharma-rag-infrastructure
+  ECR_REGISTRY: ${{ secrets.AWS_ACCOUNT_ID }}.dkr.ecr.us-east-1.amazonaws.com
+  ECR_REPOSITORY_DOCLING: pharma-docling
+  ECR_REPOSITORY_RAGANYTHING: pharma-raganything
+
+jobs:
+  deploy-infrastructure:
+    name: Deploy Infrastructure
+    runs-on: ubuntu-latest
+    environment: ${{ github.event.inputs.environment || 'dev' }}
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Configure AWS credentials
+        uses: aws-actions/configure-aws-credentials@v4
+        with:
+          aws-access-key-id: ${{ secrets.AWS_ACCESS_KEY_ID }}
+          aws-secret-access-key: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
+          aws-region: ${{ env.AWS_REGION }}
+
+      - name: Deploy CloudFormation Stack
+        run: |
+          aws cloudformation deploy \
+            --template-file infrastructure/ecs-infrastructure.yml \
+            --stack-name $STACK_NAME-${{ github.event.inputs.environment || 'dev' }} \
+            --capabilities CAPABILITY_IAM CAPABILITY_NAMED_IAM \
+            --parameter-overrides \
+              Environment=${{ github.event.inputs.environment || 'dev' }} \
+              DoclingImageUri=$ECR_REGISTRY/$ECR_REPOSITORY_DOCLING:latest \
+              RaganythingImageUri=$ECR_REGISTRY/$ECR_REPOSITORY_RAGANYTHING:latest \
+              OpenAIApiKey=${{ secrets.OPENAI_API_KEY }} \
+              Neo4jUri=${{ secrets.NEO4J_URI }} \
+              Neo4jUsername=${{ secrets.NEO4J_USERNAME }} \
+              Neo4jPassword=${{ secrets.NEO4J_PASSWORD }} \
+            --region $AWS_REGION
+
+      - name: Deploy Lambda Functions
+        run: |
+          # Package and deploy Lambda functions
+          cd lambda
+          for dir in */; do
+            if [ -f "$dir/requirements.txt" ]; then
+              echo "Deploying Lambda function: $dir"
+              cd "$dir"
+              pip install -r requirements.txt -t .
+              zip -r "../${dir%/}.zip" .
+              aws lambda update-function-code \
+                --function-name pharma-${dir%/}-${{ github.event.inputs.environment || 'dev' }} \
+                --zip-file fileb://../${dir%/}.zip \
+                --region $AWS_REGION
+              cd ..
+            fi
+          done
+
+      - name: Get Stack Outputs
+        id: stack-outputs
+        run: |
+          OUTPUTS=$(aws cloudformation describe-stacks \
+            --stack-name $STACK_NAME-${{ github.event.inputs.environment || 'dev' }} \
+            --query 'Stacks[0].Outputs' \
+            --region $AWS_REGION)
+          echo "outputs=$OUTPUTS" >> $GITHUB_OUTPUT
+
+      - name: Display Deployment Info
+        run: |
+          echo "🚀 Deployment completed successfully!"
+          echo "Environment: ${{ github.event.inputs.environment || 'dev' }}"
+          echo "Stack Name: $STACK_NAME-${{ github.event.inputs.environment || 'dev' }}"
+          echo "Region: $AWS_REGION"
+          echo ""
+          echo "📋 Stack Outputs:"
+          echo '${{ steps.stack-outputs.outputs.outputs }}'

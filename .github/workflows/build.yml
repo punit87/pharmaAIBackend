@@ -1,11 +1,9 @@
+# DISABLED - Images already built and available in ECR
+# Use deployment.yml for infrastructure deployment only
 name: Build ECS images
 
 on:
-  push:
-    branches: [ main ]
-  pull_request:
-    branches: [ main ]
-  workflow_dispatch: {}
+  workflow_dispatch: {}  # Only manual triggers, disabled by default
 
 permissions:
   contents: read
