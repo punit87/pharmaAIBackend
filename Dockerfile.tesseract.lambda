@@ -12,15 +12,16 @@ ENV PYTHONUNBUFFERED=1 \
     TESSDATA_PREFIX=/usr/share/tesseract-ocr
 
 # Install Tesseract (best-effort via EPEL on Amazon Linux 2)
+# Note: AL2023 does not support EPEL via amazon-linux-extras
 RUN yum -y install amazon-linux-extras && \
-    amazon-linux-extras enable epel && \
+    amazon-linux-extras install epel -y || true && \
     yum clean metadata && \
     yum -y install \
       tesseract \
       tesseract-langpack-eng \
       leptonica \
       leptonica-devel \
-      && true || true && \
+      || true && \
     yum clean all && rm -rf /var/cache/yum
 
 # Python deps needed by simple tests/clients
