@@ -137,7 +137,7 @@ def process_document():
             formula=True,                # Enable formula parsing
             table=True,                  # Enable table parsing
             backend="pipeline",          # Parsing backend
-            source="huggingface"         # Model source
+            source="local"               # Use pre-downloaded models from Dockerfile
         ))
         
         process_duration = time.time() - process_start
