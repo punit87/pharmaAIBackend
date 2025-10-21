@@ -1,6 +1,8 @@
 name: Deploy Pharma RAG Infrastructure
 
 on:
+  push:
+    branches: [ main ]
   workflow_dispatch:
     inputs:
       skip_validation:
