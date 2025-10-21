@@ -94,7 +94,7 @@ def get_api_config():
 
 @lru_cache(maxsize=1)
 def get_rag_config():
-    """Cache RAG configuration"""
+    """Cache RAG configuration optimized for Neo4j integration"""
     return RAGAnythingConfig(
         working_dir=os.environ.get('OUTPUT_DIR', '/rag-output/'),
         parser=os.environ.get('PARSER', 'docling'),
@@ -102,6 +102,9 @@ def get_rag_config():
         enable_image_processing=True,
         enable_table_processing=True,
         enable_equation_processing=True,
+        # Neo4j-specific optimizations
+        # RAG-Anything will use the 1536-dimension embeddings for Neo4j vector indexes
+        # This ensures compatibility with Neo4j's vector search capabilities
     )
 
 def get_llm_model_func():
@@ -160,13 +163,14 @@ def get_vision_model_func(llm_func):
 
 def get_embedding_func():
     """
-    Create embedding function with cached config for text-embedding-3-large
+    Create embedding function optimized for Neo4j compatibility
     
-    Note: text-embedding-3-large provides higher quality embeddings but:
-    - Cost: ~$0.00013 per 1K tokens (vs $0.0001 for ada-002)
-    - Dimensions: 3072 (vs 1536 for ada-002)
-    - Quality: Better semantic understanding, especially for complex queries
-    - Rate Limits: May have stricter limits than ada-002
+    Using text-embedding-ada-002 for Neo4j compatibility:
+    - Dimensions: 1536 (Neo4j standard)
+    - Cost: $0.0001 per 1K tokens (most cost-effective)
+    - Neo4j Support: Full compatibility with vector indexes
+    - Rate Limits: Higher limits than newer models
+    - Stability: Well-tested with Neo4j ecosystem
     """
     config = get_api_config()
     
@@ -175,24 +179,19 @@ def get_embedding_func():
         try:
             return openai_embed(
                 texts,
-                model="text-embedding-3-large",
-                api_key=config['api_key'],
-                base_url=config['base_url'],
-            )
-        except Exception as e:
-            print(f"⚠️ [EMBEDDING] Error with text-embedding-3-large: {e}")
-            # Fallback to ada-002 if text-embedding-3-large fails
-            print("🔄 [EMBEDDING] Falling back to text-embedding-ada-002...")
-            return openai_embed(
-                texts,
                 model="text-embedding-ada-002",
                 api_key=config['api_key'],
                 base_url=config['base_url'],
             )
+        except Exception as e:
+            print(f"⚠️ [EMBEDDING] Error with text-embedding-ada-002: {e}")
+            # For Neo4j compatibility, we stick with ada-002
+            # If this fails, it's likely an API issue, not a model issue
+            raise e
     
     return EmbeddingFunc(
-        embedding_dim=3072,  # text-embedding-3-large default dimensions
-        max_token_size=8192,  # text-embedding-3-large token limit
+        embedding_dim=1536,  # Neo4j-compatible dimensions
+        max_token_size=8191,  # ada-002 token limit
         func=safe_embed,
     )
 
