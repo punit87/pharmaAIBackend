@@ -159,18 +159,41 @@ def get_vision_model_func(llm_func):
     return vision_func
 
 def get_embedding_func():
-    """Create embedding function with cached config"""
+    """
+    Create embedding function with cached config for text-embedding-3-large
+    
+    Note: text-embedding-3-large provides higher quality embeddings but:
+    - Cost: ~$0.00013 per 1K tokens (vs $0.0001 for ada-002)
+    - Dimensions: 3072 (vs 1536 for ada-002)
+    - Quality: Better semantic understanding, especially for complex queries
+    - Rate Limits: May have stricter limits than ada-002
+    """
     config = get_api_config()
     
+    def safe_embed(texts):
+        """Safe embedding function with error handling and retry logic"""
+        try:
+            return openai_embed(
+                texts,
+                model="text-embedding-3-large",
+                api_key=config['api_key'],
+                base_url=config['base_url'],
+            )
+        except Exception as e:
+            print(f"⚠️ [EMBEDDING] Error with text-embedding-3-large: {e}")
+            # Fallback to ada-002 if text-embedding-3-large fails
+            print("🔄 [EMBEDDING] Falling back to text-embedding-ada-002...")
+            return openai_embed(
+                texts,
+                model="text-embedding-ada-002",
+                api_key=config['api_key'],
+                base_url=config['base_url'],
+            )
+    
     return EmbeddingFunc(
-        embedding_dim=3072,
-        max_token_size=8192,
-        func=lambda texts: openai_embed(
-            texts,
-            model="text-embedding-3-large",
-            api_key=config['api_key'],
-            base_url=config['base_url'],
-        ),
+        embedding_dim=3072,  # text-embedding-3-large default dimensions
+        max_token_size=8192,  # text-embedding-3-large token limit
+        func=safe_embed,
     )
 
 # ============================================================================
