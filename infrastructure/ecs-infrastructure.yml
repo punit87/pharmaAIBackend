@@ -200,6 +200,8 @@ Resources:
         - FARGATE
         - FARGATE_SPOT
       DefaultCapacityProviderStrategy:
+        - CapacityProvider: FARGATE_SPOT
+          Weight: 3
         - CapacityProvider: FARGATE
           Weight: 1
 
@@ -293,6 +295,9 @@ Resources:
         - Name: docling
           Image: !Ref DoclingImageUri
           Essential: true
+          PortMappings:
+            - ContainerPort: 8000
+              Protocol: tcp
           LogConfiguration:
             LogDriver: awslogs
             Options:
@@ -312,10 +317,12 @@ Resources:
               Value: !Ref Neo4jPassword
             - Name: OPENAI_API_KEY
               Value: !Ref OpenAIApiKey
+            - Name: PORT
+              Value: "8000"
           HealthCheck:
             Command:
               - CMD-SHELL
-              - "python3 -c 'import docling; print(\"healthy\")' || exit 1"
+              - "curl -f http://localhost:8000/health || exit 1"
             Interval: 30
             Timeout: 5
             Retries: 3
@@ -356,6 +363,8 @@ Resources:
               Value: !Ref Neo4jPassword
             - Name: OPENAI_API_KEY
               Value: !Ref OpenAIApiKey
+            - Name: DOCLING_SERVICE_URL
+              Value: 'http://localhost:8000'
           HealthCheck:
             Command:
               - CMD-SHELL
@@ -452,38 +461,50 @@ Resources:
           import json
           import boto3
           import os
+          import requests
           
           def lambda_handler(event, context):
               try:
                   body = json.loads(event['body'])
                   query = body['query']
                   
-                  # For now, return a mock response since ECS tasks need GitHub Container Registry authentication
-                  # TODO: Implement proper ECS task execution with GitHub Container Registry authentication
+                  # Trigger ECS task for RAG processing
+                  ecs_client = boto3.client('ecs')
                   
-                  mock_response = {
-                      'query': query,
-                      'answer': f'Mock response for query: "{query}". This is a placeholder response. The actual RAG system would process this query using the uploaded documents.',
-                      'sources': ['uploads/2025/10/20/195635/acf81ef0-4067-45de-93d3-6d32928446d1.pdf'],
-                      'confidence': 0.85,
-                      'status': 'mock_response'
-                  }
+                  response = ecs_client.run_task(
+                      cluster=os.environ['ECS_CLUSTER'],
+                      taskDefinition=os.environ['RAGANYTHING_TASK_DEFINITION'],
+                      launchType='FARGATE',
+                      networkConfiguration={
+                          'awsvpcConfiguration': {
+                              'subnets': os.environ['SUBNETS'].split(','),
+                              'securityGroups': [os.environ['SECURITY_GROUP']],
+                              'assignPublicIp': 'ENABLED'
+                          }
+                      },
+                      overrides={
+                          'containerOverrides': [
+                              {
+                                  'name': 'raganything',
+                                  'environment': [
+                                      {'name': 'QUERY', 'value': query}
+                                  ]
+                              }
+                          ]
+                      }
+                  )
                   
                   return {
                       'statusCode': 200,
-                      'headers': {
-                          'Content-Type': 'application/json',
-                          'Access-Control-Allow-Origin': '*',
-                          'Access-Control-Allow-Methods': 'GET, POST, OPTIONS',
-                          'Access-Control-Allow-Headers': 'Content-Type'
-                      },
-                      'body': json.dumps(mock_response)
+                      'headers': {'Content-Type': 'application/json'},
+                      'body': json.dumps({
+                          'task_arn': response['tasks'][0]['taskArn'],
+                          'query': query
+                      })
                   }
               except Exception as e:
-                  print(f"Error processing RAG query: {str(e)}")
                   return {
                       'statusCode': 500,
-                      'headers': {'Content-Type': 'application/json'},
                       'body': json.dumps({'error': str(e)})
                   }
       Role: !GetAtt LambdaExecutionRole.Arn
@@ -491,8 +512,14 @@ Resources:
         Variables:
           ECS_CLUSTER: !Ref ECSCluster
           RAGANYTHING_TASK_DEFINITION: !Ref RaganythingTaskDefinition
+          DOCLING_TASK_DEFINITION: !Ref DoclingTaskDefinition
           SUBNETS: !Sub '${PrivateSubnet1},${PrivateSubnet2}'
           SECURITY_GROUP: !Ref ECSSecurityGroup
+          S3_BUCKET: !Ref DocumentBucket
+          NEO4J_URI: !Ref Neo4jUri
+          NEO4J_USERNAME: !Ref Neo4jUsername
+          NEO4J_PASSWORD: !Ref Neo4jPassword
+          OPENAI_API_KEY: !Ref OpenAIApiKey
       Timeout: 300
 
   DocumentProcessorFunction:

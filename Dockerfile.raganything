@@ -1,5 +1,6 @@
 # ============================================
 # RAG-Anything Dockerfile - Python 3.12 slim
+# Based on https://github.com/HKUDS/RAG-Anything
 # ============================================
 FROM python:3.12-slim
 
@@ -14,14 +15,22 @@ RUN apt-get update && \
     apt-get install -y \
         git \
         curl \
+        wget \
+        libgl1-mesa-glx \
+        libglib2.0-0 \
+        libsm6 \
+        libxext6 \
+        libxrender-dev \
+        libgomp1 \
+        libgcc-s1 \
     && apt-get clean \
     && rm -rf /var/lib/apt/lists/*
 
 # Install Python dependencies
-RUN pip install --no-cache-dir 'raganything[text]'
+RUN pip install --no-cache-dir 'raganything[all]' boto3 requests flask
 
-# Copy RAG-Anything test script
-COPY test_raganything.py /var/task/
+# Copy RAG server script
+COPY apps/rag_client.py /var/task/
 
-# Set the CMD to run the test by default
-CMD ["python3", "/var/task/test_raganything.py"]
+# Set the CMD to run the RAG server
+CMD ["python3", "/var/task/rag_client.py"]

@@ -31,8 +31,11 @@ RUN pip install --no-cache-dir docling pytesseract --extra-index-url https://dow
 # Download docling models
 RUN docling-tools models download
 
-# Copy test script
-COPY test_docling.py /var/task/
+# Install Flask for the server
+RUN pip install --no-cache-dir flask boto3
+
+# Copy server script
+COPY apps/docling_server.py /var/task/
 
 # Set default command
-CMD ["python3", "/var/task/test_docling.py"]
+CMD ["python3", "/var/task/docling_server.py"]

@@ -1,0 +1,11 @@
+{
+  "SUBNETS": "subnet-0e1cfada8b6dbc826,subnet-0bf364e16353dbf6a",
+  "ECS_CLUSTER": "pharma-cluster-dev",
+  "RAGANYTHING_TASK_DEFINITION": "arn:aws:ecs:us-east-1:864899869769:task-definition/pharma-raganything-dev:3",
+  "SECURITY_GROUP": "sg-088ac9013a207838d",
+  "S3_BUCKET": "pharma-documents-dev-864899869769",
+  "NEO4J_URI": "neo4j+s://a16788ee.databases.neo4j.io",
+  "NEO4J_USERNAME": "neo4j",
+  "NEO4J_PASSWORD": "APUPVZS7TOBGnEhwFhZcBBrPDlinyTH2ltHwesQhqTA",
+  "OPENAI_API_KEY": "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"
+}
