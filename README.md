@@ -2,6 +2,8 @@
 
 This repository contains the infrastructure and application code for a serverless RAG (Retrieval-Augmented Generation) system built on AWS using ECS Fargate, Lambda, and Neo4j AuraDB.
 
+<!-- Auto-deploy test: Updated to trigger deployment workflow -->
+
 ## Architecture Overview
 
 ```
