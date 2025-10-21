@@ -9,8 +9,10 @@ import boto3
 import asyncio
 import threading
 import time
+import requests
 from typing import Dict, Any
 from flask import Flask, request, jsonify
+from raganything import RAGAnything
 
 app = Flask(__name__)
 
@@ -34,6 +36,44 @@ def update_activity():
     """Update the last activity timestamp"""
     global last_activity
     last_activity = time.time()
+
+def get_environment_variables():
+    """Get all required environment variables"""
+    return {
+        'neo4j_uri': os.environ.get('NEO4J_URI'),
+        'neo4j_username': os.environ.get('NEO4J_USERNAME'),
+        'neo4j_password': os.environ.get('NEO4J_PASSWORD'),
+        'openai_api_key': os.environ.get('OPENAI_API_KEY'),
+        'docling_url': os.environ.get('DOCLING_SERVICE_URL', 'http://localhost:8000')
+    }
+
+def initialize_rag_anything(env_vars):
+    """Initialize RAG-Anything with environment variables"""
+    return RAGAnything(
+        neo4j_uri=env_vars['neo4j_uri'],
+        neo4j_username=env_vars['neo4j_username'],
+        neo4j_password=env_vars['neo4j_password'],
+        openai_api_key=env_vars['openai_api_key'],
+        docling_url=env_vars['docling_url']
+    )
+
+def create_error_response(error_msg, duration, query=None):
+    """Create standardized error response"""
+    base_response = {
+        "error": error_msg,
+        "timing": {"total_duration": duration, "error": str(error_msg)}
+    }
+    
+    if query is not None:
+        base_response.update({
+            "query": query,
+            "answer": f"Error processing query: {error_msg}",
+            "sources": [],
+            "confidence": 0.0,
+            "status": "error"
+        })
+    
+    return base_response
 
 # Start the auto-stop timer
 timer_thread = threading.Thread(target=auto_stop_timer, daemon=True)
@@ -65,11 +105,7 @@ def process_document():
         print(f"📄 [RAG] Processing document: s3://{s3_bucket}/{s3_key}")
         
         # Get environment variables
-        neo4j_uri = os.environ.get('NEO4J_URI')
-        neo4j_username = os.environ.get('NEO4J_USERNAME')
-        neo4j_password = os.environ.get('NEO4J_PASSWORD')
-        openai_api_key = os.environ.get('OPENAI_API_KEY')
-        docling_url = os.environ.get('DOCLING_SERVICE_URL', 'http://localhost:8000')
+        env_vars = get_environment_variables()
         
         # Download file from S3
         download_start = time.time()
@@ -80,12 +116,12 @@ def process_document():
         print(f"📥 [RAG] S3 download completed in {download_duration:.3f}s")
         
         # Call Docling service for document parsing
-        print(f"🔗 [RAG] Calling Docling service at {docling_url}")
+        print(f"🔗 [RAG] Calling Docling service at {env_vars['docling_url']}")
         docling_start = time.time()
         
         with open(temp_file_path, 'rb') as file:
             files = {'file': (os.path.basename(s3_key), file, 'application/octet-stream')}
-            response = requests.post(f"{docling_url}/parse", files=files, timeout=300)
+            response = requests.post(f"{env_vars['docling_url']}/parse", files=files, timeout=300)
             response.raise_for_status()
             
             docling_result = response.json()
@@ -95,17 +131,10 @@ def process_document():
         
         # Now use RAG-Anything for RAG processing with the parsed content
         rag_start = time.time()
-        from raganything import RAGAnything
         
         # Initialize RAG-Anything with Docling URL
         init_start = time.time()
-        rag = RAGAnything(
-            neo4j_uri=neo4j_uri,
-            neo4j_username=neo4j_username,
-            neo4j_password=neo4j_password,
-            openai_api_key=openai_api_key,
-            docling_url=docling_url
-        )
+        rag = initialize_rag_anything(env_vars)
         init_duration = time.time() - init_start
         print(f"🚀 [RAG] RAG-Anything initialization completed in {init_duration:.3f}s")
         
@@ -178,23 +207,11 @@ def process_query():
         print(f"❓ [RAG] Processing query: {query[:100]}{'...' if len(query) > 100 else ''}")
         
         # Get environment variables
-        neo4j_uri = os.environ.get('NEO4J_URI')
-        neo4j_username = os.environ.get('NEO4J_USERNAME')
-        neo4j_password = os.environ.get('NEO4J_PASSWORD')
-        openai_api_key = os.environ.get('OPENAI_API_KEY')
-        docling_url = os.environ.get('DOCLING_SERVICE_URL', 'http://localhost:8000')
+        env_vars = get_environment_variables()
         
         # Initialize RAG-Anything with Docling URL
         init_start = time.time()
-        from raganything import RAGAnything
-        
-        rag = RAGAnything(
-            neo4j_uri=neo4j_uri,
-            neo4j_username=neo4j_username,
-            neo4j_password=neo4j_password,
-            openai_api_key=openai_api_key,
-            docling_url=docling_url
-        )
+        rag = initialize_rag_anything(env_vars)
         init_duration = time.time() - init_start
         print(f"🚀 [RAG] RAG-Anything initialization completed in {init_duration:.3f}s")
         
@@ -223,17 +240,7 @@ def process_query():
     except Exception as e:
         total_duration = time.time() - start_time
         print(f"❌ [RAG] Error processing query: {str(e)} - {total_duration:.3f}s")
-        return jsonify({
-            "query": query,
-            "answer": f"Error processing query: {str(e)}",
-            "sources": [],
-            "confidence": 0.0,
-            "status": "error",
-            "timing": {
-                "total_duration": total_duration,
-                "error": str(e)
-            }
-        }), 500
+        return jsonify(create_error_response(str(e), total_duration, query)), 500
 
 def main():
     """Main function for processing documents or queries"""
@@ -246,21 +253,8 @@ def main():
         # Process RAG query
         print(f"Processing RAG query: {query}")
         try:
-            from raganything import RAGAnything
-            
-            neo4j_uri = os.environ.get('NEO4J_URI')
-            neo4j_username = os.environ.get('NEO4J_USERNAME')
-            neo4j_password = os.environ.get('NEO4J_PASSWORD')
-            openai_api_key = os.environ.get('OPENAI_API_KEY')
-            docling_url = os.environ.get('DOCLING_SERVICE_URL', 'http://localhost:8000')
-            
-            rag = RAGAnything(
-                neo4j_uri=neo4j_uri,
-                neo4j_username=neo4j_username,
-                neo4j_password=neo4j_password,
-                openai_api_key=openai_api_key,
-                docling_url=docling_url
-            )
+            env_vars = get_environment_variables()
+            rag = initialize_rag_anything(env_vars)
             
             result = asyncio.run(rag.query(query))
             print(json.dumps(result, indent=2))
