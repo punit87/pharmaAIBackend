@@ -41,7 +41,7 @@ jobs:
         BUILD_START=$(date +%s.%3N)
         
         echo "📦 [DEPLOY] Building RAG-Anything async server Docker image..."
-        echo "📋 [DEPLOY] Dependencies: rag-anything[all], boto3, flask, docling"
+        echo "📋 [DEPLOY] Dependencies: raganything[all], boto3, flask, docling"
         docker build -f Dockerfile -t $ECR_REGISTRY/$ECR_REPOSITORY:$IMAGE_TAG .
         BUILD_END=$(date +%s.%3N)
         BUILD_DURATION=$(echo "$BUILD_END - $BUILD_START" | bc)

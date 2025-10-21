@@ -15,7 +15,7 @@ import threading
 import atexit
 from functools import lru_cache
 from flask import Flask, request, jsonify
-from rag_anything import RAGAnything, RAGAnythingConfig
+from raganything import RAGAnything, RAGAnythingConfig
 from lightrag.llm.openai import openai_complete_if_cache, openai_embed
 from lightrag.utils import EmbeddingFunc
 
