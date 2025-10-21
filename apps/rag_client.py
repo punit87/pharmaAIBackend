@@ -1,18 +1,18 @@
 #!/usr/bin/env python3
 """
-RAG-Anything Server - Complete RAG framework with document processing and querying
+RAG-Anything Server - Proper implementation following official API
 Based on https://github.com/HKUDS/RAG-Anything
 """
 import os
-import json
+import time
 import boto3
 import asyncio
 import threading
-import time
-import requests
 from typing import Dict, Any
 from flask import Flask, request, jsonify
-from raganything import RAGAnything
+from raganything import RAGAnything, RAGAnythingConfig
+from lightrag.llm.openai import openai_complete_if_cache, openai_embed
+from lightrag.utils import EmbeddingFunc
 
 app = Flask(__name__)
 
@@ -37,47 +37,110 @@ def update_activity():
     global last_activity
     last_activity = time.time()
 
-def get_environment_variables():
-    """Get all required environment variables"""
-    return {
-        'neo4j_uri': os.environ.get('NEO4J_URI'),
-        'neo4j_username': os.environ.get('NEO4J_USERNAME'),
-        'neo4j_password': os.environ.get('NEO4J_PASSWORD'),
-        'openai_api_key': os.environ.get('OPENAI_API_KEY'),
-        'output_dir': os.environ.get('OUTPUT_DIR', '/rag-output/'),
-        'parser': os.environ.get('PARSER', 'docling'),
-        'parse_method': os.environ.get('PARSE_METHOD', 'auto')
-    }
-
-def initialize_rag_anything(env_vars):
-    """Initialize RAG-Anything with environment variables"""
-    return RAGAnything(
-        neo4j_uri=env_vars['neo4j_uri'],
-        neo4j_username=env_vars['neo4j_username'],
-        neo4j_password=env_vars['neo4j_password'],
-        openai_api_key=env_vars['openai_api_key'],
-        output_dir=env_vars['output_dir'],
-        parser=env_vars['parser'],
-        parse_method=env_vars['parse_method']
+def get_rag_config():
+    """Create RAGAnything configuration from environment variables"""
+    return RAGAnythingConfig(
+        working_dir=os.environ.get('OUTPUT_DIR', '/rag-output/'),
+        parser=os.environ.get('PARSER', 'docling'),  # 'mineru' or 'docling'
+        parse_method=os.environ.get('PARSE_METHOD', 'auto'),  # 'auto', 'ocr', or 'txt'
+        enable_image_processing=True,
+        enable_table_processing=True,
+        enable_equation_processing=True,
     )
 
-def create_error_response(error_msg, duration, query=None):
-    """Create standardized error response"""
-    base_response = {
-        "error": error_msg,
-        "timing": {"total_duration": duration, "error": str(error_msg)}
-    }
+def get_llm_model_func():
+    """Create LLM model function for text processing"""
+    api_key = os.environ.get('OPENAI_API_KEY')
+    base_url = os.environ.get('OPENAI_BASE_URL')
     
-    if query is not None:
-        base_response.update({
-            "query": query,
-            "answer": f"Error processing query: {error_msg}",
-            "sources": [],
-            "confidence": 0.0,
-            "status": "error"
-        })
+    def llm_func(prompt, system_prompt=None, history_messages=[], **kwargs):
+        return openai_complete_if_cache(
+            "gpt-4o-mini",
+            prompt,
+            system_prompt=system_prompt,
+            history_messages=history_messages,
+            api_key=api_key
+            **kwargs,
+        )
+    return llm_func
+
+def get_vision_model_func(llm_func):
+    """Create vision model function for image processing"""
+    api_key = os.environ.get('OPENAI_API_KEY')
+    base_url = os.environ.get('OPENAI_BASE_URL')
     
-    return base_response
+    def vision_func(prompt, system_prompt=None, history_messages=[], image_data=None, messages=None, **kwargs):
+        # If messages format is provided (for multimodal VLM enhanced query), use it directly
+        if messages:
+            return openai_complete_if_cache(
+                "gpt-4o",
+                "",
+                system_prompt=None,
+                history_messages=[],
+                messages=messages,
+                api_key=api_key,
+                base_url=base_url,
+                **kwargs,
+            )
+        # Traditional single image format
+        elif image_data:
+            return openai_complete_if_cache(
+                "gpt-4o",
+                "",
+                system_prompt=None,
+                history_messages=[],
+                messages=[
+                    {"role": "system", "content": system_prompt} if system_prompt else None,
+                    {
+                        "role": "user",
+                        "content": [
+                            {"type": "text", "text": prompt},
+                            {
+                                "type": "image_url",
+                                "image_url": {"url": f"data:image/jpeg;base64,{image_data}"}
+                            },
+                        ],
+                    } if image_data else {"role": "user", "content": prompt},
+                ],
+                api_key=api_key,
+                base_url=base_url,
+                **kwargs,
+            )
+        # Pure text format - fallback to LLM
+        else:
+            return llm_func(prompt, system_prompt, history_messages, **kwargs)
+    
+    return vision_func
+
+def get_embedding_func():
+    """Create embedding function"""
+    api_key = os.environ.get('OPENAI_API_KEY')
+    base_url = os.environ.get('OPENAI_BASE_URL')
+    
+    return EmbeddingFunc(
+        embedding_dim=3072,
+        max_token_size=8192,
+        func=lambda texts: openai_embed(
+            texts,
+            model="text-embedding-3-large",
+            api_key=api_key,
+            base_url=base_url,
+        ),
+    )
+
+def initialize_rag_anything():
+    """Initialize RAG-Anything with proper configuration"""
+    config = get_rag_config()
+    llm_func = get_llm_model_func()
+    vision_func = get_vision_model_func(llm_func)
+    embedding_func = get_embedding_func()
+    
+    return RAGAnything(
+        config=config,
+        llm_model_func=llm_func,
+        vision_model_func=vision_func,
+        embedding_func=embedding_func,
+    )
 
 # Start the auto-stop timer
 timer_thread = threading.Thread(target=auto_stop_timer, daemon=True)
@@ -89,10 +152,10 @@ def health():
     return jsonify({"status": "healthy", "service": "raganything"})
 
 @app.route('/process', methods=['POST'])
-def process_document():
-    """Process document using RAG-Anything with Docling for parsing"""
+async def process_document():
+    """Process document using RAG-Anything with proper async handling"""
     start_time = time.time()
-    print(f"🔄 [RAG] Starting document processing at {time.strftime('%Y-%m-%d %H:%M:%S.%f')[:-3]}")
+    print(f"📄 [RAG] Starting document processing at {time.strftime('%Y-%m-%d %H:%M:%S')}")
     
     try:
         update_activity()
@@ -108,9 +171,6 @@ def process_document():
         
         print(f"📄 [RAG] Processing document: s3://{s3_bucket}/{s3_key}")
         
-        # Get environment variables
-        env_vars = get_environment_variables()
-        
         # Download file from S3
         download_start = time.time()
         s3_client = boto3.client('s3')
@@ -119,29 +179,42 @@ def process_document():
         download_duration = time.time() - download_start
         print(f"📥 [RAG] S3 download completed in {download_duration:.3f}s")
         
-        # Initialize RAG-Anything with Docling parser
+        # Initialize RAG-Anything
         init_start = time.time()
-        rag = initialize_rag_anything(env_vars)
+        rag = initialize_rag_anything()
         init_duration = time.time() - init_start
         print(f"🚀 [RAG] RAG-Anything initialization completed in {init_duration:.3f}s")
         
-        # Process document using RAG-Anything with Docling parser
+        # Process document using RAG-Anything
         process_start = time.time()
-        print(f"🔍 [RAG] Processing document with RAG-Anything + Docling parser")
+        print(f"🔍 [RAG] Processing document with RAG-Anything")
         
-        # Use RAG-Anything's native document processing with Docling parser
-        result = asyncio.run(rag.process_document_complete(
-            file_path=temp_file_path,
-            doc_id=s3_key,               # Document ID for tracking
-            display_stats=True,          # Display content statistics
-            # Additional Docling parameters
-            lang="en",                   # Document language for OCR optimization
-            device="cpu",                # Inference device (ECS uses CPU)
-            formula=True,                # Enable formula parsing
-            table=True,                  # Enable table parsing
-            backend="pipeline",          # Parsing backend
-            source="local"               # Use pre-downloaded models from Dockerfile
-        ))
+        # Get parser-specific parameters
+        parser = os.environ.get('PARSER', 'docling')
+        parse_method = os.environ.get('PARSE_METHOD', 'auto')
+        
+        # Build kwargs based on parser
+        process_kwargs = {
+            'file_path': temp_file_path,
+            'output_dir': os.environ.get('OUTPUT_DIR', '/rag-output/'),
+            'doc_id': s3_key,
+            'display_stats': True,
+            'parse_method': parse_method,
+        }
+        
+        # Add MinerU-specific parameters if using MinerU parser
+        if parser == 'mineru':
+            process_kwargs.update({
+                'lang': 'en',
+                'device': 'cpu',
+                'formula': True,
+                'table': True,
+                'backend': 'pipeline',
+                'source': 'local',
+            })
+        
+        # Process document
+        result = await rag.process_document_complete(**process_kwargs)
         
         process_duration = time.time() - process_start
         print(f"💾 [RAG] Document processing completed in {process_duration:.3f}s")
@@ -158,7 +231,7 @@ def process_document():
         return jsonify({
             "status": "success",
             "result": result,
-            "message": "Document processed successfully with RAG-Anything + Docling parser",
+            "message": f"Document processed successfully with RAG-Anything + {parser} parser",
             "timing": {
                 "total_duration": total_duration,
                 "download_duration": download_duration,
@@ -171,19 +244,23 @@ def process_document():
     except Exception as e:
         total_duration = time.time() - start_time
         print(f"❌ [RAG] Error processing document: {str(e)} - {total_duration:.3f}s")
-        return jsonify({"error": str(e)}), 500
+        import traceback
+        traceback.print_exc()
+        return jsonify({"error": str(e), "timing": {"total_duration": total_duration}}), 500
 
 @app.route('/query', methods=['POST'])
-def process_query():
-    """Process RAG query using RAG-Anything"""
+async def process_query():
+    """Process RAG query using RAG-Anything with proper async handling"""
     start_time = time.time()
-    print(f"🔄 [RAG] Starting query processing at {time.strftime('%Y-%m-%d %H:%M:%S.%f')[:-3]}")
+    print(f"🔍 [RAG] Starting query processing at {time.strftime('%Y-%m-%d %H:%M:%S')}")
     
     try:
         update_activity()
         
         data = request.get_json()
         query = data.get('query', '')
+        mode = data.get('mode', 'hybrid')  # hybrid, local, global, naive
+        vlm_enhanced = data.get('vlm_enhanced', None)  # None = auto, True/False = force
         
         if not query:
             duration = time.time() - start_time
@@ -192,29 +269,45 @@ def process_query():
         
         print(f"❓ [RAG] Processing query: {query[:100]}{'...' if len(query) > 100 else ''}")
         
-        # Get environment variables
-        env_vars = get_environment_variables()
-        
-        # Initialize RAG-Anything with Docling URL
+        # Initialize RAG-Anything
         init_start = time.time()
-        rag = initialize_rag_anything(env_vars)
+        rag = initialize_rag_anything()
         init_duration = time.time() - init_start
         print(f"🚀 [RAG] RAG-Anything initialization completed in {init_duration:.3f}s")
         
         # Process query
         query_start = time.time()
-        result = asyncio.run(rag.query(query))
+        
+        # Build query kwargs
+        query_kwargs = {'mode': mode}
+        if vlm_enhanced is not None:
+            query_kwargs['vlm_enhanced'] = vlm_enhanced
+        
+        # Use async query method
+        result = await rag.aquery(query, **query_kwargs)
+        
         query_duration = time.time() - query_start
-        print(f"🔍 [RAG] Query processing completed in {query_duration:.3f}s")
+        print(f"📊 [RAG] Query processing completed in {query_duration:.3f}s")
         
         total_duration = time.time() - start_time
         print(f"✅ [RAG] Total query time: {total_duration:.3f}s")
         
+        # Handle different result formats
+        if isinstance(result, dict):
+            answer = result.get('answer', str(result))
+            sources = result.get('sources', [])
+            confidence = result.get('confidence', 0.0)
+        else:
+            answer = str(result)
+            sources = []
+            confidence = 0.0
+        
         return jsonify({
             "query": query,
-            "answer": result.get('answer', 'No answer generated'),
-            "sources": result.get('sources', []),
-            "confidence": result.get('confidence', 0.0),
+            "answer": answer,
+            "sources": sources,
+            "confidence": confidence,
+            "mode": mode,
             "status": "completed",
             "timing": {
                 "total_duration": total_duration,
@@ -226,10 +319,109 @@ def process_query():
     except Exception as e:
         total_duration = time.time() - start_time
         print(f"❌ [RAG] Error processing query: {str(e)} - {total_duration:.3f}s")
-        return jsonify(create_error_response(str(e), total_duration, query)), 500
+        import traceback
+        traceback.print_exc()
+        return jsonify({
+            "error": str(e),
+            "query": query if 'query' in locals() else None,
+            "answer": f"Error processing query: {str(e)}",
+            "sources": [],
+            "confidence": 0.0,
+            "status": "error",
+            "timing": {"total_duration": total_duration}
+        }), 500
+
+@app.route('/query_multimodal', methods=['POST'])
+async def process_multimodal_query():
+    """Process multimodal RAG query with specific content types"""
+    start_time = time.time()
+    print(f"🔍 [RAG] Starting multimodal query processing at {time.strftime('%Y-%m-%d %H:%M:%S')}")
+    
+    try:
+        update_activity()
+        
+        data = request.get_json()
+        query = data.get('query', '')
+        multimodal_content = data.get('multimodal_content', [])
+        mode = data.get('mode', 'hybrid')
+        
+        if not query:
+            duration = time.time() - start_time
+            print(f"❌ [RAG] Missing query - {duration:.3f}s")
+            return jsonify({"error": "Missing query"}), 400
+        
+        print(f"❓ [RAG] Processing multimodal query: {query[:100]}{'...' if len(query) > 100 else ''}")
+        
+        # Initialize RAG-Anything
+        init_start = time.time()
+        rag = initialize_rag_anything()
+        init_duration = time.time() - init_start
+        print(f"🚀 [RAG] RAG-Anything initialization completed in {init_duration:.3f}s")
+        
+        # Process multimodal query
+        query_start = time.time()
+        result = await rag.aquery_with_multimodal(
+            query,
+            multimodal_content=multimodal_content,
+            mode=mode
+        )
+        query_duration = time.time() - query_start
+        print(f"📊 [RAG] Multimodal query processing completed in {query_duration:.3f}s")
+        
+        total_duration = time.time() - start_time
+        print(f"✅ [RAG] Total multimodal query time: {total_duration:.3f}s")
+        
+        # Handle different result formats
+        if isinstance(result, dict):
+            answer = result.get('answer', str(result))
+            sources = result.get('sources', [])
+            confidence = result.get('confidence', 0.0)
+        else:
+            answer = str(result)
+            sources = []
+            confidence = 0.0
+        
+        return jsonify({
+            "query": query,
+            "answer": answer,
+            "sources": sources,
+            "confidence": confidence,
+            "mode": mode,
+            "status": "completed",
+            "timing": {
+                "total_duration": total_duration,
+                "init_duration": init_duration,
+                "query_duration": query_duration
+            }
+        })
+        
+    except Exception as e:
+        total_duration = time.time() - start_time
+        print(f"❌ [RAG] Error processing multimodal query: {str(e)} - {total_duration:.3f}s")
+        import traceback
+        traceback.print_exc()
+        return jsonify({
+            "error": str(e),
+            "query": query if 'query' in locals() else None,
+            "answer": f"Error processing query: {str(e)}",
+            "sources": [],
+            "confidence": 0.0,
+            "status": "error",
+            "timing": {"total_duration": total_duration}
+        }), 500
 
 if __name__ == '__main__':
-    # Run Flask server
+    # Run Flask server with async support
+    from asgiref.wsgi import WsgiToAsgi
+    from hypercorn.asyncio import serve
+    from hypercorn.config import Config
+    
     port = int(os.environ.get('PORT', 8000))
-    print(f"🚀 [RAG] Starting RAG-Anything Flask server on port {port}")
-    app.run(host='0.0.0.0', port=port, debug=True)
+    print(f"🚀 [RAG] Starting RAG-Anything async server on port {port}")
+    
+    # Convert WSGI to ASGI for proper async support
+    asgi_app = WsgiToAsgi(app)
+    config = Config()
+    config.bind = [f"0.0.0.0:{port}"]
+    
+    asyncio.run(serve(asgi_app, config))
