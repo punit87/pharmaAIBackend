@@ -8,13 +8,14 @@ RAG-Anything Server - Optimized for ECS Tasks
 """
 import os
 import time
+import json
 import boto3
 import asyncio
 import threading
 import atexit
 from functools import lru_cache
 from flask import Flask, request, jsonify
-from raganything import RAGAnything, RAGAnythingConfig
+from rag_anything import RAGAnything, RAGAnythingConfig
 from lightrag.llm.openai import openai_complete_if_cache, openai_embed
 from lightrag.utils import EmbeddingFunc
 
@@ -514,28 +515,111 @@ def process_multimodal_query():
         }), 500
 
 # ============================================================================
+# MVP MODE HANDLING (Process documents or queries based on environment)
+# ============================================================================
+
+def handle_mvp_mode():
+    """Handle MVP mode - process documents or queries based on environment variables"""
+    mode = os.environ.get('MODE', 'server')
+    
+    if mode == 'process_document':
+        # Process a single document from S3
+        s3_bucket = os.environ.get('S3_BUCKET')
+        s3_key = os.environ.get('S3_KEY')
+        
+        if not s3_bucket or not s3_key:
+            print("❌ [MVP] Missing S3_BUCKET or S3_KEY environment variables")
+            return
+        
+        print(f"📄 [MVP] Processing document: s3://{s3_bucket}/{s3_key}")
+        
+        try:
+            # Download and process document
+            s3_client = boto3.client('s3')
+            temp_file_path = f"/tmp/{os.path.basename(s3_key)}"
+            s3_client.download_file(s3_bucket, s3_key, temp_file_path)
+            
+            # Initialize RAG and process
+            rag = get_rag_instance()
+            result = run_async(rag.process_document_complete(
+                file_path=temp_file_path,
+                output_dir=os.environ.get('OUTPUT_DIR', '/rag-output/'),
+                doc_id=s3_key,
+                display_stats=True,
+                parse_method=os.environ.get('PARSE_METHOD', 'auto')
+            ))
+            
+            print(f"✅ [MVP] Document processed successfully: {result}")
+            
+            # Cleanup
+            if os.path.exists(temp_file_path):
+                os.remove(temp_file_path)
+                
+        except Exception as e:
+            print(f"❌ [MVP] Error processing document: {str(e)}")
+            import traceback
+            traceback.print_exc()
+    
+    elif mode == 'query_only':
+        # Process a single query
+        query = os.environ.get('QUERY')
+        
+        if not query:
+            print("❌ [MVP] Missing QUERY environment variable")
+            return
+        
+        print(f"🔍 [MVP] Processing query: {query}")
+        
+        try:
+            # Initialize RAG and process query
+            rag = get_rag_instance()
+            result = run_async(rag.aquery(query, mode='hybrid'))
+            
+            print(f"✅ [MVP] Query processed successfully: {result}")
+            
+            # Save result to EFS for Lambda to read
+            output_file = f"{os.environ.get('OUTPUT_DIR', '/rag-output/')}/query_result.json"
+            with open(output_file, 'w') as f:
+                json.dump({
+                    'query': query,
+                    'result': result,
+                    'timestamp': time.time()
+                }, f, indent=2)
+            
+            print(f"💾 [MVP] Result saved to: {output_file}")
+            
+        except Exception as e:
+            print(f"❌ [MVP] Error processing query: {str(e)}")
+            import traceback
+            traceback.print_exc()
+    
+    else:
+        # Server mode - start Flask server
+        port = int(os.environ.get('PORT', 8000))
+        
+        print("\n" + "="*60)
+        print("🚀 RAG-Anything ECS Task Server")
+        print("="*60)
+        print(f"📍 Port: {port}")
+        print(f"📂 Working Dir: {os.environ.get('OUTPUT_DIR', '/rag-output/')}")
+        print(f"🔧 Parser: {os.environ.get('PARSER', 'docling')}")
+        print(f"📝 Parse Method: {os.environ.get('PARSE_METHOD', 'auto')}")
+        print(f"⏱️  Auto-stop: {IDLE_TIMEOUT}s idle timeout")
+        print(f"🔄 Lazy Init: RAG instance created on first request")
+        print("="*60 + "\n")
+        
+        # Use threaded mode for better request handling
+        app.run(
+            host='0.0.0.0',
+            port=port,
+            debug=False,
+            threaded=True,
+            use_reloader=False
+        )
+
+# ============================================================================
 # SERVER STARTUP
 # ============================================================================
 
 if __name__ == '__main__':
-    port = int(os.environ.get('PORT', 8000))
-    
-    print("\n" + "="*60)
-    print("🚀 RAG-Anything ECS Task Server")
-    print("="*60)
-    print(f"📍 Port: {port}")
-    print(f"📂 Working Dir: {os.environ.get('OUTPUT_DIR', '/rag-output/')}")
-    print(f"🔧 Parser: {os.environ.get('PARSER', 'docling')}")
-    print(f"📝 Parse Method: {os.environ.get('PARSE_METHOD', 'auto')}")
-    print(f"⏱️  Auto-stop: {IDLE_TIMEOUT}s idle timeout")
-    print(f"🔄 Lazy Init: RAG instance created on first request")
-    print("="*60 + "\n")
-    
-    # Use threaded mode for better request handling
-    app.run(
-        host='0.0.0.0',
-        port=port,
-        debug=False,
-        threaded=True,
-        use_reloader=False
-    )
+    handle_mvp_mode()

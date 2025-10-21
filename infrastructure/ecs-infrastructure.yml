@@ -449,7 +449,7 @@ Resources:
             Interval: 30
             Timeout: 10
             Retries: 3
-            StartPeriod: 120
+            StartPeriod: 180
 
   # CloudWatch Log Groups
   RaganythingLogGroup:
@@ -611,31 +611,6 @@ Resources:
           SECURITY_GROUP: !Ref ECSSecurityGroup
         Timeout: 300
 
-  # RAG Query Lambda Function
-  RagQueryFunction:
-    Type: AWS::Lambda::Function
-    Properties:
-      FunctionName: !Sub 'pharma-rag-query-${Environment}'
-      Runtime: python3.11
-      Handler: index.lambda_handler
-      Code:
-        ZipFile: |
-          # This will be replaced by the actual Lambda function code during deployment
-          def lambda_handler(event, context):
-              return {'statusCode': 200}
-      Role: !GetAtt LambdaExecutionRole.Arn
-      Environment:
-        Variables:
-          ECS_CLUSTER: !Ref ECSCluster
-          RAGANYTHING_TASK_DEFINITION: !Ref RaganythingTaskDefinition
-          SUBNETS: !Sub '${PrivateSubnet1},${PrivateSubnet2}'
-          SECURITY_GROUP: !Ref ECSSecurityGroup
-          S3_BUCKET: !Ref DocumentBucket
-          NEO4J_URI: !Ref Neo4jUri
-          NEO4J_USERNAME: !Ref Neo4jUsername
-          NEO4J_PASSWORD: !Ref Neo4jPassword
-          OPENAI_API_KEY: !Ref OpenAIApiKey
-      Timeout: 300
 
   # Lambda Execution Role
   LambdaExecutionRole:

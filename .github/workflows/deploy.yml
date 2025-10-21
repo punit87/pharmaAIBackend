@@ -41,7 +41,7 @@ jobs:
         BUILD_START=$(date +%s.%3N)
         
         echo "📦 [DEPLOY] Building RAG-Anything async server Docker image..."
-        echo "📋 [DEPLOY] Dependencies: raganything[all], boto3, flask, asgiref, hypercorn, docling"
+        echo "📋 [DEPLOY] Dependencies: rag-anything[all], boto3, flask, docling"
         docker build -f Dockerfile -t $ECR_REGISTRY/$ECR_REPOSITORY:$IMAGE_TAG .
         BUILD_END=$(date +%s.%3N)
         BUILD_DURATION=$(echo "$BUILD_END - $BUILD_START" | bc)
@@ -102,7 +102,7 @@ jobs:
         
         echo "📋 [DEPLOY] Deploying CloudFormation stack: $STACK_NAME-$ENVIRONMENT"
         echo "📋 [DEPLOY] RAG-Anything async server Image URI: $RAGANYTHING_IMAGE_URI"
-        echo "📋 [DEPLOY] Features: Async Flask, Hypercorn ASGI, Multimodal RAG, MinerU/Docling parsers"
+          echo "📋 [DEPLOY] Features: MVP Mode, Document Processing, Query Processing, Multimodal RAG, Docling parser"
         
         # Deploy CloudFormation stack
         echo "🚀 [DEPLOY] Starting CloudFormation deployment..."
@@ -160,6 +160,6 @@ jobs:
           echo "  POST $API_URL/rag-query-multimodal   # Multimodal RAG query"
           echo "  GET  $API_URL/health                 # Health check"
           echo "📋 [DEPLOY] Query modes: hybrid, local, global, naive"
-          echo "📋 [DEPLOY] Parsers: mineru, docling"
-          echo "📋 [DEPLOY] Server: Hypercorn ASGI with async support"
+          echo "📋 [DEPLOY] Parsers: docling"
+          echo "📋 [DEPLOY] Server: MVP Mode with ECS Task execution"
         fi
