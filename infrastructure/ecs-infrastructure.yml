@@ -290,6 +290,15 @@ Resources:
                 Resource:
                   - !Sub 'arn:aws:s3:::${DocumentBucket}/*'
                   - !GetAtt DocumentBucket.Arn
+        - PolicyName: EC2Access
+          PolicyDocument:
+            Version: '2012-10-17'
+            Statement:
+              - Effect: Allow
+                Action:
+                  - ec2:DescribeNetworkInterfaces
+                  - ec2:DescribeInstances
+                Resource: '*'
 
   # ECS Task Role
   ECSTaskRole:
@@ -648,6 +657,15 @@ Resources:
                 Resource:
                   - !Sub 'arn:aws:s3:::${DocumentBucket}/*'
                   - !GetAtt DocumentBucket.Arn
+        - PolicyName: EC2Access
+          PolicyDocument:
+            Version: '2012-10-17'
+            Statement:
+              - Effect: Allow
+                Action:
+                  - ec2:DescribeNetworkInterfaces
+                  - ec2:DescribeInstances
+                Resource: '*'
 
   # API Gateway
   ApiGateway:
@@ -720,14 +738,6 @@ Resources:
       Principal: apigateway.amazonaws.com
       SourceArn: !Sub 'arn:aws:execute-api:${AWS::Region}:${AWS::AccountId}:${ApiGateway}/*/*'
 
-  # S3 Lambda permission (for manual S3 notification setup)
-  S3LambdaPermission:
-    Type: AWS::Lambda::Permission
-    Properties:
-      FunctionName: !Ref DocumentProcessorFunction
-      Action: lambda:InvokeFunction
-      Principal: s3.amazonaws.com
-      SourceArn: !GetAtt DocumentBucket.Arn
 
 Outputs:
   DoclingRepositoryUri:
