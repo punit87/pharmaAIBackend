@@ -6,10 +6,11 @@ on:
   workflow_dispatch:
 
 env:
-  ECR_REPOSITORY_RAGANYTHING: pharma-raganything-dev
+  ECR_REPOSITORY: pharma-raganything-dev
 
 jobs:
   build-and-push:
+    name: Build and Push Container Image
     runs-on: ubuntu-latest
     permissions:
       contents: read
@@ -35,7 +36,7 @@ jobs:
     - name: Build and push RAG-Anything + Docling image
       env:
         ECR_REGISTRY: ${{ steps.login-ecr.outputs.registry }}
-        ECR_REPOSITORY: ${{ env.ECR_REPOSITORY_RAGANYTHING }}
+        ECR_REPOSITORY: ${{ env.ECR_REPOSITORY }}
         IMAGE_TAG: latest
       run: |
         echo "🔄 [DEPLOY] Starting RAG-Anything + Docling image build at $(date)"
@@ -60,6 +61,7 @@ jobs:
         echo "📋 [DEPLOY] Pushed RAG-Anything + Docling image: $ECR_REGISTRY/$ECR_REPOSITORY:$IMAGE_TAG"
 
   deploy:
+    name: Deploy Infrastructure
     needs: build-and-push
     runs-on: ubuntu-latest
     permissions:
@@ -96,13 +98,11 @@ jobs:
         ENVIRONMENT="dev"
         TEMPLATE_FILE="infrastructure/ecs-infrastructure.yml"
         
-        # Set image URIs
-        DOCLING_IMAGE_URI="$AWS_ACCOUNT_ID.dkr.ecr.$AWS_REGION.amazonaws.com/pharma-docling-dev:latest"
+        # Set image URI
         RAGANYTHING_IMAGE_URI="$AWS_ACCOUNT_ID.dkr.ecr.$AWS_REGION.amazonaws.com/pharma-raganything-dev:latest"
         
         echo "📋 [DEPLOY] Deploying CloudFormation stack: $STACK_NAME-$ENVIRONMENT"
-        echo "📋 [DEPLOY] Docling Image URI: $DOCLING_IMAGE_URI"
-        echo "📋 [DEPLOY] RAG-Anything Image URI: $RAGANYTHING_IMAGE_URI"
+        echo "📋 [DEPLOY] RAG-Anything + Docling Image URI: $RAGANYTHING_IMAGE_URI"
         
         # Deploy CloudFormation stack
         echo "🚀 [DEPLOY] Starting CloudFormation deployment..."
@@ -113,7 +113,6 @@ jobs:
           --capabilities CAPABILITY_IAM CAPABILITY_NAMED_IAM \
           --parameter-overrides \
             Environment="$ENVIRONMENT" \
-            DoclingImageUri="$DOCLING_IMAGE_URI" \
             RaganythingImageUri="$RAGANYTHING_IMAGE_URI" \
             OpenAIApiKey="$OPENAI_API_KEY" \
             Neo4jUri="$NEO4J_URI" \
