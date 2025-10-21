@@ -6,7 +6,7 @@ on:
       skip_validation:
         description: 'Skip ECR image validation'
         required: false
-        default: 'false'
+        default: false
         type: boolean
 
 env:
