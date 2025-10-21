@@ -105,6 +105,15 @@ Resources:
         BlockPublicPolicy: true
         IgnorePublicAcls: true
         RestrictPublicBuckets: true
+      NotificationConfiguration:
+        LambdaConfigurations:
+          - Event: s3:ObjectCreated:*
+            Function: !GetAtt DocumentProcessorFunction.Arn
+            Filter:
+              S3Key:
+                Rules:
+                  - Name: suffix
+                    Value: .pdf
 
   # VPC and Networking
   VPC:
@@ -576,52 +585,12 @@ Resources:
     Properties:
       FunctionName: !Sub 'pharma-document-processor-${Environment}'
       Runtime: python3.11
-      Handler: index.lambda_handler
+      Handler: s3_processor_simple.lambda_handler
       Code:
         ZipFile: |
-          import json
-          import boto3
-          import os
-          
+          # This will be replaced by the actual Lambda function code during deployment
           def lambda_handler(event, context):
-              try:
-                  # Process S3 event and trigger ECS task
-                  ecs_client = boto3.client('ecs')
-                  
-                  for record in event['Records']:
-                      bucket = record['s3']['bucket']['name']
-                      key = record['s3']['object']['key']
-                      
-                      response = ecs_client.run_task(
-                          cluster=os.environ['ECS_CLUSTER'],
-                          taskDefinition=os.environ['DOCLING_TASK_DEFINITION'],
-                          launchType='FARGATE',
-                          networkConfiguration={
-                              'awsvpcConfiguration': {
-                                  'subnets': os.environ['SUBNETS'].split(','),
-                                  'securityGroups': [os.environ['SECURITY_GROUP']],
-                                  'assignPublicIp': 'ENABLED'
-                              }
-                          },
-                          overrides={
-                              'containerOverrides': [
-                                  {
-                                      'name': 'docling',
-                                      'environment': [
-                                          {'name': 'S3_BUCKET', 'value': bucket},
-                                          {'name': 'S3_KEY', 'value': key}
-                                      ]
-                                  }
-                              ]
-                          }
-                      )
-                      
-                      print(f"Triggered ECS task for {key}: {response['tasks'][0]['taskArn']}")
-                  
-                  return {'statusCode': 200}
-              except Exception as e:
-                  print(f"Error: {str(e)}")
-                  return {'statusCode': 500}
+              return {'statusCode': 200}
       Role: !GetAtt LambdaExecutionRole.Arn
       Environment:
         Variables:
@@ -630,6 +599,15 @@ Resources:
           SUBNETS: !Sub '${PrivateSubnet1},${PrivateSubnet2}'
           SECURITY_GROUP: !Ref ECSSecurityGroup
       Timeout: 300
+
+  # S3 Lambda Permission
+  S3LambdaPermission:
+    Type: AWS::Lambda::Permission
+    Properties:
+      FunctionName: !Ref DocumentProcessorFunction
+      Action: lambda:InvokeFunction
+      Principal: s3.amazonaws.com
+      SourceArn: !GetAtt DocumentBucket.Arn
 
   # Lambda Execution Role
   LambdaExecutionRole:
