@@ -29,11 +29,15 @@ RUN apt-get update && \
     && rm -rf /var/lib/apt/lists/*
 
 # Install Python dependencies
-# Install RAG-Anything with all extensions (includes Docling)
+# Install RAG-Anything with all extensions
 RUN pip install --no-cache-dir 'raganything[all]' boto3 requests flask
 
-# Verify Docling is available
-RUN python3 -c "import docling; print('Docling installed successfully')" || echo "Docling installation verification failed"
+# Install Docling separately (not included in raganything[all])
+RUN pip install --no-cache-dir docling
+
+# Verify both RAG-Anything and Docling are available
+RUN python3 -c "import raganything; print('RAG-Anything installed successfully')" && \
+    python3 -c "import docling; print('Docling installed successfully')"
 
 # Copy RAG server script
 COPY apps/rag_client.py /var/task/
