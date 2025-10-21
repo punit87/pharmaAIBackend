@@ -1,0 +1,131 @@
+name: Deploy Pharma RAG Infrastructure
+
+on:
+  push:
+    branches: [ main ]
+  workflow_dispatch:
+
+env:
+  AWS_REGION: us-east-1
+  ECR_REGISTRY: ${{ secrets.AWS_ACCOUNT_ID }}.dkr.ecr.us-east-1.amazonaws.com
+  ECR_REPOSITORY_DOCLING: pharma-docling
+  ECR_REPOSITORY_RAGANYTHING: pharma-raganything
+
+jobs:
+  build-and-push:
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      id-token: write
+
+    steps:
+    - name: Checkout
+      uses: actions/checkout@v4
+
+    - name: Configure AWS credentials
+      uses: aws-actions/configure-aws-credentials@v4
+      with:
+        role-to-assume: ${{ secrets.AWS_ROLE_ARN }}
+        aws-region: ${{ env.AWS_REGION }}
+
+    - name: Login to Amazon ECR
+      id: login-ecr
+      uses: aws-actions/amazon-ecr-login@v2
+
+    - name: Build and push Docling image
+      env:
+        ECR_REGISTRY: ${{ steps.login-ecr.outputs.registry }}
+        ECR_REPOSITORY: ${{ env.ECR_REPOSITORY_DOCLING }}
+        IMAGE_TAG: ${{ github.sha }}
+      run: |
+        docker build -f Dockerfile.docling -t $ECR_REGISTRY/$ECR_REPOSITORY:$IMAGE_TAG .
+        docker build -f Dockerfile.docling -t $ECR_REGISTRY/$ECR_REPOSITORY:latest .
+        docker push $ECR_REGISTRY/$ECR_REPOSITORY:$IMAGE_TAG
+        docker push $ECR_REGISTRY/$ECR_REPOSITORY:latest
+
+    - name: Build and push RAG-Anything image
+      env:
+        ECR_REGISTRY: ${{ steps.login-ecr.outputs.registry }}
+        ECR_REPOSITORY: ${{ env.ECR_REPOSITORY_RAGANYTHING }}
+        IMAGE_TAG: ${{ github.sha }}
+      run: |
+        docker build -f Dockerfile.raganything -t $ECR_REGISTRY/$ECR_REPOSITORY:$IMAGE_TAG .
+        docker build -f Dockerfile.raganything -t $ECR_REGISTRY/$ECR_REPOSITORY:latest .
+        docker push $ECR_REGISTRY/$ECR_REPOSITORY:$IMAGE_TAG
+        docker push $ECR_REGISTRY/$ECR_REPOSITORY:latest
+
+  deploy:
+    needs: build-and-push
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      id-token: write
+
+    steps:
+    - name: Checkout
+      uses: actions/checkout@v4
+
+    - name: Configure AWS credentials
+      uses: aws-actions/configure-aws-credentials@v4
+      with:
+        role-to-assume: ${{ secrets.AWS_ROLE_ARN }}
+        aws-region: ${{ env.AWS_REGION }}
+
+    - name: Deploy CloudFormation stack
+      env:
+        OPENAI_API_KEY: ${{ secrets.OPENAI_API_KEY }}
+        NEO4J_PASSWORD: ${{ secrets.NEO4J_PASSWORD }}
+        NEO4J_URI: ${{ secrets.NEO4J_URI }}
+        NEO4J_USERNAME: ${{ secrets.NEO4J_USERNAME }}
+        AWS_ACCOUNT_ID: ${{ secrets.AWS_ACCOUNT_ID }}
+      run: |
+        # Set variables
+        STACK_NAME="pharma-rag-infrastructure"
+        ENVIRONMENT="dev"
+        AWS_REGION="us-east-1"
+        TEMPLATE_FILE="infrastructure/ecs-infrastructure.yml"
+        
+        # Set image URIs
+        DOCLING_IMAGE_URI="$AWS_ACCOUNT_ID.dkr.ecr.$AWS_REGION.amazonaws.com/pharma-docling:latest"
+        RAGANYTHING_IMAGE_URI="$AWS_ACCOUNT_ID.dkr.ecr.$AWS_REGION.amazonaws.com/pharma-raganything:latest"
+        
+        echo "Deploying CloudFormation stack: $STACK_NAME-$ENVIRONMENT"
+        echo "Docling Image URI: $DOCLING_IMAGE_URI"
+        echo "RAG-Anything Image URI: $RAGANYTHING_IMAGE_URI"
+        
+        # Deploy CloudFormation stack
+        aws cloudformation deploy \
+          --template-file "$TEMPLATE_FILE" \
+          --stack-name "$STACK_NAME-$ENVIRONMENT" \
+          --capabilities CAPABILITY_IAM CAPABILITY_NAMED_IAM \
+          --parameter-overrides \
+            Environment="$ENVIRONMENT" \
+            DoclingImageUri="$DOCLING_IMAGE_URI" \
+            RaganythingImageUri="$RAGANYTHING_IMAGE_URI" \
+            OpenAIApiKey="$OPENAI_API_KEY" \
+            Neo4jUri="$NEO4J_URI" \
+            Neo4jUsername="$NEO4J_USERNAME" \
+            Neo4jPassword="$NEO4J_PASSWORD" \
+          --region "$AWS_REGION"
+        
+        # Get stack outputs
+        echo "Stack Outputs:"
+        aws cloudformation describe-stacks \
+          --stack-name "$STACK_NAME-$ENVIRONMENT" \
+          --query 'Stacks[0].Outputs' \
+          --output table \
+          --region "$AWS_REGION"
+        
+        # Get API Gateway URL
+        API_URL=$(aws cloudformation describe-stacks \
+          --stack-name "$STACK_NAME-$ENVIRONMENT" \
+          --query 'Stacks[0].Outputs[?OutputKey==`ApiGatewayUrl`].OutputValue' \
+          --output text \
+          --region "$AWS_REGION")
+        
+        if [ ! -z "$API_URL" ]; then
+          echo "API Gateway URL: $API_URL"
+          echo "Test endpoints:"
+          echo "  GET  $API_URL/presigned-url"
+          echo "  POST $API_URL/rag-query"
+        fi
