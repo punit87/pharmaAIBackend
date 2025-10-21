@@ -11,8 +11,8 @@ ENV PYTHONUNBUFFERED=1 \
     LANG=C.UTF-8 \
     LC_ALL=C.UTF-8 \
     GIT_SSH_COMMAND="ssh -o StrictHostKeyChecking=no" \
-    HF_HOME=/tmp/ \
-    TORCH_HOME=/tmp/ \
+    HF_HOME=/opt/models/ \
+    TORCH_HOME=/opt/models/ \
     OMP_NUM_THREADS=4
 
 # Install system dependencies
@@ -47,13 +47,17 @@ RUN pip install --no-cache-dir 'raganything[all]' boto3 requests flask
 # Install Docling with CPU-only PyTorch and pytesseract
 RUN pip install --no-cache-dir docling pytesseract --extra-index-url https://download.pytorch.org/whl/cpu
 
-# Download docling models
-RUN docling-tools models download
+# Create models directory and download docling models
+RUN mkdir -p /opt/models/ && \
+    docling-tools models download
 
 # Verify both RAG-Anything and Docling are available
 RUN python3 -c "import raganything; print('RAG-Anything installed successfully')" && \
     python3 -c "import docling; print('Docling installed successfully')" && \
-    python3 -c "import pytesseract; print('pytesseract installed successfully')"
+    python3 -c "import pytesseract; print('pytesseract installed successfully')" && \
+    echo "📦 [DOCKER] Models downloaded to:" && \
+    ls -la /opt/models/ && \
+    echo "📦 [DOCKER] Model files count: $(find /opt/models/ -type f | wc -l)"
 
 # Copy RAG server script
 COPY apps/rag_client.py /var/task/
