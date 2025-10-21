@@ -31,32 +31,33 @@ jobs:
       id: login-ecr
       uses: aws-actions/amazon-ecr-login@v2
 
-    - name: Build and push RAG-Anything + Docling image
+    - name: Build and push RAG-Anything async server image
       env:
         ECR_REGISTRY: ${{ steps.login-ecr.outputs.registry }}
         ECR_REPOSITORY: ${{ env.ECR_REPOSITORY }}
         IMAGE_TAG: latest
       run: |
-        echo "🔄 [DEPLOY] Starting RAG-Anything + Docling image build at $(date)"
+        echo "🔄 [DEPLOY] Starting RAG-Anything async server image build at $(date)"
         BUILD_START=$(date +%s.%3N)
         
-        echo "📦 [DEPLOY] Building RAG-Anything + Docling Docker image..."
+        echo "📦 [DEPLOY] Building RAG-Anything async server Docker image..."
+        echo "📋 [DEPLOY] Dependencies: raganything[all], boto3, flask, asgiref, hypercorn, docling"
         docker build -f Dockerfile -t $ECR_REGISTRY/$ECR_REPOSITORY:$IMAGE_TAG .
         BUILD_END=$(date +%s.%3N)
         BUILD_DURATION=$(echo "$BUILD_END - $BUILD_START" | bc)
-        echo "✅ [DEPLOY] RAG-Anything + Docling image built in ${BUILD_DURATION}s"
+        echo "✅ [DEPLOY] RAG-Anything async server image built in ${BUILD_DURATION}s"
         
-        echo "📤 [DEPLOY] Pushing RAG-Anything + Docling image to ECR..."
+        echo "📤 [DEPLOY] Pushing RAG-Anything async server image to ECR..."
         PUSH_START=$(date +%s.%3N)
         docker push $ECR_REGISTRY/$ECR_REPOSITORY:$IMAGE_TAG
         PUSH_END=$(date +%s.%3N)
         PUSH_DURATION=$(echo "$PUSH_END - $PUSH_START" | bc)
-        echo "✅ [DEPLOY] RAG-Anything + Docling image pushed in ${PUSH_DURATION}s"
+        echo "✅ [DEPLOY] RAG-Anything async server image pushed in ${PUSH_DURATION}s"
         
         TOTAL_END=$(date +%s.%3N)
         TOTAL_DURATION=$(echo "$TOTAL_END - $BUILD_START" | bc)
-        echo "🎉 [DEPLOY] RAG-Anything + Docling total time: ${TOTAL_DURATION}s"
-        echo "📋 [DEPLOY] Pushed RAG-Anything + Docling image: $ECR_REGISTRY/$ECR_REPOSITORY:$IMAGE_TAG"
+        echo "🎉 [DEPLOY] RAG-Anything async server total time: ${TOTAL_DURATION}s"
+        echo "📋 [DEPLOY] Pushed RAG-Anything async server image: $ECR_REGISTRY/$ECR_REPOSITORY:$IMAGE_TAG"
 
   deploy:
     name: Deploy Infrastructure
@@ -100,7 +101,8 @@ jobs:
         RAGANYTHING_IMAGE_URI="$AWS_ACCOUNT_ID.dkr.ecr.$AWS_REGION.amazonaws.com/pharma-raganything-dev:latest"
         
         echo "📋 [DEPLOY] Deploying CloudFormation stack: $STACK_NAME-$ENVIRONMENT"
-        echo "📋 [DEPLOY] RAG-Anything + Docling Image URI: $RAGANYTHING_IMAGE_URI"
+        echo "📋 [DEPLOY] RAG-Anything async server Image URI: $RAGANYTHING_IMAGE_URI"
+        echo "📋 [DEPLOY] Features: Async Flask, Hypercorn ASGI, Multimodal RAG, MinerU/Docling parsers"
         
         # Deploy CloudFormation stack
         echo "🚀 [DEPLOY] Starting CloudFormation deployment..."
@@ -152,7 +154,12 @@ jobs:
         
         if [ ! -z "$API_URL" ]; then
           echo "🌐 [DEPLOY] API Gateway URL: $API_URL"
-          echo "🧪 [DEPLOY] Test endpoints:"
-          echo "  GET  $API_URL/presigned-url"
-          echo "  POST $API_URL/rag-query"
+          echo "🧪 [DEPLOY] Available endpoints:"
+          echo "  GET  $API_URL/presigned-url          # Get S3 presigned URL for upload"
+          echo "  POST $API_URL/rag-query              # Standard RAG query"
+          echo "  POST $API_URL/rag-query-multimodal   # Multimodal RAG query"
+          echo "  GET  $API_URL/health                 # Health check"
+          echo "📋 [DEPLOY] Query modes: hybrid, local, global, naive"
+          echo "📋 [DEPLOY] Parsers: mineru, docling"
+          echo "📋 [DEPLOY] Server: Hypercorn ASGI with async support"
         fi
