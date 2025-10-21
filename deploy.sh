@@ -50,12 +50,12 @@ AWS_ACCOUNT_ID=$(aws sts get-caller-identity --query Account --output text --pro
 echo "📋 [DEPLOY] AWS Account ID: $AWS_ACCOUNT_ID"
 
 # Set image URI
-RAGANYTHING_IMAGE_URI="$AWS_ACCOUNT_ID.dkr.ecr.$AWS_REGION.amazonaws.com/pharma-raganything-dev:latest"
+RAGANYTHING_IMAGE_URI="$AWS_ACCOUNT_ID.dkr.ecr.$AWS_REGION.amazonaws.com/pharma-raganything-dev-2:latest"
 echo "📋 [DEPLOY] RAG-Anything Image URI: $RAGANYTHING_IMAGE_URI"
 
 # Check if ECR image exists
 echo "🔍 [DEPLOY] Checking if ECR image exists..."
-if aws ecr describe-images --repository-name pharma-raganything-dev --image-ids imageTag=latest --region $AWS_REGION --profile $AWS_PROFILE >/dev/null 2>&1; then
+if aws ecr describe-images --repository-name pharma-raganything-dev-2 --image-ids imageTag=latest --region $AWS_REGION --profile $AWS_PROFILE >/dev/null 2>&1; then
     echo "✅ [DEPLOY] ECR image exists: $RAGANYTHING_IMAGE_URI"
 else
     echo "❌ [DEPLOY] ECR image not found: $RAGANYTHING_IMAGE_URI"
