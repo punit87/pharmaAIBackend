@@ -170,7 +170,7 @@ jobs:
         API_START=$(date +%s.%3N)
         API_URL=$(aws cloudformation describe-stacks \
           --stack-name "$STACK_NAME-$ENVIRONMENT" \
-          --query 'Stacks[0].Outputs[?OutputKey==`ApiGatewayUrl`].OutputValue' \
+          --query "Stacks[0].Outputs[?OutputKey=='ApiGatewayUrl'].OutputValue" \
           --output text \
           --region "$AWS_REGION" 2>/dev/null || echo "")
         API_END=$(date +%s.%3N)
