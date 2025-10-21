@@ -220,46 +220,8 @@ def process_query():
         print(f"❌ [RAG] Error processing query: {str(e)} - {total_duration:.3f}s")
         return jsonify(create_error_response(str(e), total_duration, query)), 500
 
-def main():
-    """Main function for processing documents or queries"""
-    # Check if we have a query to process
-    query = os.environ.get('QUERY')
-    s3_bucket = os.environ.get('S3_BUCKET')
-    s3_key = os.environ.get('S3_KEY')
-    
-    if query:
-        # Process RAG query
-        print(f"Processing RAG query: {query}")
-        try:
-            env_vars = get_environment_variables()
-            rag = initialize_rag_anything(env_vars)
-            
-            result = asyncio.run(rag.query(query))
-            print(json.dumps(result, indent=2))
-            
-        except Exception as e:
-            print(f"Error processing query: {str(e)}")
-    
-    elif s3_bucket and s3_key:
-        # Process document
-        print(f"Processing document: s3://{s3_bucket}/{s3_key}")
-        try:
-            # Call the Flask endpoint internally
-            with app.test_client() as client:
-                response = client.post('/process', json={
-                    'bucket': s3_bucket,
-                    'key': s3_key
-                })
-                print(f"Document processing result: {response.get_json()}")
-                
-        except Exception as e:
-            print(f"Error processing document: {str(e)}")
-    
-    else:
-        print("No query or document to process. Starting Flask server...")
-        # Run Flask server
-        port = int(os.environ.get('PORT', 8000))
-        app.run(host='0.0.0.0', port=port, debug=True)
-
 if __name__ == '__main__':
-    main()
+    # Run Flask server
+    port = int(os.environ.get('PORT', 8000))
+    print(f"🚀 [RAG] Starting RAG-Anything Flask server on port {port}")
+    app.run(host='0.0.0.0', port=port, debug=True)
