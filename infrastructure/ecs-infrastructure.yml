@@ -256,8 +256,6 @@ Resources:
         - FARGATE
         - FARGATE_SPOT
       DefaultCapacityProviderStrategy:
-        - CapacityProvider: FARGATE_SPOT
-          Weight: 3
         - CapacityProvider: FARGATE
           Weight: 1
 
@@ -532,10 +530,6 @@ Resources:
                           taskDefinition=os.environ['RAGANYTHING_TASK_DEFINITION'],
                           capacityProviderStrategy=[
                               {
-                                  'capacityProvider': 'FARGATE_SPOT',
-                                  'weight': 3
-                              },
-                              {
                                   'capacityProvider': 'FARGATE',
                                   'weight': 1
                               }
@@ -680,16 +674,12 @@ Resources:
                           response = ecs_client.run_task(
                               cluster=os.environ['ECS_CLUSTER'],
                               taskDefinition=os.environ['RAGANYTHING_TASK_DEFINITION'],
-                              capacityProviderStrategy=[
-                                  {
-                                      'capacityProvider': 'FARGATE_SPOT',
-                                      'weight': 3
-                                  },
-                                  {
-                                      'capacityProvider': 'FARGATE',
-                                      'weight': 1
-                                  }
-                              ],
+                          capacityProviderStrategy=[
+                              {
+                                  'capacityProvider': 'FARGATE',
+                                  'weight': 1
+                              }
+                          ],
                               networkConfiguration={
                                   'awsvpcConfiguration': {
                                       'subnets': os.environ['SUBNETS'].split(','),
