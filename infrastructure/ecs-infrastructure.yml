@@ -413,6 +413,8 @@ Resources:
               Value: !Ref AWS::Region
             - Name: S3_BUCKET
               Value: !Ref DocumentBucket
+            - Name: S3_PREFIX
+              Value: 'rag-data/'
             - Name: NEO4J_URI
               Value: !Ref Neo4jUri
             - Name: NEO4J_USERNAME
