@@ -657,17 +657,30 @@ Resources:
 
                               if private_ip:
                                   # Make HTTP request to the existing server
-                                  import requests
+                                  import urllib.request
+                                  import urllib.parse
+                                  import json as json_lib
+                                  
                                   server_url = f"http://{private_ip}:8000"
                                   query_url = f"{server_url}/query"
 
                                   print(f"Making query request to existing server: {query_url}")
-                                  query_response = requests.post(
+                                  
+                                  # Prepare the request data
+                                  data = json_lib.dumps({'query': query}).encode('utf-8')
+                                  
+                                  # Create the request
+                                  req = urllib.request.Request(
                                       query_url,
-                                      json={'query': query},
-                                      headers={'Content-Type': 'application/json'},
-                                      timeout=300  # 5 minutes timeout
+                                      data=data,
+                                      headers={'Content-Type': 'application/json'}
                                   )
+                                  
+                                  # Make the request
+                                  with urllib.request.urlopen(req, timeout=300) as response:
+                                      response_data = response.read().decode('utf-8')
+                                      query_response_data = json_lib.loads(response_data)
+                                      status_code = response.getcode()
 
                                   if query_response.status_code == 200:
                                       result = query_response.json()
@@ -854,6 +867,8 @@ Resources:
         SubnetIds:
           - !Ref PrivateSubnet1
           - !Ref PrivateSubnet2
+      Layers:
+        - !Ref RequestsLayer
       Environment:
         Variables:
           ECS_CLUSTER: !Ref ECSCluster
@@ -1174,6 +1189,8 @@ Resources:
                       'body': json.dumps({'error': str(e)})
                   }
       Role: !GetAtt LambdaExecutionRole.Arn
+      Layers:
+        - !Ref RequestsLayer
       Environment:
         Variables:
           ECS_CLUSTER: !Ref ECSCluster
@@ -1181,6 +1198,31 @@ Resources:
           SUBNETS: !Sub '${PrivateSubnet1},${PrivateSubnet2}'
           SECURITY_GROUP: !Ref ECSSecurityGroup
       Timeout: 300
+
+  # Lambda Layer for requests
+  RequestsLayer:
+    Type: AWS::Lambda::LayerVersion
+    Properties:
+      LayerName: !Sub 'pharma-requests-${Environment}'
+      Description: 'Requests library for Lambda functions'
+      Content:
+        S3Bucket: !Ref RequestsLayerBucket
+        S3Key: requests-layer.zip
+      CompatibleRuntimes:
+        - python3.11
+
+  # S3 Bucket for Lambda layer
+  RequestsLayerBucket:
+    Type: AWS::S3::Bucket
+    Properties:
+      BucketName: !Sub 'pharma-lambda-layers-${AWS::AccountId}-${AWS::Region}'
+      VersioningConfiguration:
+        Status: Enabled
+      LifecycleConfiguration:
+        Rules:
+          - Id: DeleteOldVersions
+            Status: Enabled
+            NoncurrentVersionExpirationInDays: 30
 
   # Lambda Execution Role
   LambdaExecutionRole:

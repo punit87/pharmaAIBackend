@@ -22,6 +22,7 @@ STACK_NAME="pharma-rag-infrastructure-dev"
 TEMPLATE_FILE="infrastructure/ecs-infrastructure.yml"
 AWS_REGION="${AWS_REGION:-us-east-1}"
 AWS_PROFILE="${AWS_PROFILE:-pharma}"
+S3_BUCKET="${S3_BUCKET:-pharma-deployments-864899869769}"
 
 # Validate required environment variables
 echo "🔍 [DEPLOY] Validating required environment variables..."
@@ -67,19 +68,25 @@ fi
 echo "🚀 [DEPLOY] Starting CloudFormation deployment..."
 CF_START=$(date +%s.%3N)
 
-aws cloudformation deploy \
-  --template-file "$TEMPLATE_FILE" \
-  --stack-name "$STACK_NAME" \
-  --capabilities CAPABILITY_IAM CAPABILITY_NAMED_IAM \
-  --parameter-overrides \
+        # Upload template to S3 (required for large templates)
+        TEMPLATE_S3_KEY="cloudformation-templates/pharma-rag-infrastructure-dev.yml"
+        aws s3 cp "$TEMPLATE_FILE" "s3://$S3_BUCKET/$TEMPLATE_S3_KEY" --profile "$AWS_PROFILE" --region "$AWS_REGION"
+        echo "📦 [DEPLOY] Template uploaded to s3://$S3_BUCKET/$TEMPLATE_S3_KEY"
+
+        aws cloudformation deploy \
+          --template-file "$TEMPLATE_FILE" \
+          --stack-name "$STACK_NAME" \
+          --capabilities CAPABILITY_IAM CAPABILITY_NAMED_IAM \
+          --parameter-overrides \
             Environment="dev" \
-    RaganythingImageUri="$RAGANYTHING_IMAGE_URI" \
-    OpenAIApiKey="$OPENAI_API_KEY" \
-    Neo4jUri="$NEO4J_URI" \
-    Neo4jUsername="$NEO4J_USERNAME" \
-    Neo4jPassword="$NEO4J_PASSWORD" \
-  --region "$AWS_REGION" \
-  --profile "$AWS_PROFILE"
+            RaganythingImageUri="$RAGANYTHING_IMAGE_URI" \
+            OpenAIApiKey="$OPENAI_API_KEY" \
+            Neo4jUri="$NEO4J_URI" \
+            Neo4jUsername="$NEO4J_USERNAME" \
+            Neo4jPassword="$NEO4J_PASSWORD" \
+          --region "$AWS_REGION" \
+          --profile "$AWS_PROFILE" \
+          --s3-bucket "$S3_BUCKET"
 
 CF_END=$(date +%s.%3N)
 CF_DURATION=$(echo "$CF_END - $CF_START" | bc)
