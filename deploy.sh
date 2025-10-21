@@ -8,11 +8,42 @@ set -e  # Exit on any error
 echo "🚀 [DEPLOY] Starting local CloudFormation deployment at $(date)"
 DEPLOY_START=$(date +%s.%3N)
 
+# Load environment variables from .env file if it exists
+if [ -f .env ]; then
+    echo "📋 [DEPLOY] Loading environment variables from .env file..."
+    export $(grep -v '^#' .env | xargs)
+else
+    echo "⚠️  [DEPLOY] No .env file found. Using environment variables from shell."
+    echo "💡 [DEPLOY] Create a .env file from env.example for easier configuration."
+fi
+
 # Configuration
 STACK_NAME="pharma-rag-infrastructure-dev-1"
 TEMPLATE_FILE="infrastructure/ecs-infrastructure.yml"
-AWS_REGION="us-east-1"
-AWS_PROFILE="pharma"
+AWS_REGION="${AWS_REGION:-us-east-1}"
+AWS_PROFILE="${AWS_PROFILE:-pharma}"
+
+# Validate required environment variables
+echo "🔍 [DEPLOY] Validating required environment variables..."
+REQUIRED_VARS=("OPENAI_API_KEY" "NEO4J_URI" "NEO4J_USERNAME" "NEO4J_PASSWORD")
+MISSING_VARS=()
+
+for var in "${REQUIRED_VARS[@]}"; do
+    if [ -z "${!var}" ]; then
+        MISSING_VARS+=("$var")
+    fi
+done
+
+if [ ${#MISSING_VARS[@]} -ne 0 ]; then
+    echo "❌ [DEPLOY] Missing required environment variables:"
+    for var in "${MISSING_VARS[@]}"; do
+        echo "   - $var"
+    done
+    echo "💡 [DEPLOY] Please set these variables in your .env file or shell environment."
+    exit 1
+fi
+
+echo "✅ [DEPLOY] All required environment variables are set."
 
 # Get AWS Account ID
 AWS_ACCOUNT_ID=$(aws sts get-caller-identity --query Account --output text --profile $AWS_PROFILE --region $AWS_REGION)

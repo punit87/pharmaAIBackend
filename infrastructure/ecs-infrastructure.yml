@@ -5,7 +5,7 @@ Parameters:
   Environment:
     Type: String
     Default: dev
-    AllowedValues: [dev, staging, prod]
+    AllowedValues: [dev, dev-1, staging, prod]
     Description: Environment name
   
   RaganythingImageUri:

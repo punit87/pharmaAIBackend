@@ -6,17 +6,32 @@ This repository contains the infrastructure and application code for a serverles
 
 ### Prerequisites
 - AWS CLI configured with `pharma` profile
-- Required environment variables set:
-  ```bash
-  export OPENAI_API_KEY="your-openai-api-key"
-  export NEO4J_URI="your-neo4j-uri"
-  export NEO4J_USERNAME="your-neo4j-username"
-  export NEO4J_PASSWORD="your-neo4j-password"
-  ```
+- Docker image built and pushed to ECR (via GitHub Actions)
+
+### Setup Environment Variables
+1. **Copy the example environment file:**
+   ```bash
+   cp env.example .env
+   ```
+
+2. **Edit `.env` file with your actual values:**
+   ```bash
+   # OpenAI API Configuration
+   OPENAI_API_KEY=sk-your-actual-openai-api-key
+   
+   # Neo4j Database Configuration
+   NEO4J_URI=neo4j+s://your-actual-database-id.databases.neo4j.io
+   NEO4J_USERNAME=neo4j
+   NEO4J_PASSWORD=your-actual-neo4j-password
+   
+   # AWS Configuration (optional)
+   AWS_PROFILE=pharma
+   AWS_REGION=us-east-1
+   ```
 
 ### Deploy Infrastructure
 ```bash
-# Make sure Docker image is built first (via GitHub Actions)
+# Deploy with environment variables from .env file
 ./deploy.sh
 ```
 
