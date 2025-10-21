@@ -97,13 +97,14 @@ def process_document():
         rag_start = time.time()
         from raganything import RAGAnything
         
-        # Initialize RAG-Anything
+        # Initialize RAG-Anything with Docling URL
         init_start = time.time()
         rag = RAGAnything(
             neo4j_uri=neo4j_uri,
             neo4j_username=neo4j_username,
             neo4j_password=neo4j_password,
-            openai_api_key=openai_api_key
+            openai_api_key=openai_api_key,
+            docling_url=docling_url
         )
         init_duration = time.time() - init_start
         print(f"🚀 [RAG] RAG-Anything initialization completed in {init_duration:.3f}s")
@@ -181,8 +182,9 @@ def process_query():
         neo4j_username = os.environ.get('NEO4J_USERNAME')
         neo4j_password = os.environ.get('NEO4J_PASSWORD')
         openai_api_key = os.environ.get('OPENAI_API_KEY')
+        docling_url = os.environ.get('DOCLING_SERVICE_URL', 'http://localhost:8000')
         
-        # Initialize RAG-Anything
+        # Initialize RAG-Anything with Docling URL
         init_start = time.time()
         from raganything import RAGAnything
         
@@ -190,7 +192,8 @@ def process_query():
             neo4j_uri=neo4j_uri,
             neo4j_username=neo4j_username,
             neo4j_password=neo4j_password,
-            openai_api_key=openai_api_key
+            openai_api_key=openai_api_key,
+            docling_url=docling_url
         )
         init_duration = time.time() - init_start
         print(f"🚀 [RAG] RAG-Anything initialization completed in {init_duration:.3f}s")
@@ -249,12 +252,14 @@ def main():
             neo4j_username = os.environ.get('NEO4J_USERNAME')
             neo4j_password = os.environ.get('NEO4J_PASSWORD')
             openai_api_key = os.environ.get('OPENAI_API_KEY')
+            docling_url = os.environ.get('DOCLING_SERVICE_URL', 'http://localhost:8000')
             
             rag = RAGAnything(
                 neo4j_uri=neo4j_uri,
                 neo4j_username=neo4j_username,
                 neo4j_password=neo4j_password,
-                openai_api_key=openai_api_key
+                openai_api_key=openai_api_key,
+                docling_url=docling_url
             )
             
             result = asyncio.run(rag.query(query))
