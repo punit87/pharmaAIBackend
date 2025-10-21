@@ -33,31 +33,7 @@ Parameters:
     Description: Neo4j password
 
 Resources:
-  # ECR Repositories for container images
-  RaganythingRepository:
-    Type: AWS::ECR::Repository
-    Properties:
-      RepositoryName: !Sub 'pharma-raganything-${Environment}'
-      ImageScanningConfiguration:
-        ScanOnPush: true
-      LifecyclePolicy:
-        LifecyclePolicyText: |
-          {
-            "rules": [
-              {
-                "rulePriority": 1,
-                "description": "Keep only 1 image",
-                "selection": {
-                  "tagStatus": "any",
-                  "countType": "imageCountMoreThan",
-                  "countNumber": 1
-                },
-                "action": {
-                  "type": "expire"
-                }
-              }
-            ]
-          }
+  # ECR Repository will be created by GitHub Actions if it doesn't exist
 
   # EFS File System for persistent storage
   RAGOutputFileSystem:
@@ -735,7 +711,7 @@ Resources:
 Outputs:
   RaganythingRepositoryUri:
     Description: ECR Repository URI for RAG-Anything
-    Value: !Sub '${AWS::AccountId}.dkr.ecr.${AWS::Region}.amazonaws.com/${RaganythingRepository}'
+    Value: !Sub '${AWS::AccountId}.dkr.ecr.${AWS::Region}.amazonaws.com/pharma-raganything-${Environment}'
     Export:
       Name: !Sub '${AWS::StackName}-RaganythingRepositoryUri'
 

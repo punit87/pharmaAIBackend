@@ -31,6 +31,41 @@ jobs:
       id: login-ecr
       uses: aws-actions/amazon-ecr-login@v2
 
+    - name: Create ECR Repository if not exists
+      env:
+        ECR_REPOSITORY: ${{ env.ECR_REPOSITORY }}
+      run: |
+        echo "🔍 [ECR] Checking if ECR repository exists..."
+        AWS_REGION="${{ secrets.AWS_DEFAULT_REGION }}"
+        
+        # Check if repository exists
+        if aws ecr describe-repositories --repository-names "$ECR_REPOSITORY" --region "$AWS_REGION" >/dev/null 2>&1; then
+          echo "✅ [ECR] Repository already exists: $ECR_REPOSITORY"
+        else
+          echo "📦 [ECR] Creating ECR repository: $ECR_REPOSITORY"
+          aws ecr create-repository \
+            --repository-name "$ECR_REPOSITORY" \
+            --region "$AWS_REGION" \
+            --image-scanning-configuration scanOnPush=true \
+            --lifecycle-policy-text '{
+              "rules": [
+                {
+                  "rulePriority": 1,
+                  "description": "Keep only 1 image",
+                  "selection": {
+                    "tagStatus": "any",
+                    "countType": "imageCountMoreThan",
+                    "countNumber": 1
+                  },
+                  "action": {
+                    "type": "expire"
+                  }
+                }
+              ]
+            }'
+          echo "✅ [ECR] Repository created successfully: $ECR_REPOSITORY"
+        fi
+
     - name: Build and push RAG-Anything async server image
       env:
         ECR_REGISTRY: ${{ steps.login-ecr.outputs.registry }}
