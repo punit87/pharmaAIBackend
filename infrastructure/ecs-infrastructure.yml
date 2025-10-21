@@ -391,6 +391,9 @@ Resources:
         - Name: raganything
           Image: !Ref RaganythingImageUri
           Essential: true
+          PortMappings:
+            - ContainerPort: 8000
+              Protocol: tcp
           LogConfiguration:
             LogDriver: awslogs
             Options:
@@ -614,6 +617,7 @@ Resources:
           import json
           import boto3
           import os
+          import requests
           
           def lambda_handler(event, context):
               try:
@@ -638,7 +642,7 @@ Resources:
 
                   # Initialize ECS client
                   ecs_client = boto3.client('ecs')
-
+                  
                   try:
                       # Find existing running tasks first
                       print("Looking for existing RAG-Anything server...")
@@ -647,10 +651,64 @@ Resources:
                           desiredStatus='RUNNING'
                       )
                       
+                      task_arn = None
+                      private_ip = None
+                      
                       if response['taskArns']:
-                          # Use existing running task
-                          task_arn = response['taskArns'][0]
-                          print(f"Found existing task: {task_arn}")
+                          # Get details of running tasks
+                          task_details = ecs_client.describe_tasks(
+                              cluster=os.environ['ECS_CLUSTER'],
+                              tasks=response['taskArns']
+                          )
+                          
+                          for task in task_details['tasks']:
+                              if task['lastStatus'] == 'RUNNING':
+                                  task_arn = task['taskArn']
+                                  # Get private IP from network interfaces
+                                  for container in task['containers']:
+                                      if 'networkInterfaces' in container:
+                                          for ni in container['networkInterfaces']:
+                                              private_ip = ni.get('privateIpv4Address')
+                                              break
+                                      if private_ip:
+                                          break
+                                  break
+                      
+                      if not task_arn or not private_ip:
+                          # Start new RAG-Anything server task
+                          print("Starting new RAG-Anything server task...")
+                          response = ecs_client.run_task(
+                              cluster=os.environ['ECS_CLUSTER'],
+                              taskDefinition=os.environ['RAGANYTHING_TASK_DEFINITION'],
+                              capacityProviderStrategy=[
+                                  {
+                                      'capacityProvider': 'FARGATE',
+                                      'weight': 1
+                                  }
+                              ],
+                              networkConfiguration={
+                                  'awsvpcConfiguration': {
+                                      'subnets': os.environ['SUBNETS'].split(','),
+                                      'securityGroups': [os.environ['SECURITY_GROUP']],
+                                      'assignPublicIp': 'ENABLED'
+                                  }
+                              }
+                          )
+                          
+                          task_arn = response['tasks'][0]['taskArn']
+                          print(f"RAG-Anything server task started: {task_arn}")
+                          
+                          # Wait for task to be running
+                          print("Waiting for server to start...")
+                          waiter = ecs_client.get_waiter('tasks_running')
+                          waiter.wait(
+                              cluster=os.environ['ECS_CLUSTER'],
+                              tasks=[task_arn],
+                              WaiterConfig={
+                                  'Delay': 10,
+                                  'MaxAttempts': 30  # 5 minutes max to start
+                              }
+                          )
                           
                           # Get task details to find the private IP
                           task_details = ecs_client.describe_tasks(
@@ -659,162 +717,39 @@ Resources:
                           )
                           
                           task = task_details['tasks'][0]
-                          if task['lastStatus'] == 'RUNNING':
-                              # Get private IP from network interfaces
-                              private_ip = None
-                              for container in task['containers']:
-                                  if 'networkInterfaces' in container:
-                                      for ni in container['networkInterfaces']:
-                                          private_ip = ni.get('privateIpv4Address')
-                                          break
-                                  if private_ip:
+                          if task['lastStatus'] != 'RUNNING':
+                              return {
+                                  'statusCode': 500,
+                                  'headers': {
+                                      'Content-Type': 'application/json',
+                                      'Access-Control-Allow-Origin': '*'
+                                  },
+                                  'body': json.dumps({'error': 'Server failed to start'})
+                              }
+                          
+                          # Get private IP from network interfaces
+                          for container in task['containers']:
+                              if 'networkInterfaces' in container:
+                                  for ni in container['networkInterfaces']:
+                                      private_ip = ni.get('privateIpv4Address')
                                       break
-
                               if private_ip:
-                                  # Make HTTP request to the existing server
-                                  import urllib.request
-                                  import urllib.parse
-                                  import json as json_lib
-                                  
-                                  server_url = f"http://{private_ip}:8000"
-                                  query_url = f"{server_url}/query"
-
-                                  print(f"Making query request to existing server: {query_url}")
-                                  
-                                  # Prepare the request data
-                                  data = json_lib.dumps({'query': query}).encode('utf-8')
-                                  
-                                  # Create the request
-                                  req = urllib.request.Request(
-                                      query_url,
-                                      data=data,
-                                      headers={'Content-Type': 'application/json'}
-                                  )
-                                  
-                                  # Make the request
-                                  with urllib.request.urlopen(req, timeout=300) as response:
-                                      response_data = response.read().decode('utf-8')
-                                      query_response_data = json_lib.loads(response_data)
-                                      status_code = response.getcode()
-
-                                  if query_response.status_code == 200:
-                                      result = query_response.json()
-                                      print("Query processed successfully")
-                                      return {
-                                          'statusCode': 200,
-                                          'headers': {
-                                              'Content-Type': 'application/json',
-                                              'Access-Control-Allow-Origin': '*'
-                                          },
-                                          'body': json.dumps({
-                                              'status': 'success',
-                                              'message': 'Query processed successfully using existing server.',
-                                              'query': query,
-                                              'result': result,
-                                              'task_arn': task_arn
-                                          })
-                                      }
-                                  else:
-                                      print(f"Query failed with status: {query_response.status_code}")
-                                      return {
-                                          'statusCode': 500,
-                                          'headers': {
-                                              'Content-Type': 'application/json',
-                                              'Access-Control-Allow-Origin': '*'
-                                          },
-                                          'body': json.dumps({
-                                              'error': f'Query failed: {query_response.text}',
-                                              'task_arn': task_arn
-                                          })
-                                      }
-                      
-                      # If no existing task, start a new one
-                      print("No existing server found, starting new RAG-Anything task...")
-                      response = ecs_client.run_task(
-                          cluster=os.environ['ECS_CLUSTER'],
-                          taskDefinition=os.environ['RAGANYTHING_TASK_DEFINITION'],
-                          capacityProviderStrategy=[
-                              {
-                                  'capacityProvider': 'FARGATE',
-                                  'weight': 1
-                              }
-                          ],
-                          networkConfiguration={
-                              'awsvpcConfiguration': {
-                                  'subnets': os.environ['SUBNETS'].split(','),
-                                  'securityGroups': [os.environ['SECURITY_GROUP']],
-                                  'assignPublicIp': 'ENABLED'
-                              }
-                          },
-                          overrides={
-                              'containerOverrides': [
-                                  {
-                                      'name': 'raganything',
-                                      'environment': [
-                                          {'name': 'QUERY', 'value': query}
-                                      ]
-                                  }
-                              ]
-                          }
-                      )
-
-                      task_arn = response['tasks'][0]['taskArn']
-                      print(f"RAG-Anything task started: {task_arn}")
-
-                      # Wait for task to be running
-                      print("Waiting for server to start...")
-                      waiter = ecs_client.get_waiter('tasks_running')
-                      waiter.wait(
-                          cluster=os.environ['ECS_CLUSTER'],
-                          tasks=[task_arn],
-                          WaiterConfig={
-                              'Delay': 10,
-                              'MaxAttempts': 30  # 5 minutes max to start
-                          }
-                      )
-
-                      # Get task details to find the private IP
-                      task_details = ecs_client.describe_tasks(
-                          cluster=os.environ['ECS_CLUSTER'],
-                          tasks=[task_arn]
-                      )
-
-                      task = task_details['tasks'][0]
-                      if task['lastStatus'] != 'RUNNING':
-                          return {
-                              'statusCode': 500,
-                              'headers': {
-                                  'Content-Type': 'application/json',
-                                  'Access-Control-Allow-Origin': '*'
-                              },
-                              'body': json.dumps({'error': 'Server failed to start'})
-                          }
-
-                      # Get private IP from network interfaces
-                      private_ip = None
-                      for container in task['containers']:
-                          if 'networkInterfaces' in container:
-                              for ni in container['networkInterfaces']:
-                                  private_ip = ni.get('privateIpv4Address')
                                   break
-                          if private_ip:
-                              break
-
-                      if not private_ip:
-                          return {
-                              'statusCode': 500,
-                              'headers': {
-                                  'Content-Type': 'application/json',
-                                  'Access-Control-Allow-Origin': '*'
-                              },
-                              'body': json.dumps({'error': 'Could not get server IP address'})
-                          }
-
+                          
+                          if not private_ip:
+                              return {
+                                  'statusCode': 500,
+                                  'headers': {
+                                      'Content-Type': 'application/json',
+                                      'Access-Control-Allow-Origin': '*'
+                                  },
+                                  'body': json.dumps({'error': 'Could not get server IP address'})
+                              }
+                      
                       # Make HTTP request to the server
-                      import requests
                       server_url = f"http://{private_ip}:8000"
                       query_url = f"{server_url}/query"
-
+                      
                       print(f"Making query request to: {query_url}")
                       query_response = requests.post(
                           query_url,
@@ -822,7 +757,7 @@ Resources:
                           headers={'Content-Type': 'application/json'},
                           timeout=300  # 5 minutes timeout
                       )
-
+                      
                       if query_response.status_code == 200:
                           result = query_response.json()
                           print("Query processed successfully")
@@ -834,7 +769,7 @@ Resources:
                               },
                               'body': json.dumps({
                                   'status': 'success',
-                                  'message': 'Query processed successfully. Check EFS output directory for results.',
+                                  'message': 'Query processed successfully.',
                                   'query': query,
                                   'result': result,
                                   'task_arn': task_arn
@@ -890,13 +825,7 @@ Resources:
           RAGANYTHING_TASK_DEFINITION: !Ref RaganythingTaskDefinition
           SUBNETS: !Sub '${PrivateSubnet1},${PrivateSubnet2}'
           SECURITY_GROUP: !Ref ECSSecurityGroup
-          S3_BUCKET: !Ref DocumentBucket
-          NEO4J_URI: !Ref Neo4jUri
-          NEO4J_USERNAME: !Ref Neo4jUsername
-          NEO4J_PASSWORD: !Ref Neo4jPassword
-          OPENAI_API_KEY: !Ref OpenAIApiKey
       Timeout: 300
-
   DocumentProcessorFunction:
     Type: AWS::Lambda::Function
     Properties:
@@ -909,6 +838,7 @@ Resources:
           import os
           import boto3
           import time
+          import requests
 
           def lambda_handler(event, context):
               """Handle S3 document upload events"""
@@ -924,66 +854,120 @@ Resources:
                       ecs_client = boto3.client('ecs')
                       
                       try:
-                          # Run RAG-Anything task with document info as environment variables
-                          print("Starting RAG-Anything task for document processing...")
-                          response = ecs_client.run_task(
+                          # Check for existing running tasks first
+                          print("Looking for existing RAG-Anything server...")
+                          response = ecs_client.list_tasks(
                               cluster=os.environ['ECS_CLUSTER'],
-                              taskDefinition=os.environ['RAGANYTHING_TASK_DEFINITION'],
-                          capacityProviderStrategy=[
-                              {
-                                  'capacityProvider': 'FARGATE',
-                                  'weight': 1
-                              }
-                          ],
-                              networkConfiguration={
-                                  'awsvpcConfiguration': {
-                                      'subnets': os.environ['SUBNETS'].split(','),
-                                      'securityGroups': [os.environ['SECURITY_GROUP']],
-                                      'assignPublicIp': 'ENABLED'
-                                  }
-                              },
-                              overrides={
-                                  'containerOverrides': [
+                              desiredStatus='RUNNING'
+                          )
+                          
+                          task_arn = None
+                          private_ip = None
+                          
+                          if response['taskArns']:
+                              # Get details of running tasks
+                              task_details = ecs_client.describe_tasks(
+                                  cluster=os.environ['ECS_CLUSTER'],
+                                  tasks=response['taskArns']
+                              )
+                              
+                              for task in task_details['tasks']:
+                                  if task['lastStatus'] == 'RUNNING':
+                                      task_arn = task['taskArn']
+                                      # Get private IP from network interfaces
+                                      for container in task['containers']:
+                                          if 'networkInterfaces' in container:
+                                              for ni in container['networkInterfaces']:
+                                                  private_ip = ni.get('privateIpv4Address')
+                                                  break
+                                          if private_ip:
+                                              break
+                                      break
+                          
+                          if not task_arn or not private_ip:
+                              # Start new RAG-Anything server task
+                              print("Starting new RAG-Anything server task...")
+                              response = ecs_client.run_task(
+                                  cluster=os.environ['ECS_CLUSTER'],
+                                  taskDefinition=os.environ['RAGANYTHING_TASK_DEFINITION'],
+                                  capacityProviderStrategy=[
                                       {
-                                          'name': 'raganything',
-                                          'environment': [
-                                              {'name': 'S3_BUCKET', 'value': bucket},
-                                              {'name': 'S3_KEY', 'value': key},
-                                              {'name': 'MODE', 'value': 'process_document'}
-                                          ]
+                                          'capacityProvider': 'FARGATE',
+                                          'weight': 1
                                       }
-                                  ]
-                              }
+                                  ],
+                                  networkConfiguration={
+                                      'awsvpcConfiguration': {
+                                          'subnets': os.environ['SUBNETS'].split(','),
+                                          'securityGroups': [os.environ['SECURITY_GROUP']],
+                                          'assignPublicIp': 'ENABLED'
+                                      }
+                                  }
+                              )
+                              
+                              task_arn = response['tasks'][0]['taskArn']
+                              print(f"RAG-Anything server task started: {task_arn}")
+                              
+                              # Wait for task to be running
+                              print("Waiting for server to start...")
+                              waiter = ecs_client.get_waiter('tasks_running')
+                              waiter.wait(
+                                  cluster=os.environ['ECS_CLUSTER'],
+                                  tasks=[task_arn],
+                                  WaiterConfig={
+                                      'Delay': 10,
+                                      'MaxAttempts': 30  # 5 minutes max to start
+                                  }
+                              )
+                              
+                              # Get task details to find the private IP
+                              task_details = ecs_client.describe_tasks(
+                                  cluster=os.environ['ECS_CLUSTER'],
+                                  tasks=[task_arn]
+                              )
+                              
+                              task = task_details['tasks'][0]
+                              if task['lastStatus'] != 'RUNNING':
+                                  print("Server failed to start")
+                                  continue
+                              
+                              # Get private IP from network interfaces
+                              for container in task['containers']:
+                                  if 'networkInterfaces' in container:
+                                      for ni in container['networkInterfaces']:
+                                          private_ip = ni.get('privateIpv4Address')
+                                          break
+                                  if private_ip:
+                                      break
+                              
+                              if not private_ip:
+                                  print("Could not get server IP address")
+                                  continue
+                          
+                          # Make HTTP request to the server
+                          server_url = f"http://{private_ip}:8000"
+                          process_url = f"{server_url}/process"
+                          
+                          print(f"Making process request to: {process_url}")
+                          process_data = {
+                              'bucket': bucket,
+                              'key': key
+                          }
+                          
+                          process_response = requests.post(
+                              process_url,
+                              json=process_data,
+                              headers={'Content-Type': 'application/json'},
+                              timeout=600  # 10 minutes timeout for document processing
                           )
                           
-                          task_arn = response['tasks'][0]['taskArn']
-                          print(f"RAG-Anything task started: {task_arn}")
-                          
-                          # Wait for task to complete (with timeout)
-                          print("Waiting for task completion...")
-                          waiter = ecs_client.get_waiter('tasks_stopped')
-                          waiter.wait(
-                              cluster=os.environ['ECS_CLUSTER'],
-                              tasks=[task_arn],
-                              WaiterConfig={
-                                  'Delay': 15,
-                                  'MaxAttempts': 80  # 20 minutes max for document processing
-                              }
-                          )
-                          
-                          # Get task results
-                          task_details = ecs_client.describe_tasks(
-                              cluster=os.environ['ECS_CLUSTER'],
-                              tasks=[task_arn]
-                          )
-                          
-                          task = task_details['tasks'][0]
-                          exit_code = task['containers'][0].get('exitCode', -1)
-                          
-                          if exit_code == 0:
+                          if process_response.status_code == 200:
+                              result = process_response.json()
                               print(f"Document processing completed successfully for s3://{bucket}/{key}")
+                              print(f"Result: {result}")
                           else:
-                              print(f"Document processing failed with exit code: {exit_code} for s3://{bucket}/{key}")
+                              print(f"Document processing failed with status: {process_response.status_code}")
+                              print(f"Response: {process_response.text}")
                           
                       except Exception as e:
                           print(f"Error processing document s3://{bucket}/{key}: {str(e)}")
@@ -1001,13 +985,21 @@ Resources:
                   'body': json.dumps({'message': 'Document processing completed'})
               }
       Role: !GetAtt LambdaExecutionRole.Arn
+      VpcConfig:
+        SecurityGroupIds:
+          - !Ref LambdaSecurityGroup
+        SubnetIds:
+          - !Ref PrivateSubnet1
+          - !Ref PrivateSubnet2
+      Layers:
+        - !Ref RequestsLayer
+      Timeout: 300
       Environment:
         Variables:
           ECS_CLUSTER: !Ref ECSCluster
           RAGANYTHING_TASK_DEFINITION: !Ref RaganythingTaskDefinition
           SUBNETS: !Sub '${PrivateSubnet1},${PrivateSubnet2}'
           SECURITY_GROUP: !Ref ECSSecurityGroup
-      Timeout: 300
 
   RagQueryMultimodalFunction:
     Type: AWS::Lambda::Function
@@ -1206,13 +1198,13 @@ Resources:
       Role: !GetAtt LambdaExecutionRole.Arn
       Layers:
         - !Ref RequestsLayer
+      Timeout: 300
       Environment:
         Variables:
           ECS_CLUSTER: !Ref ECSCluster
           RAGANYTHING_TASK_DEFINITION: !Ref RaganythingTaskDefinition
           SUBNETS: !Sub '${PrivateSubnet1},${PrivateSubnet2}'
           SECURITY_GROUP: !Ref ECSSecurityGroup
-      Timeout: 300
 
   # Lambda Layer for requests
   RequestsLayer:
