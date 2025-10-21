@@ -126,7 +126,7 @@ def process_document():
         # Use RAG-Anything's native document processing with Docling parser
         result = asyncio.run(rag.process_document_complete(
             file_path=temp_file_path,
-            output_dir="/tmp/rag_output/",
+            output_dir="/rag-output/",
             parse_method="auto",          # Parsing method: "auto", "ocr", "txt"
             parser="docling",             # Parser selection: "docling" or "mineru"
             doc_id=s3_key,               # Document ID for tracking

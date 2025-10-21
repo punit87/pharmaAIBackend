@@ -59,6 +59,66 @@ Resources:
             ]
           }
 
+  # EFS File System for persistent storage
+  RAGOutputFileSystem:
+    Type: AWS::EFS::FileSystem
+    Properties:
+      FileSystemTags:
+        - Key: Name
+          Value: !Sub 'pharma-rag-output-${Environment}'
+        - Key: Environment
+          Value: !Ref Environment
+      PerformanceMode: generalPurpose
+      ThroughputMode: provisioned
+      ProvisionedThroughputInMibps: 100
+
+  # EFS Mount Targets
+  RAGOutputMountTarget1:
+    Type: AWS::EFS::MountTarget
+    Properties:
+      FileSystemId: !Ref RAGOutputFileSystem
+      SubnetId: !Ref PrivateSubnet1
+      SecurityGroups:
+        - !Ref EFSSecurityGroup
+
+  RAGOutputMountTarget2:
+    Type: AWS::EFS::MountTarget
+    Properties:
+      FileSystemId: !Ref RAGOutputFileSystem
+      SubnetId: !Ref PrivateSubnet2
+      SecurityGroups:
+        - !Ref EFSSecurityGroup
+
+  # EFS Security Group
+  EFSSecurityGroup:
+    Type: AWS::EC2::SecurityGroup
+    Properties:
+      GroupDescription: Security group for EFS mount targets
+      VpcId: !Ref VPC
+      SecurityGroupIngress:
+        - IpProtocol: tcp
+          FromPort: 2049
+          ToPort: 2049
+          SourceSecurityGroupId: !Ref ECSSecurityGroup
+      Tags:
+        - Key: Name
+          Value: !Sub 'pharma-efs-sg-${Environment}'
+
+  # EFS Access Point
+  RAGOutputAccessPoint:
+    Type: AWS::EFS::AccessPoint
+    Properties:
+      FileSystemId: !Ref RAGOutputFileSystem
+      PosixUser:
+        Uid: 1000
+        Gid: 1000
+      RootDirectory:
+        Path: /rag-output
+        CreationInfo:
+          OwnerUid: 1000
+          OwnerGid: 1000
+          Permissions: 755
+
   # S3 Bucket for document storage and processing
   DocumentBucket:
     Type: AWS::S3::Bucket
@@ -270,6 +330,16 @@ Resources:
                   - ec2:DescribeNetworkInterfaces
                   - ec2:DescribeInstances
                 Resource: '*'
+        - PolicyName: EFSAccess
+          PolicyDocument:
+            Version: '2012-10-17'
+            Statement:
+              - Effect: Allow
+                Action:
+                  - elasticfilesystem:ClientMount
+                  - elasticfilesystem:ClientWrite
+                  - elasticfilesystem:ClientRootAccess
+                Resource: !GetAtt RAGOutputFileSystem.Arn
 
   # ECS Task Role
   ECSTaskRole:
@@ -330,6 +400,13 @@ Resources:
       Memory: 2048
       ExecutionRoleArn: !GetAtt ECSTaskExecutionRole.Arn
       TaskRoleArn: !GetAtt ECSTaskRole.Arn
+      Volumes:
+        - Name: rag-output-volume
+          EfsVolumeConfiguration:
+            FileSystemId: !Ref RAGOutputFileSystem
+            TransitEncryption: ENABLED
+            AuthorizationConfig:
+              AccessPointId: !Ref RAGOutputAccessPoint
       ContainerDefinitions:
         - Name: raganything
           Image: !Ref RaganythingImageUri
@@ -355,6 +432,10 @@ Resources:
               Value: !Ref OpenAIApiKey
             - Name: DOCLING_SERVICE_URL
               Value: 'http://localhost:8000'
+          MountPoints:
+            - SourceVolume: rag-output-volume
+              ContainerPath: /rag-output
+              ReadOnly: false
           HealthCheck:
             Command:
               - CMD-SHELL
