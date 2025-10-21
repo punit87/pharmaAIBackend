@@ -44,9 +44,7 @@ def get_environment_variables():
         'neo4j_username': os.environ.get('NEO4J_USERNAME'),
         'neo4j_password': os.environ.get('NEO4J_PASSWORD'),
         'openai_api_key': os.environ.get('OPENAI_API_KEY'),
-        'docling_url': os.environ.get('DOCLING_SERVICE_URL', 'http://localhost:8000'),
-        's3_bucket': os.environ.get('S3_BUCKET'),
-        's3_prefix': os.environ.get('S3_PREFIX', 'rag-data/')
+        'docling_url': os.environ.get('DOCLING_SERVICE_URL', 'http://localhost:8000')
     }
 
 def initialize_rag_anything(env_vars):
@@ -56,11 +54,7 @@ def initialize_rag_anything(env_vars):
         neo4j_username=env_vars['neo4j_username'],
         neo4j_password=env_vars['neo4j_password'],
         openai_api_key=env_vars['openai_api_key'],
-        docling_url=env_vars['docling_url'],
-        # Configure S3 storage for chunks and embeddings
-        storage_backend="s3",
-        s3_bucket=env_vars.get('s3_bucket'),
-        s3_prefix=env_vars.get('s3_prefix', 'rag-data/')
+        docling_url=env_vars['docling_url']
     )
 
 def create_error_response(error_msg, duration, query=None):
