@@ -2,7 +2,29 @@
 
 This repository contains the infrastructure and application code for a serverless RAG (Retrieval-Augmented Generation) system built on AWS using ECS Fargate, Lambda, and Neo4j AuraDB.
 
-<!-- Auto-deploy test: Updated to trigger deployment workflow - Retry after stack cleanup -->
+## 🚀 Local Deployment
+
+### Prerequisites
+- AWS CLI configured with `pharma` profile
+- Required environment variables set:
+  ```bash
+  export OPENAI_API_KEY="your-openai-api-key"
+  export NEO4J_URI="your-neo4j-uri"
+  export NEO4J_USERNAME="your-neo4j-username"
+  export NEO4J_PASSWORD="your-neo4j-password"
+  ```
+
+### Deploy Infrastructure
+```bash
+# Make sure Docker image is built first (via GitHub Actions)
+./deploy.sh
+```
+
+### What the script does:
+1. ✅ Validates ECR image exists
+2. 🚀 Deploys CloudFormation stack
+3. 📊 Shows stack outputs and API endpoints
+4. ⏱️ Provides timing information
 
 ## Architecture Overview
 

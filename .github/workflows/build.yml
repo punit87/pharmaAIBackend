@@ -3,6 +3,12 @@ name: Build and Push Container Image
 on:
   push:
     branches: [ main ]
+    paths:
+      - 'Dockerfile'
+      - 'apps/**'
+      - 'lambda/**'
+      - 'infrastructure/**'
+      - '.github/workflows/build.yml'
   workflow_dispatch:
 
 env:
