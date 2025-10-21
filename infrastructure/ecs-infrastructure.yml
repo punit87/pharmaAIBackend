@@ -625,8 +625,83 @@ Resources:
                   ecs_client = boto3.client('ecs')
 
                   try:
-                      # Run RAG-Anything task with query as environment variable
-                      print("Starting RAG-Anything task for query processing...")
+                      # Find existing running tasks first
+                      print("Looking for existing RAG-Anything server...")
+                      response = ecs_client.list_tasks(
+                          cluster=os.environ['ECS_CLUSTER'],
+                          desiredStatus='RUNNING'
+                      )
+                      
+                      if response['taskArns']:
+                          # Use existing running task
+                          task_arn = response['taskArns'][0]
+                          print(f"Found existing task: {task_arn}")
+                          
+                          # Get task details to find the private IP
+                          task_details = ecs_client.describe_tasks(
+                              cluster=os.environ['ECS_CLUSTER'],
+                              tasks=[task_arn]
+                          )
+                          
+                          task = task_details['tasks'][0]
+                          if task['lastStatus'] == 'RUNNING':
+                              # Get private IP from network interfaces
+                              private_ip = None
+                              for container in task['containers']:
+                                  if 'networkInterfaces' in container:
+                                      for ni in container['networkInterfaces']:
+                                          private_ip = ni.get('privateIpv4Address')
+                                          break
+                                  if private_ip:
+                                      break
+
+                              if private_ip:
+                                  # Make HTTP request to the existing server
+                                  import requests
+                                  server_url = f"http://{private_ip}:8000"
+                                  query_url = f"{server_url}/query"
+
+                                  print(f"Making query request to existing server: {query_url}")
+                                  query_response = requests.post(
+                                      query_url,
+                                      json={'query': query},
+                                      headers={'Content-Type': 'application/json'},
+                                      timeout=300  # 5 minutes timeout
+                                  )
+
+                                  if query_response.status_code == 200:
+                                      result = query_response.json()
+                                      print("Query processed successfully")
+                                      return {
+                                          'statusCode': 200,
+                                          'headers': {
+                                              'Content-Type': 'application/json',
+                                              'Access-Control-Allow-Origin': '*'
+                                          },
+                                          'body': json.dumps({
+                                              'status': 'success',
+                                              'message': 'Query processed successfully using existing server.',
+                                              'query': query,
+                                              'result': result,
+                                              'task_arn': task_arn
+                                          })
+                                      }
+                                  else:
+                                      print(f"Query failed with status: {query_response.status_code}")
+                                      return {
+                                          'statusCode': 500,
+                                          'headers': {
+                                              'Content-Type': 'application/json',
+                                              'Access-Control-Allow-Origin': '*'
+                                          },
+                                          'body': json.dumps({
+                                              'error': f'Query failed: {query_response.text}',
+                                              'task_arn': task_arn
+                                          })
+                                      }
+                      
+                      # If no existing task, start a new one
+                      print("No existing server found, starting new RAG-Anything task...")
                       response = ecs_client.run_task(
                           cluster=os.environ['ECS_CLUSTER'],
                           taskDefinition=os.environ['RAGANYTHING_TASK_DEFINITION'],
@@ -648,8 +723,7 @@ Resources:
                                   {
                                       'name': 'raganything',
                                       'environment': [
-                                          {'name': 'QUERY', 'value': query},
-                                          {'name': 'MODE', 'value': 'query_only'}
+                                          {'name': 'QUERY', 'value': query}
                                       ]
                                   }
                               ]
@@ -659,29 +733,71 @@ Resources:
                       task_arn = response['tasks'][0]['taskArn']
                       print(f"RAG-Anything task started: {task_arn}")
 
-                      # Wait for task to complete (with timeout)
-                      print("Waiting for task completion...")
-                      waiter = ecs_client.get_waiter('tasks_stopped')
+                      # Wait for task to be running
+                      print("Waiting for server to start...")
+                      waiter = ecs_client.get_waiter('tasks_running')
                       waiter.wait(
                           cluster=os.environ['ECS_CLUSTER'],
                           tasks=[task_arn],
                           WaiterConfig={
                               'Delay': 10,
-                              'MaxAttempts': 60  # 10 minutes max
+                              'MaxAttempts': 30  # 5 minutes max to start
                           }
                       )
 
-                      # Get task results
+                      # Get task details to find the private IP
                       task_details = ecs_client.describe_tasks(
                           cluster=os.environ['ECS_CLUSTER'],
                           tasks=[task_arn]
                       )
 
                       task = task_details['tasks'][0]
-                      exit_code = task['containers'][0].get('exitCode', -1)
+                      if task['lastStatus'] != 'RUNNING':
+                          return {
+                              'statusCode': 500,
+                              'headers': {
+                                  'Content-Type': 'application/json',
+                                  'Access-Control-Allow-Origin': '*'
+                              },
+                              'body': json.dumps({'error': 'Server failed to start'})
+                          }
 
-                      if exit_code == 0:
-                          print("Query processing completed successfully")
+                      # Get private IP from network interfaces
+                      private_ip = None
+                      for container in task['containers']:
+                          if 'networkInterfaces' in container:
+                              for ni in container['networkInterfaces']:
+                                  private_ip = ni.get('privateIpv4Address')
+                                  break
+                          if private_ip:
+                              break
+
+                      if not private_ip:
+                          return {
+                              'statusCode': 500,
+                              'headers': {
+                                  'Content-Type': 'application/json',
+                                  'Access-Control-Allow-Origin': '*'
+                              },
+                              'body': json.dumps({'error': 'Could not get server IP address'})
+                          }
+
+                      # Make HTTP request to the server
+                      import requests
+                      server_url = f"http://{private_ip}:8000"
+                      query_url = f"{server_url}/query"
+
+                      print(f"Making query request to: {query_url}")
+                      query_response = requests.post(
+                          query_url,
+                          json={'query': query},
+                          headers={'Content-Type': 'application/json'},
+                          timeout=300  # 5 minutes timeout
+                      )
+
+                      if query_response.status_code == 200:
+                          result = query_response.json()
+                          print("Query processed successfully")
                           return {
                               'statusCode': 200,
                               'headers': {
@@ -690,13 +806,14 @@ Resources:
                               },
                               'body': json.dumps({
                                   'status': 'success',
+                                  'message': 'Query processed successfully. Check EFS output directory for results.',
                                   'query': query,
-                                  'task_arn': task_arn,
-                                  'message': 'Query processed successfully. Check EFS output directory for results.'
+                                  'result': result,
+                                  'task_arn': task_arn
                               })
                           }
                       else:
-                          print(f"Task failed with exit code: {exit_code}")
+                          print(f"Query failed with status: {query_response.status_code}")
                           return {
                               'statusCode': 500,
                               'headers': {
@@ -704,7 +821,7 @@ Resources:
                                   'Access-Control-Allow-Origin': '*'
                               },
                               'body': json.dumps({
-                                  'error': f'Query processing failed with exit code: {exit_code}',
+                                  'error': f'Query failed: {query_response.text}',
                                   'task_arn': task_arn
                               })
                           }
@@ -731,6 +848,12 @@ Resources:
                       'body': json.dumps({'error': str(e)})
                   }
       Role: !GetAtt LambdaExecutionRole.Arn
+      VpcConfig:
+        SecurityGroupIds:
+          - !Ref ECSSecurityGroup
+        SubnetIds:
+          - !Ref PrivateSubnet1
+          - !Ref PrivateSubnet2
       Environment:
         Variables:
           ECS_CLUSTER: !Ref ECSCluster
@@ -1072,6 +1195,7 @@ Resources:
             Action: sts:AssumeRole
       ManagedPolicyArns:
         - arn:aws:iam::aws:policy/service-role/AWSLambdaBasicExecutionRole
+        - arn:aws:iam::aws:policy/service-role/AWSLambdaVPCAccessExecutionRole
       Policies:
         - PolicyName: ECSTaskExecution
           PolicyDocument:
