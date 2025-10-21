@@ -105,15 +105,6 @@ Resources:
         BlockPublicPolicy: true
         IgnorePublicAcls: true
         RestrictPublicBuckets: true
-      NotificationConfiguration:
-        LambdaConfigurations:
-          - Event: s3:ObjectCreated:*
-            Function: !GetAtt DocumentProcessorFunction.Arn
-            Filter:
-              S3Key:
-                Rules:
-                  - Name: suffix
-                    Value: .pdf
 
   # VPC and Networking
   VPC:
@@ -609,14 +600,6 @@ Resources:
           SECURITY_GROUP: !Ref ECSSecurityGroup
       Timeout: 300
 
-  # S3 Lambda Permission
-  S3LambdaPermission:
-    Type: AWS::Lambda::Permission
-    Properties:
-      FunctionName: !Ref DocumentProcessorFunction
-      Action: lambda:InvokeFunction
-      Principal: s3.amazonaws.com
-      SourceArn: !GetAtt DocumentBucket.Arn
 
   # Lambda Execution Role
   LambdaExecutionRole:
@@ -738,6 +721,33 @@ Resources:
       Principal: apigateway.amazonaws.com
       SourceArn: !Sub 'arn:aws:execute-api:${AWS::Region}:${AWS::AccountId}:${ApiGateway}/*/*'
 
+
+  # S3 Lambda Permission
+  S3LambdaPermission:
+    Type: AWS::Lambda::Permission
+    Properties:
+      FunctionName: !Ref DocumentProcessorFunction
+      Action: lambda:InvokeFunction
+      Principal: s3.amazonaws.com
+      SourceArn: !GetAtt DocumentBucket.Arn
+
+  # S3 Bucket Notification Configuration
+  S3BucketNotification:
+    Type: AWS::S3::Bucket
+    DependsOn: 
+      - DocumentProcessorFunction
+      - S3LambdaPermission
+    Properties:
+      Bucket: !Ref DocumentBucket
+      NotificationConfiguration:
+        LambdaConfigurations:
+          - Event: s3:ObjectCreated:*
+            Function: !GetAtt DocumentProcessorFunction.Arn
+            Filter:
+              S3Key:
+                Rules:
+                  - Name: suffix
+                    Value: .pdf
 
 Outputs:
   DoclingRepositoryUri:
