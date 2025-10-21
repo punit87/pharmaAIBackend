@@ -12,7 +12,7 @@ on:
   workflow_dispatch:
 
 env:
-  ECR_REPOSITORY: pharma-raganything-dev
+  ECR_REPOSITORY: pharma-raganything-dev-2
 
 jobs:
   build-and-push:

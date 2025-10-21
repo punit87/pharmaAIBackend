@@ -18,7 +18,7 @@ else
 fi
 
 # Configuration
-STACK_NAME="pharma-rag-infrastructure-dev-1"
+STACK_NAME="pharma-rag-infrastructure-dev-2"
 TEMPLATE_FILE="infrastructure/ecs-infrastructure.yml"
 AWS_REGION="${AWS_REGION:-us-east-1}"
 AWS_PROFILE="${AWS_PROFILE:-pharma}"
@@ -72,7 +72,7 @@ aws cloudformation deploy \
   --stack-name "$STACK_NAME" \
   --capabilities CAPABILITY_IAM CAPABILITY_NAMED_IAM \
   --parameter-overrides \
-    Environment="dev-1" \
+            Environment="dev-2" \
     RaganythingImageUri="$RAGANYTHING_IMAGE_URI" \
     OpenAIApiKey="$OPENAI_API_KEY" \
     Neo4jUri="$NEO4J_URI" \

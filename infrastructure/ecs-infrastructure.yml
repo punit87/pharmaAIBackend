@@ -5,7 +5,7 @@ Parameters:
   Environment:
     Type: String
     Default: dev
-    AllowedValues: [dev, dev-1, staging, prod]
+    AllowedValues: [dev, dev-1, dev-2, staging, prod]
     Description: Environment name
   
   RaganythingImageUri:
@@ -449,15 +449,14 @@ Resources:
                   timestamp = datetime.now().strftime('%Y/%m/%d/%H%M%S')
                   file_name = f"uploads/{timestamp}/{context.aws_request_id}.pdf"
                   
-                  # Generate presigned URL valid for 30 seconds
+                  # Generate presigned URL for PUT method - most flexible approach
                   presigned_url = s3_client.generate_presigned_url(
                       'put_object',
                       Params={
                           'Bucket': bucket_name, 
-                          'Key': file_name,
-                          'ContentType': 'application/pdf'
+                          'Key': file_name
                       },
-                      ExpiresIn=30
+                      ExpiresIn=300  # 5 minutes for more flexibility
                   )
                   
                   return {
@@ -471,8 +470,9 @@ Resources:
                       'body': json.dumps({
                           'presigned_url': presigned_url,
                           'file_name': file_name,
-                          'expires_in': 30,
-                          'bucket': bucket_name
+                          'expires_in': 300,
+                          'bucket': bucket_name,
+                          'upload_method': 'PUT'
                       })
                   }
               except Exception as e:
@@ -499,50 +499,139 @@ Resources:
           import json
           import boto3
           import os
-          import requests
           
           def lambda_handler(event, context):
               try:
-                  body = json.loads(event['body'])
-                  query = body['query']
-                  
-                  # Trigger ECS task for RAG processing
-                  ecs_client = boto3.client('ecs')
-                  
-                  response = ecs_client.run_task(
-                      cluster=os.environ['ECS_CLUSTER'],
-                      taskDefinition=os.environ['RAGANYTHING_TASK_DEFINITION'],
-                      launchType='FARGATE',
-                      networkConfiguration={
-                          'awsvpcConfiguration': {
-                              'subnets': os.environ['SUBNETS'].split(','),
-                              'securityGroups': [os.environ['SECURITY_GROUP']],
-                              'assignPublicIp': 'ENABLED'
-                          }
-                      },
-                      overrides={
-                          'containerOverrides': [
-                              {
-                                  'name': 'raganything',
-                                  'environment': [
-                                      {'name': 'QUERY', 'value': query}
-                                  ]
-                              }
-                          ]
+                  # Parse the query from the event
+                  if 'body' in event:
+                      body = json.loads(event['body'])
+                      query = body.get('query', '')
+                  else:
+                      query = event.get('query', '')
+
+                  if not query:
+                      return {
+                          'statusCode': 400,
+                          'headers': {
+                              'Content-Type': 'application/json',
+                              'Access-Control-Allow-Origin': '*'
+                          },
+                          'body': json.dumps({'error': 'No query provided'})
                       }
-                  )
-                  
-                  return {
-                      'statusCode': 200,
-                      'headers': {'Content-Type': 'application/json'},
-                      'body': json.dumps({
-                          'task_arn': response['tasks'][0]['taskArn'],
-                          'query': query
-                      })
-                  }
+
+                  print(f"Processing query: {query}")
+
+                  # Initialize ECS client
+                  ecs_client = boto3.client('ecs')
+
+                  try:
+                      # Run RAG-Anything task with query as environment variable
+                      print("Starting RAG-Anything task for query processing...")
+                      response = ecs_client.run_task(
+                          cluster=os.environ['ECS_CLUSTER'],
+                          taskDefinition=os.environ['RAGANYTHING_TASK_DEFINITION'],
+                          capacityProviderStrategy=[
+                              {
+                                  'capacityProvider': 'FARGATE_SPOT',
+                                  'weight': 3
+                              },
+                              {
+                                  'capacityProvider': 'FARGATE',
+                                  'weight': 1
+                              }
+                          ],
+                          networkConfiguration={
+                              'awsvpcConfiguration': {
+                                  'subnets': os.environ['SUBNETS'].split(','),
+                                  'securityGroups': [os.environ['SECURITY_GROUP']],
+                                  'assignPublicIp': 'ENABLED'
+                              }
+                          },
+                          overrides={
+                              'containerOverrides': [
+                                  {
+                                      'name': 'raganything',
+                                      'environment': [
+                                          {'name': 'QUERY', 'value': query},
+                                          {'name': 'MODE', 'value': 'query_only'}
+                                      ]
+                                  }
+                              ]
+                          }
+                      )
+
+                      task_arn = response['tasks'][0]['taskArn']
+                      print(f"RAG-Anything task started: {task_arn}")
+
+                      # Wait for task to complete (with timeout)
+                      print("Waiting for task completion...")
+                      waiter = ecs_client.get_waiter('tasks_stopped')
+                      waiter.wait(
+                          cluster=os.environ['ECS_CLUSTER'],
+                          tasks=[task_arn],
+                          WaiterConfig={
+                              'Delay': 10,
+                              'MaxAttempts': 60  # 10 minutes max
+                          }
+                      )
+
+                      # Get task results
+                      task_details = ecs_client.describe_tasks(
+                          cluster=os.environ['ECS_CLUSTER'],
+                          tasks=[task_arn]
+                      )
+
+                      task = task_details['tasks'][0]
+                      exit_code = task['containers'][0].get('exitCode', -1)
+
+                      if exit_code == 0:
+                          print("Query processing completed successfully")
+                          return {
+                              'statusCode': 200,
+                              'headers': {
+                                  'Content-Type': 'application/json',
+                                  'Access-Control-Allow-Origin': '*'
+                              },
+                              'body': json.dumps({
+                                  'status': 'success',
+                                  'query': query,
+                                  'task_arn': task_arn,
+                                  'message': 'Query processed successfully. Check EFS output directory for results.'
+                              })
+                          }
+                      else:
+                          print(f"Task failed with exit code: {exit_code}")
+                          return {
+                              'statusCode': 500,
+                              'headers': {
+                                  'Content-Type': 'application/json',
+                                  'Access-Control-Allow-Origin': '*'
+                              },
+                              'body': json.dumps({
+                                  'error': f'Query processing failed with exit code: {exit_code}',
+                                  'task_arn': task_arn
+                              })
+                          }
+
+                  except Exception as e:
+                      print(f"Error running RAG-Anything task: {str(e)}")
+                      return {
+                          'statusCode': 500,
+                          'headers': {
+                              'Content-Type': 'application/json',
+                              'Access-Control-Allow-Origin': '*'
+                          },
+                          'body': json.dumps({'error': f'Error running RAG-Anything task: {str(e)}'})
+                      }
+
               except Exception as e:
+                  print(f"Error processing query: {str(e)}")
                   return {
                       'statusCode': 500,
+                      'headers': {
+                          'Content-Type': 'application/json',
+                          'Access-Control-Allow-Origin': '*'
+                      },
                       'body': json.dumps({'error': str(e)})
                   }
       Role: !GetAtt LambdaExecutionRole.Arn
@@ -564,16 +653,113 @@ Resources:
     Properties:
       FunctionName: !Sub 'pharma-document-processor-${Environment}'
       Runtime: python3.11
-      Handler: s3_processor_simple.lambda_handler
+      Handler: index.lambda_handler
       Code:
         ZipFile: |
-          # This will be replaced by the actual Lambda function code during deployment
+          import json
+          import os
+          import boto3
+          import time
+
           def lambda_handler(event, context):
-              return {'statusCode': 200}
+              """Handle S3 document upload events"""
+              try:
+                  # Parse S3 event
+                  for record in event['Records']:
+                      bucket = record['s3']['bucket']['name']
+                      key = record['s3']['object']['key']
+                      
+                      print(f"Processing document: s3://{bucket}/{key}")
+                      
+                      # Initialize ECS client
+                      ecs_client = boto3.client('ecs')
+                      
+                      try:
+                          # Run RAG-Anything task with document info as environment variables
+                          print("Starting RAG-Anything task for document processing...")
+                          response = ecs_client.run_task(
+                              cluster=os.environ['ECS_CLUSTER'],
+                              taskDefinition=os.environ['RAGANYTHING_TASK_DEFINITION'],
+                              capacityProviderStrategy=[
+                                  {
+                                      'capacityProvider': 'FARGATE_SPOT',
+                                      'weight': 3
+                                  },
+                                  {
+                                      'capacityProvider': 'FARGATE',
+                                      'weight': 1
+                                  }
+                              ],
+                              networkConfiguration={
+                                  'awsvpcConfiguration': {
+                                      'subnets': os.environ['SUBNETS'].split(','),
+                                      'securityGroups': [os.environ['SECURITY_GROUP']],
+                                      'assignPublicIp': 'ENABLED'
+                                  }
+                              },
+                              overrides={
+                                  'containerOverrides': [
+                                      {
+                                          'name': 'raganything',
+                                          'environment': [
+                                              {'name': 'S3_BUCKET', 'value': bucket},
+                                              {'name': 'S3_KEY', 'value': key},
+                                              {'name': 'MODE', 'value': 'process_document'}
+                                          ]
+                                      }
+                                  ]
+                              }
+                          )
+                          
+                          task_arn = response['tasks'][0]['taskArn']
+                          print(f"RAG-Anything task started: {task_arn}")
+                          
+                          # Wait for task to complete (with timeout)
+                          print("Waiting for task completion...")
+                          waiter = ecs_client.get_waiter('tasks_stopped')
+                          waiter.wait(
+                              cluster=os.environ['ECS_CLUSTER'],
+                              tasks=[task_arn],
+                              WaiterConfig={
+                                  'Delay': 15,
+                                  'MaxAttempts': 80  # 20 minutes max for document processing
+                              }
+                          )
+                          
+                          # Get task results
+                          task_details = ecs_client.describe_tasks(
+                              cluster=os.environ['ECS_CLUSTER'],
+                              tasks=[task_arn]
+                          )
+                          
+                          task = task_details['tasks'][0]
+                          exit_code = task['containers'][0].get('exitCode', -1)
+                          
+                          if exit_code == 0:
+                              print(f"Document processing completed successfully for s3://{bucket}/{key}")
+                          else:
+                              print(f"Document processing failed with exit code: {exit_code} for s3://{bucket}/{key}")
+                          
+                      except Exception as e:
+                          print(f"Error processing document s3://{bucket}/{key}: {str(e)}")
+                          continue
+                          
+              except Exception as e:
+                  print(f"Error processing S3 event: {str(e)}")
+                  return {
+                      'statusCode': 500,
+                      'body': json.dumps({'error': str(e)})
+                  }
+              
+              return {
+                  'statusCode': 200,
+                  'body': json.dumps({'message': 'Document processing completed'})
+              }
       Role: !GetAtt LambdaExecutionRole.Arn
       Environment:
         Variables:
           ECS_CLUSTER: !Ref ECSCluster
+          RAGANYTHING_TASK_DEFINITION: !Ref RaganythingTaskDefinition
           SUBNETS: !Sub '${PrivateSubnet1},${PrivateSubnet2}'
           SECURITY_GROUP: !Ref ECSSecurityGroup
       Timeout: 300
