@@ -49,25 +49,38 @@ def health():
 @app.route('/parse', methods=['POST'])
 def parse_document():
     """Parse document using Docling"""
+    start_time = time.time()
+    print(f"🔄 [DOCLING] Starting document parsing at {time.strftime('%Y-%m-%d %H:%M:%S')}")
+    
     try:
         update_activity()
         
         if 'file' not in request.files:
+            print(f"❌ [DOCLING] No file provided - {time.time() - start_time:.2f}s")
             return jsonify({"error": "No file provided"}), 400
         
         file = request.files['file']
         if file.filename == '':
+            print(f"❌ [DOCLING] No file selected - {time.time() - start_time:.2f}s")
             return jsonify({"error": "No file selected"}), 400
         
+        print(f"📄 [DOCLING] Processing file: {file.filename}")
+        
         # Save uploaded file temporarily
+        save_start = time.time()
         temp_file_path = f"/tmp/{file.filename}"
         file.save(temp_file_path)
+        print(f"💾 [DOCLING] File saved in {time.time() - save_start:.2f}s")
         
         try:
             # Process document with Docling
+            parse_start = time.time()
             result = converter.convert(temp_file_path)
+            parse_duration = time.time() - parse_start
+            print(f"🔍 [DOCLING] Document parsing completed in {parse_duration:.2f}s")
             
             # Extract text content
+            extract_start = time.time()
             content = ""
             if hasattr(result, 'document') and hasattr(result.document, 'text'):
                 content = result.document.text
@@ -77,25 +90,42 @@ def parse_document():
                 # Try to extract text from any available source
                 content = str(result)
             
+            extract_duration = time.time() - extract_start
+            print(f"📝 [DOCLING] Content extraction completed in {extract_duration:.2f}s")
+            
             # Clean up temp file
+            cleanup_start = time.time()
             os.remove(temp_file_path)
+            cleanup_duration = time.time() - cleanup_start
+            print(f"🧹 [DOCLING] Cleanup completed in {cleanup_duration:.2f}s")
+            
+            total_duration = time.time() - start_time
+            print(f"✅ [DOCLING] Total processing time: {total_duration:.2f}s")
             
             return jsonify({
                 "status": "success",
                 "filename": file.filename,
                 "content": content,
                 "content_length": len(content),
-                "message": "Document parsed successfully"
+                "message": "Document parsed successfully",
+                "timing": {
+                    "total_duration": total_duration,
+                    "parsing_duration": parse_duration,
+                    "extraction_duration": extract_duration,
+                    "cleanup_duration": cleanup_duration
+                }
             })
             
         except Exception as e:
             # Clean up temp file on error
             if os.path.exists(temp_file_path):
                 os.remove(temp_file_path)
+            print(f"❌ [DOCLING] Processing error: {str(e)} - {time.time() - start_time:.2f}s")
             raise e
         
     except Exception as e:
-        print(f"Error parsing document: {str(e)}")
+        total_duration = time.time() - start_time
+        print(f"❌ [DOCLING] Error parsing document: {str(e)} - {total_duration:.2f}s")
         return jsonify({"error": str(e)}), 500
 
 @app.route('/process', methods=['POST'])

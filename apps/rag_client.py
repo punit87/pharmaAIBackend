@@ -47,6 +47,9 @@ def health():
 @app.route('/process', methods=['POST'])
 def process_document():
     """Process document using RAG-Anything with Docling for parsing"""
+    start_time = time.time()
+    print(f"🔄 [RAG] Starting document processing at {time.strftime('%Y-%m-%d %H:%M:%S.%f')[:-3]}")
+    
     try:
         update_activity()
         
@@ -55,7 +58,11 @@ def process_document():
         s3_key = data.get('key')
         
         if not s3_bucket or not s3_key:
+            duration = time.time() - start_time
+            print(f"❌ [RAG] Missing bucket or key - {duration:.3f}s")
             return jsonify({"error": "Missing bucket or key"}), 400
+        
+        print(f"📄 [RAG] Processing document: s3://{s3_bucket}/{s3_key}")
         
         # Get environment variables
         neo4j_uri = os.environ.get('NEO4J_URI')
@@ -65,12 +72,16 @@ def process_document():
         docling_url = os.environ.get('DOCLING_SERVICE_URL', 'http://localhost:8000')
         
         # Download file from S3
+        download_start = time.time()
         s3_client = boto3.client('s3')
         temp_file_path = f"/tmp/{os.path.basename(s3_key)}"
         s3_client.download_file(s3_bucket, s3_key, temp_file_path)
+        download_duration = time.time() - download_start
+        print(f"📥 [RAG] S3 download completed in {download_duration:.3f}s")
         
         # Call Docling service for document parsing
-        print(f"Calling Docling service at {docling_url} for document parsing")
+        print(f"🔗 [RAG] Calling Docling service at {docling_url}")
+        docling_start = time.time()
         
         with open(temp_file_path, 'rb') as file:
             files = {'file': (os.path.basename(s3_key), file, 'application/octet-stream')}
@@ -78,50 +89,80 @@ def process_document():
             response.raise_for_status()
             
             docling_result = response.json()
-            print(f"Docling parsing result: {docling_result}")
+            docling_duration = time.time() - docling_start
+            print(f"🔍 [RAG] Docling parsing completed in {docling_duration:.3f}s")
+            print(f"📊 [RAG] Docling result: {docling_result.get('message', 'Success')}")
         
         # Now use RAG-Anything for RAG processing with the parsed content
+        rag_start = time.time()
         from raganything import RAGAnything
         
         # Initialize RAG-Anything
+        init_start = time.time()
         rag = RAGAnything(
             neo4j_uri=neo4j_uri,
             neo4j_username=neo4j_username,
             neo4j_password=neo4j_password,
             openai_api_key=openai_api_key
         )
+        init_duration = time.time() - init_start
+        print(f"🚀 [RAG] RAG-Anything initialization completed in {init_duration:.3f}s")
         
         # Process the parsed content with RAG-Anything
-        # We'll use the parsed content from Docling
         parsed_content = docling_result.get('content', '')
         
         if parsed_content:
+            process_start = time.time()
             # Store the parsed content in Neo4j using RAG-Anything
             result = asyncio.run(rag.process_content(
                 content=parsed_content,
                 doc_id=s3_key,
                 content_type="document"
             ))
+            process_duration = time.time() - process_start
+            print(f"💾 [RAG] Content processing completed in {process_duration:.3f}s")
         else:
             result = {"error": "No content parsed from Docling"}
+            process_duration = 0
+            print(f"⚠️ [RAG] No content to process")
+        
+        rag_duration = time.time() - rag_start
         
         # Clean up temp file
+        cleanup_start = time.time()
         os.remove(temp_file_path)
+        cleanup_duration = time.time() - cleanup_start
+        print(f"🧹 [RAG] Cleanup completed in {cleanup_duration:.3f}s")
+        
+        total_duration = time.time() - start_time
+        print(f"✅ [RAG] Total processing time: {total_duration:.3f}s")
         
         return jsonify({
             "status": "success",
             "result": result,
             "docling_result": docling_result,
-            "message": "Document processed successfully with Docling + RAG-Anything"
+            "message": "Document processed successfully with Docling + RAG-Anything",
+            "timing": {
+                "total_duration": total_duration,
+                "download_duration": download_duration,
+                "docling_duration": docling_duration,
+                "rag_init_duration": init_duration,
+                "rag_process_duration": process_duration,
+                "cleanup_duration": cleanup_duration
+            }
         })
         
     except Exception as e:
-        print(f"Error processing document: {str(e)}")
+        total_duration = time.time() - start_time
+        print(f"❌ [RAG] Error processing document: {str(e)} - {total_duration:.3f}s")
         return jsonify({"error": str(e)}), 500
 
 @app.route('/query', methods=['POST'])
 def process_query():
     """Process RAG query using RAG-Anything"""
+    start_time = time.time()
+    print(f"🔄 [RAG] Starting query processing at {time.strftime('%Y-%m-%d %H:%M:%S.%f')[:-3]}")
+    
     try:
         update_activity()
         
@@ -129,7 +170,11 @@ def process_query():
         query = data.get('query', '')
         
         if not query:
+            duration = time.time() - start_time
+            print(f"❌ [RAG] Missing query - {duration:.3f}s")
             return jsonify({"error": "Missing query"}), 400
+        
+        print(f"❓ [RAG] Processing query: {query[:100]}{'...' if len(query) > 100 else ''}")
         
         # Get environment variables
         neo4j_uri = os.environ.get('NEO4J_URI')
@@ -137,36 +182,54 @@ def process_query():
         neo4j_password = os.environ.get('NEO4J_PASSWORD')
         openai_api_key = os.environ.get('OPENAI_API_KEY')
         
-        # Import RAG-Anything
+        # Initialize RAG-Anything
+        init_start = time.time()
         from raganything import RAGAnything
         
-        # Initialize RAG-Anything
         rag = RAGAnything(
             neo4j_uri=neo4j_uri,
             neo4j_username=neo4j_username,
             neo4j_password=neo4j_password,
             openai_api_key=openai_api_key
         )
+        init_duration = time.time() - init_start
+        print(f"🚀 [RAG] RAG-Anything initialization completed in {init_duration:.3f}s")
         
         # Process query
+        query_start = time.time()
         result = asyncio.run(rag.query(query))
+        query_duration = time.time() - query_start
+        print(f"🔍 [RAG] Query processing completed in {query_duration:.3f}s")
+        
+        total_duration = time.time() - start_time
+        print(f"✅ [RAG] Total query time: {total_duration:.3f}s")
         
         return jsonify({
             "query": query,
             "answer": result.get('answer', 'No answer generated'),
             "sources": result.get('sources', []),
             "confidence": result.get('confidence', 0.0),
-            "status": "completed"
+            "status": "completed",
+            "timing": {
+                "total_duration": total_duration,
+                "init_duration": init_duration,
+                "query_duration": query_duration
+            }
         })
         
     except Exception as e:
-        print(f"Error processing query: {str(e)}")
+        total_duration = time.time() - start_time
+        print(f"❌ [RAG] Error processing query: {str(e)} - {total_duration:.3f}s")
         return jsonify({
             "query": query,
             "answer": f"Error processing query: {str(e)}",
             "sources": [],
             "confidence": 0.0,
-            "status": "error"
+            "status": "error",
+            "timing": {
+                "total_duration": total_duration,
+                "error": str(e)
+            }
         }), 500
 
 def main():

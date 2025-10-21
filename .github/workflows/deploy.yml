@@ -21,16 +21,19 @@ jobs:
     steps:
     - name: Checkout
       uses: actions/checkout@v4
+      run: echo "✅ Checkout completed at $(date)"
 
     - name: Configure AWS credentials
       uses: aws-actions/configure-aws-credentials@v4
       with:
         role-to-assume: ${{ secrets.AWS_ROLE_ARN }}
         aws-region: ${{ env.AWS_REGION }}
+      run: echo "✅ AWS credentials configured at $(date)"
 
     - name: Login to Amazon ECR
       id: login-ecr
       uses: aws-actions/amazon-ecr-login@v2
+      run: echo "✅ ECR login completed at $(date)"
 
     - name: Build and push Docling image
       env:
@@ -38,9 +41,26 @@ jobs:
         ECR_REPOSITORY: ${{ env.ECR_REPOSITORY_DOCLING }}
         IMAGE_TAG: latest
       run: |
+        echo "🔄 [DEPLOY] Starting Docling image build at $(date)"
+        BUILD_START=$(date +%s.%3N)
+        
+        echo "📦 [DEPLOY] Building Docling Docker image..."
         docker build -f Dockerfile.docling -t $ECR_REGISTRY/$ECR_REPOSITORY:$IMAGE_TAG .
+        BUILD_END=$(date +%s.%3N)
+        BUILD_DURATION=$(echo "$BUILD_END - $BUILD_START" | bc)
+        echo "✅ [DEPLOY] Docling image built in ${BUILD_DURATION}s"
+        
+        echo "📤 [DEPLOY] Pushing Docling image to ECR..."
+        PUSH_START=$(date +%s.%3N)
         docker push $ECR_REGISTRY/$ECR_REPOSITORY:$IMAGE_TAG
-        echo "Pushed Docling image: $ECR_REGISTRY/$ECR_REPOSITORY:$IMAGE_TAG"
+        PUSH_END=$(date +%s.%3N)
+        PUSH_DURATION=$(echo "$PUSH_END - $PUSH_START" | bc)
+        echo "✅ [DEPLOY] Docling image pushed in ${PUSH_DURATION}s"
+        
+        TOTAL_END=$(date +%s.%3N)
+        TOTAL_DURATION=$(echo "$TOTAL_END - $BUILD_START" | bc)
+        echo "🎉 [DEPLOY] Docling total time: ${TOTAL_DURATION}s"
+        echo "📋 [DEPLOY] Pushed Docling image: $ECR_REGISTRY/$ECR_REPOSITORY:$IMAGE_TAG"
 
     - name: Build and push RAG-Anything image
       env:
@@ -48,9 +68,26 @@ jobs:
         ECR_REPOSITORY: ${{ env.ECR_REPOSITORY_RAGANYTHING }}
         IMAGE_TAG: latest
       run: |
+        echo "🔄 [DEPLOY] Starting RAG-Anything image build at $(date)"
+        BUILD_START=$(date +%s.%3N)
+        
+        echo "📦 [DEPLOY] Building RAG-Anything Docker image..."
         docker build -f Dockerfile.raganything -t $ECR_REGISTRY/$ECR_REPOSITORY:$IMAGE_TAG .
+        BUILD_END=$(date +%s.%3N)
+        BUILD_DURATION=$(echo "$BUILD_END - $BUILD_START" | bc)
+        echo "✅ [DEPLOY] RAG-Anything image built in ${BUILD_DURATION}s"
+        
+        echo "📤 [DEPLOY] Pushing RAG-Anything image to ECR..."
+        PUSH_START=$(date +%s.%3N)
         docker push $ECR_REGISTRY/$ECR_REPOSITORY:$IMAGE_TAG
-        echo "Pushed RAG-Anything image: $ECR_REGISTRY/$ECR_REPOSITORY:$IMAGE_TAG"
+        PUSH_END=$(date +%s.%3N)
+        PUSH_DURATION=$(echo "$PUSH_END - $PUSH_START" | bc)
+        echo "✅ [DEPLOY] RAG-Anything image pushed in ${PUSH_DURATION}s"
+        
+        TOTAL_END=$(date +%s.%3N)
+        TOTAL_DURATION=$(echo "$TOTAL_END - $BUILD_START" | bc)
+        echo "🎉 [DEPLOY] RAG-Anything total time: ${TOTAL_DURATION}s"
+        echo "📋 [DEPLOY] Pushed RAG-Anything image: $ECR_REGISTRY/$ECR_REPOSITORY:$IMAGE_TAG"
 
   deploy:
     needs: build-and-push
@@ -77,6 +114,9 @@ jobs:
         NEO4J_USERNAME: ${{ secrets.NEO4J_USERNAME }}
         AWS_ACCOUNT_ID: ${{ secrets.AWS_ACCOUNT_ID }}
       run: |
+        echo "🔄 [DEPLOY] Starting CloudFormation deployment at $(date)"
+        DEPLOY_START=$(date +%s.%3N)
+        
         # Set variables
         STACK_NAME="pharma-rag-infrastructure"
         ENVIRONMENT="dev"
@@ -87,11 +127,13 @@ jobs:
         DOCLING_IMAGE_URI="$AWS_ACCOUNT_ID.dkr.ecr.$AWS_REGION.amazonaws.com/pharma-docling-dev:latest"
         RAGANYTHING_IMAGE_URI="$AWS_ACCOUNT_ID.dkr.ecr.$AWS_REGION.amazonaws.com/pharma-raganything-dev:latest"
         
-        echo "Deploying CloudFormation stack: $STACK_NAME-$ENVIRONMENT"
-        echo "Docling Image URI: $DOCLING_IMAGE_URI"
-        echo "RAG-Anything Image URI: $RAGANYTHING_IMAGE_URI"
+        echo "📋 [DEPLOY] Deploying CloudFormation stack: $STACK_NAME-$ENVIRONMENT"
+        echo "📋 [DEPLOY] Docling Image URI: $DOCLING_IMAGE_URI"
+        echo "📋 [DEPLOY] RAG-Anything Image URI: $RAGANYTHING_IMAGE_URI"
         
         # Deploy CloudFormation stack
+        echo "🚀 [DEPLOY] Starting CloudFormation deployment..."
+        CF_START=$(date +%s.%3N)
         aws cloudformation deploy \
           --template-file "$TEMPLATE_FILE" \
           --stack-name "$STACK_NAME-$ENVIRONMENT" \
@@ -105,25 +147,42 @@ jobs:
             Neo4jUsername="$NEO4J_USERNAME" \
             Neo4jPassword="$NEO4J_PASSWORD" \
           --region "$AWS_REGION"
+        CF_END=$(date +%s.%3N)
+        CF_DURATION=$(echo "$CF_END - $CF_START" | bc)
+        echo "✅ [DEPLOY] CloudFormation deployment completed in ${CF_DURATION}s"
         
         # Get stack outputs
+        echo "📊 [DEPLOY] Retrieving stack outputs..."
+        OUTPUTS_START=$(date +%s.%3N)
         echo "Stack Outputs:"
         aws cloudformation describe-stacks \
           --stack-name "$STACK_NAME-$ENVIRONMENT" \
           --query 'Stacks[0].Outputs' \
           --output table \
           --region "$AWS_REGION"
+        OUTPUTS_END=$(date +%s.%3N)
+        OUTPUTS_DURATION=$(echo "$OUTPUTS_END - $OUTPUTS_START" | bc)
+        echo "✅ [DEPLOY] Stack outputs retrieved in ${OUTPUTS_DURATION}s"
         
         # Get API Gateway URL
+        echo "🔗 [DEPLOY] Getting API Gateway URL..."
+        API_START=$(date +%s.%3N)
         API_URL=$(aws cloudformation describe-stacks \
           --stack-name "$STACK_NAME-$ENVIRONMENT" \
           --query 'Stacks[0].Outputs[?OutputKey==`ApiGatewayUrl`].OutputValue' \
           --output text \
-          --region "$AWS_REGION")
+          --region "$AWS_REGION" 2>/dev/null || echo "")
+        API_END=$(date +%s.%3N)
+        API_DURATION=$(echo "$API_END - $API_START" | bc)
+        echo "✅ [DEPLOY] API Gateway URL retrieved in ${API_DURATION}s"
+        
+        TOTAL_END=$(date +%s.%3N)
+        TOTAL_DURATION=$(echo "$TOTAL_END - $DEPLOY_START" | bc)
+        echo "🎉 [DEPLOY] Total deployment time: ${TOTAL_DURATION}s"
         
         if [ ! -z "$API_URL" ]; then
-          echo "API Gateway URL: $API_URL"
-          echo "Test endpoints:"
+          echo "🌐 [DEPLOY] API Gateway URL: $API_URL"
+          echo "🧪 [DEPLOY] Test endpoints:"
           echo "  GET  $API_URL/presigned-url"
           echo "  POST $API_URL/rag-query"
         fi
