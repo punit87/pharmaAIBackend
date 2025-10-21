@@ -105,6 +105,15 @@ Resources:
         BlockPublicPolicy: true
         IgnorePublicAcls: true
         RestrictPublicBuckets: true
+      NotificationConfiguration:
+        LambdaConfigurations:
+          - Event: s3:ObjectCreated:*
+            Function: !GetAtt DocumentProcessorFunction.Arn
+            Filter:
+              S3Key:
+                Rules:
+                  - Name: suffix
+                    Value: .pdf
 
   # VPC and Networking
   VPC:
@@ -733,23 +742,6 @@ Resources:
       Principal: s3.amazonaws.com
       SourceArn: !GetAtt DocumentBucket.Arn
 
-  # S3 Bucket Notification Configuration
-  S3BucketNotification:
-    Type: AWS::S3::Bucket
-    DependsOn: 
-      - DocumentProcessorFunction
-      - S3LambdaPermission
-    Properties:
-      Bucket: !Ref DocumentBucket
-      NotificationConfiguration:
-        LambdaConfigurations:
-          - Event: s3:ObjectCreated:*
-            Function: !GetAtt DocumentProcessorFunction.Arn
-            Filter:
-              S3Key:
-                Rules:
-                  - Name: suffix
-                    Value: .pdf
 
 Outputs:
   DoclingRepositoryUri:
