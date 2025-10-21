@@ -6,6 +6,7 @@ import json
 import os
 import boto3
 import time
+import requests
 
 def lambda_handler(event, context):
     """Handle S3 document upload events"""
@@ -57,20 +58,19 @@ def lambda_handler(event, context):
             # Start Docling if not running
             if not docling_ip:
                 print("Starting Docling service...")
-                docling_response = ecs_client.run_task(
-                    cluster=os.environ['ECS_CLUSTER'],
-                    taskDefinition=os.environ['DOCLING_TASK_DEFINITION'],
-                    launchType='FARGATE',
-                    capacityProviderStrategy=[
-                        {
-                            'capacityProvider': 'FARGATE_SPOT',
-                            'weight': 3
-                        },
-                        {
-                            'capacityProvider': 'FARGATE',
-                            'weight': 1
-                        }
-                    ],
+                    docling_response = ecs_client.run_task(
+                        cluster=os.environ['ECS_CLUSTER'],
+                        taskDefinition=os.environ['DOCLING_TASK_DEFINITION'],
+                        capacityProviderStrategy=[
+                            {
+                                'capacityProvider': 'FARGATE_SPOT',
+                                'weight': 3
+                            },
+                            {
+                                'capacityProvider': 'FARGATE',
+                                'weight': 1
+                            }
+                        ],
                     networkConfiguration={
                         'awsvpcConfiguration': {
                             'subnets': os.environ['SUBNETS'].split(','),
@@ -126,20 +126,19 @@ def lambda_handler(event, context):
             
             # Start RAG-Anything container as a persistent service
             print("Starting RAG-Anything container as persistent service...")
-            response = ecs_client.run_task(
-                cluster=os.environ['ECS_CLUSTER'],
-                taskDefinition=os.environ['RAGANYTHING_TASK_DEFINITION'],
-                launchType='FARGATE',
-                capacityProviderStrategy=[
-                    {
-                        'capacityProvider': 'FARGATE_SPOT',
-                        'weight': 3
-                    },
-                    {
-                        'capacityProvider': 'FARGATE',
-                        'weight': 1
-                    }
-                ],
+                response = ecs_client.run_task(
+                    cluster=os.environ['ECS_CLUSTER'],
+                    taskDefinition=os.environ['RAGANYTHING_TASK_DEFINITION'],
+                    capacityProviderStrategy=[
+                        {
+                            'capacityProvider': 'FARGATE_SPOT',
+                            'weight': 3
+                        },
+                        {
+                            'capacityProvider': 'FARGATE',
+                            'weight': 1
+                        }
+                    ],
                 networkConfiguration={
                     'awsvpcConfiguration': {
                         'subnets': os.environ['SUBNETS'].split(','),
@@ -212,7 +211,6 @@ def lambda_handler(event, context):
             print(f"RAG-Anything service running at: {raganything_ip}")
             
             # Now call the Flask endpoint to process the document
-            import requests
             
             raganything_url = f"http://{raganything_ip}:8000"
             process_url = f"{raganything_url}/process"

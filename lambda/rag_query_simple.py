@@ -6,6 +6,7 @@ import json
 import os
 import boto3
 import time
+import requests
 
 def lambda_handler(event, context):
     """Handle RAG query requests"""
@@ -72,7 +73,6 @@ def lambda_handler(event, context):
             docling_response = ecs_client.run_task(
                 cluster=os.environ['ECS_CLUSTER'],
                 taskDefinition=os.environ['DOCLING_TASK_DEFINITION'],
-                launchType='FARGATE',
                 capacityProviderStrategy=[
                     {
                         'capacityProvider': 'FARGATE_SPOT',
@@ -153,7 +153,6 @@ def lambda_handler(event, context):
         response = ecs_client.run_task(
             cluster=os.environ['ECS_CLUSTER'],
             taskDefinition=os.environ['RAGANYTHING_TASK_DEFINITION'],
-            launchType='FARGATE',
             capacityProviderStrategy=[
                 {
                     'capacityProvider': 'FARGATE_SPOT',
@@ -248,7 +247,6 @@ def lambda_handler(event, context):
         print(f"RAG-Anything service running at: {raganything_ip}")
         
         # Now call the Flask endpoint to process the query
-        import requests
         
         raganything_url = f"http://{raganything_ip}:8000"
         query_url = f"{raganything_url}/query"
