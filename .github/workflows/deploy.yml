@@ -8,8 +8,8 @@ on:
 env:
   AWS_REGION: us-east-1
   ECR_REGISTRY: ${{ secrets.AWS_ACCOUNT_ID }}.dkr.ecr.us-east-1.amazonaws.com
-  ECR_REPOSITORY_DOCLING: pharma-docling
-  ECR_REPOSITORY_RAGANYTHING: pharma-raganything
+  ECR_REPOSITORY_DOCLING: pharma-docling-dev
+  ECR_REPOSITORY_RAGANYTHING: pharma-raganything-dev
 
 jobs:
   build-and-push:
@@ -36,23 +36,21 @@ jobs:
       env:
         ECR_REGISTRY: ${{ steps.login-ecr.outputs.registry }}
         ECR_REPOSITORY: ${{ env.ECR_REPOSITORY_DOCLING }}
-        IMAGE_TAG: ${{ github.sha }}
+        IMAGE_TAG: latest
       run: |
         docker build -f Dockerfile.docling -t $ECR_REGISTRY/$ECR_REPOSITORY:$IMAGE_TAG .
-        docker build -f Dockerfile.docling -t $ECR_REGISTRY/$ECR_REPOSITORY:latest .
         docker push $ECR_REGISTRY/$ECR_REPOSITORY:$IMAGE_TAG
-        docker push $ECR_REGISTRY/$ECR_REPOSITORY:latest
+        echo "Pushed Docling image: $ECR_REGISTRY/$ECR_REPOSITORY:$IMAGE_TAG"
 
     - name: Build and push RAG-Anything image
       env:
         ECR_REGISTRY: ${{ steps.login-ecr.outputs.registry }}
         ECR_REPOSITORY: ${{ env.ECR_REPOSITORY_RAGANYTHING }}
-        IMAGE_TAG: ${{ github.sha }}
+        IMAGE_TAG: latest
       run: |
         docker build -f Dockerfile.raganything -t $ECR_REGISTRY/$ECR_REPOSITORY:$IMAGE_TAG .
-        docker build -f Dockerfile.raganything -t $ECR_REGISTRY/$ECR_REPOSITORY:latest .
         docker push $ECR_REGISTRY/$ECR_REPOSITORY:$IMAGE_TAG
-        docker push $ECR_REGISTRY/$ECR_REPOSITORY:latest
+        echo "Pushed RAG-Anything image: $ECR_REGISTRY/$ECR_REPOSITORY:$IMAGE_TAG"
 
   deploy:
     needs: build-and-push
@@ -86,8 +84,8 @@ jobs:
         TEMPLATE_FILE="infrastructure/ecs-infrastructure.yml"
         
         # Set image URIs
-        DOCLING_IMAGE_URI="$AWS_ACCOUNT_ID.dkr.ecr.$AWS_REGION.amazonaws.com/pharma-docling:latest"
-        RAGANYTHING_IMAGE_URI="$AWS_ACCOUNT_ID.dkr.ecr.$AWS_REGION.amazonaws.com/pharma-raganything:latest"
+        DOCLING_IMAGE_URI="$AWS_ACCOUNT_ID.dkr.ecr.$AWS_REGION.amazonaws.com/pharma-docling-dev:latest"
+        RAGANYTHING_IMAGE_URI="$AWS_ACCOUNT_ID.dkr.ecr.$AWS_REGION.amazonaws.com/pharma-raganything-dev:latest"
         
         echo "Deploying CloudFormation stack: $STACK_NAME-$ENVIRONMENT"
         echo "Docling Image URI: $DOCLING_IMAGE_URI"
