@@ -6,7 +6,6 @@ on:
   workflow_dispatch:
 
 env:
-  ECR_REPOSITORY_DOCLING: pharma-docling-dev
   ECR_REPOSITORY_RAGANYTHING: pharma-raganything-dev
 
 jobs:
@@ -33,59 +32,32 @@ jobs:
       with:
         region: ${{ secrets.AWS_DEFAULT_REGION }}
 
-    - name: Build and push Docling image
-      env:
-        ECR_REGISTRY: ${{ steps.login-ecr.outputs.registry }}
-        ECR_REPOSITORY: ${{ env.ECR_REPOSITORY_DOCLING }}
-        IMAGE_TAG: latest
-      run: |
-        echo "🔄 [DEPLOY] Starting Docling image build at $(date)"
-        BUILD_START=$(date +%s.%3N)
-        
-        echo "📦 [DEPLOY] Building Docling Docker image..."
-        docker build -f Dockerfile.docling -t $ECR_REGISTRY/$ECR_REPOSITORY:$IMAGE_TAG .
-        BUILD_END=$(date +%s.%3N)
-        BUILD_DURATION=$(echo "$BUILD_END - $BUILD_START" | bc)
-        echo "✅ [DEPLOY] Docling image built in ${BUILD_DURATION}s"
-        
-        echo "📤 [DEPLOY] Pushing Docling image to ECR..."
-        PUSH_START=$(date +%s.%3N)
-        docker push $ECR_REGISTRY/$ECR_REPOSITORY:$IMAGE_TAG
-        PUSH_END=$(date +%s.%3N)
-        PUSH_DURATION=$(echo "$PUSH_END - $PUSH_START" | bc)
-        echo "✅ [DEPLOY] Docling image pushed in ${PUSH_DURATION}s"
-        
-        TOTAL_END=$(date +%s.%3N)
-        TOTAL_DURATION=$(echo "$TOTAL_END - $BUILD_START" | bc)
-        echo "🎉 [DEPLOY] Docling total time: ${TOTAL_DURATION}s"
-        echo "📋 [DEPLOY] Pushed Docling image: $ECR_REGISTRY/$ECR_REPOSITORY:$IMAGE_TAG"
-
-    - name: Build and push RAG-Anything image
+    - name: Build and push RAG-Anything + Docling image
       env:
         ECR_REGISTRY: ${{ steps.login-ecr.outputs.registry }}
         ECR_REPOSITORY: ${{ env.ECR_REPOSITORY_RAGANYTHING }}
         IMAGE_TAG: latest
       run: |
-        echo "🔄 [DEPLOY] Starting RAG-Anything image build at $(date)"
+        echo "🔄 [DEPLOY] Starting RAG-Anything + Docling image build at $(date)"
         BUILD_START=$(date +%s.%3N)
         
-        echo "📦 [DEPLOY] Building RAG-Anything Docker image..."
-        docker build -f Dockerfile.raganything -t $ECR_REGISTRY/$ECR_REPOSITORY:$IMAGE_TAG .
+        echo "📦 [DEPLOY] Building RAG-Anything + Docling Docker image..."
+        docker build -f Dockerfile -t $ECR_REGISTRY/$ECR_REPOSITORY:$IMAGE_TAG .
         BUILD_END=$(date +%s.%3N)
         BUILD_DURATION=$(echo "$BUILD_END - $BUILD_START" | bc)
-        echo "✅ [DEPLOY] RAG-Anything image built in ${BUILD_DURATION}s"
+        echo "✅ [DEPLOY] RAG-Anything + Docling image built in ${BUILD_DURATION}s"
         
-        echo "📤 [DEPLOY] Pushing RAG-Anything image to ECR..."
+        echo "📤 [DEPLOY] Pushing RAG-Anything + Docling image to ECR..."
         PUSH_START=$(date +%s.%3N)
         docker push $ECR_REGISTRY/$ECR_REPOSITORY:$IMAGE_TAG
         PUSH_END=$(date +%s.%3N)
         PUSH_DURATION=$(echo "$PUSH_END - $PUSH_START" | bc)
-        echo "✅ [DEPLOY] RAG-Anything image pushed in ${PUSH_DURATION}s"
+        echo "✅ [DEPLOY] RAG-Anything + Docling image pushed in ${PUSH_DURATION}s"
         
         TOTAL_END=$(date +%s.%3N)
         TOTAL_DURATION=$(echo "$TOTAL_END - $BUILD_START" | bc)
-        echo "🎉 [DEPLOY] RAG-Anything total time: ${TOTAL_DURATION}s"
-        echo "📋 [DEPLOY] Pushed RAG-Anything image: $ECR_REGISTRY/$ECR_REPOSITORY:$IMAGE_TAG"
+        echo "🎉 [DEPLOY] RAG-Anything + Docling total time: ${TOTAL_DURATION}s"
+        echo "📋 [DEPLOY] Pushed RAG-Anything + Docling image: $ECR_REGISTRY/$ECR_REPOSITORY:$IMAGE_TAG"
 
   deploy:
     needs: build-and-push

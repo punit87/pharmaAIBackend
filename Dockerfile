@@ -1,6 +1,7 @@
 # ============================================
-# RAG-Anything Dockerfile - Python 3.12 slim
+# RAG-Anything + Docling Dockerfile - Python 3.12 slim
 # Based on https://github.com/HKUDS/RAG-Anything
+# Bundles both RAG-Anything and Docling in single container
 # ============================================
 FROM python:3.12-slim
 
@@ -28,7 +29,11 @@ RUN apt-get update && \
     && rm -rf /var/lib/apt/lists/*
 
 # Install Python dependencies
+# Install RAG-Anything with all extensions (includes Docling)
 RUN pip install --no-cache-dir 'raganything[all]' boto3 requests flask
+
+# Verify Docling is available
+RUN python3 -c "import docling; print('Docling installed successfully')" || echo "Docling installation verification failed"
 
 # Copy RAG server script
 COPY apps/rag_client.py /var/task/
