@@ -6,8 +6,6 @@ on:
   workflow_dispatch:
 
 env:
-  AWS_REGION: us-east-1
-  ECR_REGISTRY: ${{ secrets.AWS_ACCOUNT_ID }}.dkr.ecr.us-east-1.amazonaws.com
   ECR_REPOSITORY_DOCLING: pharma-docling-dev
   ECR_REPOSITORY_RAGANYTHING: pharma-raganything-dev
 
@@ -25,12 +23,15 @@ jobs:
     - name: Configure AWS credentials
       uses: aws-actions/configure-aws-credentials@v4
       with:
-        role-to-assume: ${{ secrets.AWS_ROLE_ARN }}
-        aws-region: ${{ env.AWS_REGION }}
+        aws-access-key-id: ${{ secrets.AWS_ACCESS_KEY_ID }}
+        aws-secret-access-key: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
+        aws-region: ${{ secrets.AWS_DEFAULT_REGION }}
 
     - name: Login to Amazon ECR
       id: login-ecr
       uses: aws-actions/amazon-ecr-login@v2
+      with:
+        region: ${{ secrets.AWS_DEFAULT_REGION }}
 
     - name: Build and push Docling image
       env:
@@ -100,8 +101,9 @@ jobs:
     - name: Configure AWS credentials
       uses: aws-actions/configure-aws-credentials@v4
       with:
-        role-to-assume: ${{ secrets.AWS_ROLE_ARN }}
-        aws-region: ${{ env.AWS_REGION }}
+        aws-access-key-id: ${{ secrets.AWS_ACCESS_KEY_ID }}
+        aws-secret-access-key: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
+        aws-region: ${{ secrets.AWS_DEFAULT_REGION }}
 
     - name: Deploy CloudFormation stack
       env:
@@ -109,15 +111,17 @@ jobs:
         NEO4J_PASSWORD: ${{ secrets.NEO4J_PASSWORD }}
         NEO4J_URI: ${{ secrets.NEO4J_URI }}
         NEO4J_USERNAME: ${{ secrets.NEO4J_USERNAME }}
-        AWS_ACCOUNT_ID: ${{ secrets.AWS_ACCOUNT_ID }}
       run: |
         echo "🔄 [DEPLOY] Starting CloudFormation deployment at $(date)"
         DEPLOY_START=$(date +%s.%3N)
         
+        # Get AWS Account ID
+        AWS_ACCOUNT_ID=$(aws sts get-caller-identity --query Account --output text)
+        AWS_REGION="${{ secrets.AWS_DEFAULT_REGION }}"
+        
         # Set variables
         STACK_NAME="pharma-rag-infrastructure"
         ENVIRONMENT="dev"
-        AWS_REGION="us-east-1"
         TEMPLATE_FILE="infrastructure/ecs-infrastructure.yml"
         
         # Set image URIs
