@@ -78,6 +78,61 @@ jobs:
         aws-secret-access-key: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
         aws-region: ${{ secrets.AWS_DEFAULT_REGION }}
 
+    - name: Validate ECR Images Exist
+      env:
+        ECR_REPOSITORY: ${{ env.ECR_REPOSITORY }}
+      run: |
+        echo "🔍 [VALIDATE] Checking ECR images exist before deployment..."
+        VALIDATE_START=$(date +%s.%3N)
+        
+        # Get AWS Account ID and region
+        AWS_ACCOUNT_ID=$(aws sts get-caller-identity --query Account --output text)
+        AWS_REGION="${{ secrets.AWS_DEFAULT_REGION }}"
+        
+        # Set image URI
+        RAGANYTHING_IMAGE_URI="$AWS_ACCOUNT_ID.dkr.ecr.$AWS_REGION.amazonaws.com/$ECR_REPOSITORY:latest"
+        
+        echo "📋 [VALIDATE] Checking image: $RAGANYTHING_IMAGE_URI"
+        
+        # Wait and retry logic for ECR image validation
+        MAX_ATTEMPTS=10
+        RETRY_DELAY=30
+        ATTEMPT=1
+        
+        while [ $ATTEMPT -le $MAX_ATTEMPTS ]; do
+          echo "🔄 [VALIDATE] Attempt $ATTEMPT/$MAX_ATTEMPTS - Checking ECR image..."
+          
+          # Check if ECR repository exists
+          if aws ecr describe-repositories --repository-names "$ECR_REPOSITORY" --region "$AWS_REGION" >/dev/null 2>&1; then
+            echo "✅ [VALIDATE] ECR repository exists: $ECR_REPOSITORY"
+            
+            # Check if image exists in repository
+            if aws ecr describe-images --repository-name "$ECR_REPOSITORY" --image-ids imageTag=latest --region "$AWS_REGION" >/dev/null 2>&1; then
+              echo "✅ [VALIDATE] Image exists: $RAGANYTHING_IMAGE_URI"
+              echo "🎉 [VALIDATE] All ECR images validated successfully!"
+              break
+            else
+              echo "⏳ [VALIDATE] Image not found yet, waiting $RETRY_DELAY seconds..."
+            fi
+          else
+            echo "⏳ [VALIDATE] ECR repository not found yet, waiting $RETRY_DELAY seconds..."
+          fi
+          
+          if [ $ATTEMPT -eq $MAX_ATTEMPTS ]; then
+            echo "❌ [VALIDATE] Failed to find ECR images after $MAX_ATTEMPTS attempts"
+            echo "❌ [VALIDATE] Expected image: $RAGANYTHING_IMAGE_URI"
+            echo "❌ [VALIDATE] Please check if the build-and-push job completed successfully"
+            exit 1
+          fi
+          
+          sleep $RETRY_DELAY
+          ATTEMPT=$((ATTEMPT + 1))
+        done
+        
+        VALIDATE_END=$(date +%s.%3N)
+        VALIDATE_DURATION=$(echo "$VALIDATE_END - $VALIDATE_START" | bc)
+        echo "✅ [VALIDATE] ECR validation completed in ${VALIDATE_DURATION}s"
+
     - name: Deploy CloudFormation stack
       env:
         OPENAI_API_KEY: ${{ secrets.OPENAI_API_KEY }}
