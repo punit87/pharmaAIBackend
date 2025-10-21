@@ -33,8 +33,8 @@ def lambda_handler(event, context):
         ecs_client = boto3.client('ecs')
         
         try:
-            # Run RAG-Anything task with query as environment variable
-            print("Starting RAG-Anything task for query processing...")
+            # Run RAG-Anything task in server mode
+            print("Starting RAG-Anything server task...")
             response = ecs_client.run_task(
                 cluster=os.environ['ECS_CLUSTER'],
                 taskDefinition=os.environ['RAGANYTHING_TASK_DEFINITION'],
@@ -54,46 +54,77 @@ def lambda_handler(event, context):
                         'securityGroups': [os.environ['SECURITY_GROUP']],
                         'assignPublicIp': 'ENABLED'
                     }
-                },
-                overrides={
-                    'containerOverrides': [
-                        {
-                            'name': 'raganything',
-                            'environment': [
-                                {'name': 'QUERY', 'value': query},
-                                {'name': 'MODE', 'value': 'query_only'}
-                            ]
-                        }
-                    ]
                 }
             )
             
             task_arn = response['tasks'][0]['taskArn']
-            print(f"RAG-Anything task started: {task_arn}")
+            print(f"RAG-Anything server task started: {task_arn}")
             
-            # Wait for task to complete (with timeout)
-            print("Waiting for task completion...")
-            waiter = ecs_client.get_waiter('tasks_stopped')
+            # Wait for task to be running
+            print("Waiting for server to start...")
+            waiter = ecs_client.get_waiter('tasks_running')
             waiter.wait(
                 cluster=os.environ['ECS_CLUSTER'],
                 tasks=[task_arn],
                 WaiterConfig={
                     'Delay': 10,
-                    'MaxAttempts': 60  # 10 minutes max
+                    'MaxAttempts': 30  # 5 minutes max to start
                 }
             )
             
-            # Get task results
+            # Get task details to find the private IP
             task_details = ecs_client.describe_tasks(
                 cluster=os.environ['ECS_CLUSTER'],
                 tasks=[task_arn]
             )
             
             task = task_details['tasks'][0]
-            exit_code = task['containers'][0].get('exitCode', -1)
+            if task['lastStatus'] != 'RUNNING':
+                return {
+                    'statusCode': 500,
+                    'headers': {
+                        'Content-Type': 'application/json',
+                        'Access-Control-Allow-Origin': '*'
+                    },
+                    'body': json.dumps({'error': 'Server failed to start'})
+                }
             
-            if exit_code == 0:
-                print("Query processing completed successfully")
+            # Get private IP from network interfaces
+            private_ip = None
+            for container in task['containers']:
+                if 'networkInterfaces' in container:
+                    for ni in container['networkInterfaces']:
+                        private_ip = ni.get('privateIpv4Address')
+                        break
+                if private_ip:
+                    break
+            
+            if not private_ip:
+                return {
+                    'statusCode': 500,
+                    'headers': {
+                        'Content-Type': 'application/json',
+                        'Access-Control-Allow-Origin': '*'
+                    },
+                    'body': json.dumps({'error': 'Could not get server IP address'})
+                }
+            
+            # Make HTTP request to the server
+            import requests
+            server_url = f"http://{private_ip}:8000"
+            query_url = f"{server_url}/query"
+            
+            print(f"Making query request to: {query_url}")
+            query_response = requests.post(
+                query_url,
+                json={'query': query},
+                headers={'Content-Type': 'application/json'},
+                timeout=300  # 5 minutes timeout
+            )
+            
+            if query_response.status_code == 200:
+                result = query_response.json()
+                print("Query processed successfully")
                 return {
                     'statusCode': 200,
                     'headers': {
@@ -103,12 +134,12 @@ def lambda_handler(event, context):
                     'body': json.dumps({
                         'status': 'success',
                         'query': query,
-                        'task_arn': task_arn,
-                        'message': 'Query processed successfully. Check EFS output directory for results.'
+                        'result': result,
+                        'task_arn': task_arn
                     })
                 }
             else:
-                print(f"Task failed with exit code: {exit_code}")
+                print(f"Query failed with status: {query_response.status_code}")
                 return {
                     'statusCode': 500,
                     'headers': {
@@ -116,7 +147,7 @@ def lambda_handler(event, context):
                         'Access-Control-Allow-Origin': '*'
                     },
                     'body': json.dumps({
-                        'error': f'Query processing failed with exit code: {exit_code}',
+                        'error': f'Query failed: {query_response.text}',
                         'task_arn': task_arn
                     })
                 }

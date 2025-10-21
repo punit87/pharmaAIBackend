@@ -21,8 +21,8 @@ def lambda_handler(event, context):
             ecs_client = boto3.client('ecs')
             
             try:
-                # Run RAG-Anything task with document info as environment variables
-                print("Starting RAG-Anything task for document processing...")
+                # Run RAG-Anything task in server mode
+                print("Starting RAG-Anything server task...")
                 response = ecs_client.run_task(
                     cluster=os.environ['ECS_CLUSTER'],
                     taskDefinition=os.environ['RAGANYTHING_TASK_DEFINITION'],
@@ -42,49 +42,72 @@ def lambda_handler(event, context):
                             'securityGroups': [os.environ['SECURITY_GROUP']],
                             'assignPublicIp': 'ENABLED'
                         }
-                    },
-                    overrides={
-                        'containerOverrides': [
-                            {
-                                'name': 'raganything',
-                                'environment': [
-                                    {'name': 'S3_BUCKET', 'value': bucket},
-                                    {'name': 'S3_KEY', 'value': key},
-                                    {'name': 'MODE', 'value': 'process_document'}
-                                ]
-                            }
-                        ]
                     }
                 )
                 
                 task_arn = response['tasks'][0]['taskArn']
-                print(f"RAG-Anything task started: {task_arn}")
+                print(f"RAG-Anything server task started: {task_arn}")
                 
-                # Wait for task to complete (with timeout)
-                print("Waiting for task completion...")
-                waiter = ecs_client.get_waiter('tasks_stopped')
+                # Wait for task to be running
+                print("Waiting for server to start...")
+                waiter = ecs_client.get_waiter('tasks_running')
                 waiter.wait(
                     cluster=os.environ['ECS_CLUSTER'],
                     tasks=[task_arn],
                     WaiterConfig={
                         'Delay': 15,
-                        'MaxAttempts': 80  # 20 minutes max for document processing
+                        'MaxAttempts': 40  # 10 minutes max to start
                     }
                 )
                 
-                # Get task results
+                # Get task details to find the private IP
                 task_details = ecs_client.describe_tasks(
                     cluster=os.environ['ECS_CLUSTER'],
                     tasks=[task_arn]
                 )
                 
                 task = task_details['tasks'][0]
-                exit_code = task['containers'][0].get('exitCode', -1)
+                if task['lastStatus'] != 'RUNNING':
+                    print(f"Server failed to start for s3://{bucket}/{key}")
+                    continue
                 
-                if exit_code == 0:
+                # Get private IP from network interfaces
+                private_ip = None
+                for container in task['containers']:
+                    if 'networkInterfaces' in container:
+                        for ni in container['networkInterfaces']:
+                            private_ip = ni.get('privateIpv4Address')
+                            break
+                    if private_ip:
+                        break
+                
+                if not private_ip:
+                    print(f"Could not get server IP address for s3://{bucket}/{key}")
+                    continue
+                
+                # Make HTTP request to the server
+                import requests
+                server_url = f"http://{private_ip}:8000"
+                process_url = f"{server_url}/process"
+                
+                print(f"Making document processing request to: {process_url}")
+                process_response = requests.post(
+                    process_url,
+                    json={
+                        's3_bucket': bucket,
+                        's3_key': key
+                    },
+                    headers={'Content-Type': 'application/json'},
+                    timeout=600  # 10 minutes timeout for document processing
+                )
+                
+                if process_response.status_code == 200:
+                    result = process_response.json()
                     print(f"Document processing completed successfully for s3://{bucket}/{key}")
+                    print(f"Processing result: {result}")
                 else:
-                    print(f"Document processing failed with exit code: {exit_code} for s3://{bucket}/{key}")
+                    print(f"Document processing failed with status: {process_response.status_code} for s3://{bucket}/{key}")
+                    print(f"Error: {process_response.text}")
                 
             except Exception as e:
                 print(f"Error processing document s3://{bucket}/{key}: {str(e)}")
