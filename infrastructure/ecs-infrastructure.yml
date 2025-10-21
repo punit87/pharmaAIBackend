@@ -99,7 +99,7 @@ Resources:
   DocumentBucket:
     Type: AWS::S3::Bucket
     Properties:
-      BucketName: !Sub 'pharma-documents-${Environment}-${AWS::AccountId}-${AWS::StackId}'
+      BucketName: !Sub 'pharma-documents-${Environment}-${AWS::AccountId}-${AWS::Region}'
       VersioningConfiguration:
         Status: Enabled
       LifecycleConfiguration:
