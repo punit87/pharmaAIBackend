@@ -11,12 +11,10 @@ Parameters:
   DoclingImageUri:
     Type: String
     Description: ECR URI for Docling container image
-    Default: '864899869769.dkr.ecr.us-east-1.amazonaws.com/pharma-docling-dev:latest'
   
   RaganythingImageUri:
     Type: String
     Description: ECR URI for RAG-Anything container image
-    Default: '864899869769.dkr.ecr.us-east-1.amazonaws.com/pharma-raganything-dev:latest'
   
   OpenAIApiKey:
     Type: String
