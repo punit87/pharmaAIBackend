@@ -1,7 +1,7 @@
 # ============================================
-# RAG-Anything + Docling Dockerfile - Python 3.12 slim
+# Single Dockerfile - RAG-Anything + Docling
+# Python 3.12 slim with all dependencies
 # Based on https://github.com/HKUDS/RAG-Anything
-# Bundles both RAG-Anything and Docling in single container
 # ============================================
 FROM python:3.12-slim
 
@@ -9,7 +9,11 @@ FROM python:3.12-slim
 ENV PYTHONUNBUFFERED=1 \
     PYTHONDONTWRITEBYTECODE=1 \
     LANG=C.UTF-8 \
-    LC_ALL=C.UTF-8
+    LC_ALL=C.UTF-8 \
+    GIT_SSH_COMMAND="ssh -o StrictHostKeyChecking=no" \
+    HF_HOME=/tmp/ \
+    TORCH_HOME=/tmp/ \
+    OMP_NUM_THREADS=4
 
 # Install system dependencies
 RUN apt-get update && \
@@ -17,7 +21,14 @@ RUN apt-get update && \
         git \
         curl \
         wget \
-        libgl1-mesa-dri \
+        procps \
+        tesseract-ocr \
+        tesseract-ocr-eng \
+        libtesseract-dev \
+        libleptonica-dev \
+        pkg-config \
+        poppler-utils \
+        libgl1 \
         libglib2.0-0 \
         libsm6 \
         libxext6 \
@@ -25,19 +36,24 @@ RUN apt-get update && \
         libgomp1 \
         libgcc-s1 \
         libx11-6 \
+        libgl1-mesa-dri \
     && apt-get clean \
     && rm -rf /var/lib/apt/lists/*
 
 # Install Python dependencies
-# Install RAG-Anything with all extensions
+# Install RAG-Anything with all extensions (includes most dependencies)
 RUN pip install --no-cache-dir 'raganything[all]' boto3 requests flask
 
-# Install Docling separately (not included in raganything[all])
-RUN pip install --no-cache-dir docling
+# Install Docling with CPU-only PyTorch and pytesseract
+RUN pip install --no-cache-dir docling pytesseract --extra-index-url https://download.pytorch.org/whl/cpu
+
+# Download docling models
+RUN docling-tools models download
 
 # Verify both RAG-Anything and Docling are available
 RUN python3 -c "import raganything; print('RAG-Anything installed successfully')" && \
-    python3 -c "import docling; print('Docling installed successfully')"
+    python3 -c "import docling; print('Docling installed successfully')" && \
+    python3 -c "import pytesseract; print('pytesseract installed successfully')"
 
 # Copy RAG server script
 COPY apps/rag_client.py /var/task/
