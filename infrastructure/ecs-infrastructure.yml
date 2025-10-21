@@ -576,7 +576,7 @@ Resources:
           ECS_CLUSTER: !Ref ECSCluster
           SUBNETS: !Sub '${PrivateSubnet1},${PrivateSubnet2}'
           SECURITY_GROUP: !Ref ECSSecurityGroup
-        Timeout: 300
+      Timeout: 300
 
 
   # Lambda Execution Role

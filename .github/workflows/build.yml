@@ -1,0 +1,101 @@
+name: Build and Push Container Image
+
+on:
+  push:
+    branches: [ main ]
+  workflow_dispatch:
+
+env:
+  ECR_REPOSITORY: pharma-raganything-dev
+
+jobs:
+  build-and-push:
+    name: Build and Push Container Image
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      id-token: write
+
+    steps:
+    - name: Checkout
+      uses: actions/checkout@v4
+
+    - name: Configure AWS credentials
+      uses: aws-actions/configure-aws-credentials@v4
+      with:
+        aws-access-key-id: ${{ secrets.AWS_ACCESS_KEY_ID }}
+        aws-secret-access-key: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
+        aws-region: ${{ secrets.AWS_DEFAULT_REGION }}
+
+    - name: Login to Amazon ECR
+      id: login-ecr
+      uses: aws-actions/amazon-ecr-login@v2
+
+    - name: Create ECR Repository if not exists
+      env:
+        ECR_REPOSITORY: ${{ env.ECR_REPOSITORY }}
+      run: |
+        echo "🔍 [ECR] Checking if ECR repository exists..."
+        AWS_REGION="${{ secrets.AWS_DEFAULT_REGION }}"
+        
+        # Check if repository exists
+        if aws ecr describe-repositories --repository-names "$ECR_REPOSITORY" --region "$AWS_REGION" >/dev/null 2>&1; then
+          echo "✅ [ECR] Repository already exists: $ECR_REPOSITORY"
+        else
+          echo "📦 [ECR] Creating ECR repository: $ECR_REPOSITORY"
+          aws ecr create-repository \
+            --repository-name "$ECR_REPOSITORY" \
+            --region "$AWS_REGION" \
+            --image-scanning-configuration scanOnPush=true
+          
+          echo "📋 [ECR] Setting lifecycle policy..."
+          aws ecr put-lifecycle-policy \
+            --repository-name "$ECR_REPOSITORY" \
+            --region "$AWS_REGION" \
+            --lifecycle-policy-text '{
+              "rules": [
+                {
+                  "rulePriority": 1,
+                  "description": "Keep only 1 image",
+                  "selection": {
+                    "tagStatus": "any",
+                    "countType": "imageCountMoreThan",
+                    "countNumber": 1
+                  },
+                  "action": {
+                    "type": "expire"
+                  }
+                }
+              ]
+            }'
+          
+          echo "✅ [ECR] Repository created successfully: $ECR_REPOSITORY"
+        fi
+
+    - name: Build and push RAG-Anything async server image
+      env:
+        ECR_REGISTRY: ${{ steps.login-ecr.outputs.registry }}
+        ECR_REPOSITORY: ${{ env.ECR_REPOSITORY }}
+        IMAGE_TAG: latest
+      run: |
+        echo "🔄 [DEPLOY] Starting RAG-Anything async server image build at $(date)"
+        BUILD_START=$(date +%s.%3N)
+        
+        echo "📦 [DEPLOY] Building RAG-Anything async server Docker image..."
+        echo "📋 [DEPLOY] Dependencies: raganything[all], boto3, flask, docling"
+        docker build -f Dockerfile -t $ECR_REGISTRY/$ECR_REPOSITORY:$IMAGE_TAG .
+        BUILD_END=$(date +%s.%3N)
+        BUILD_DURATION=$(echo "$BUILD_END - $BUILD_START" | bc)
+        echo "✅ [DEPLOY] RAG-Anything async server image built in ${BUILD_DURATION}s"
+        
+        echo "📤 [DEPLOY] Pushing RAG-Anything async server image to ECR..."
+        PUSH_START=$(date +%s.%3N)
+        docker push $ECR_REGISTRY/$ECR_REPOSITORY:$IMAGE_TAG
+        PUSH_END=$(date +%s.%3N)
+        PUSH_DURATION=$(echo "$PUSH_END - $PUSH_START" | bc)
+        echo "✅ [DEPLOY] RAG-Anything async server image pushed in ${PUSH_DURATION}s"
+        
+        TOTAL_END=$(date +%s.%3N)
+        TOTAL_DURATION=$(echo "$TOTAL_END - $BUILD_START" | bc)
+        echo "🎉 [DEPLOY] RAG-Anything async server total time: ${TOTAL_DURATION}s"
+        echo "📋 [DEPLOY] Pushed RAG-Anything async server image: $ECR_REGISTRY/$ECR_REPOSITORY:$IMAGE_TAG"
