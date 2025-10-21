@@ -43,7 +43,10 @@ def get_environment_variables():
         'neo4j_uri': os.environ.get('NEO4J_URI'),
         'neo4j_username': os.environ.get('NEO4J_USERNAME'),
         'neo4j_password': os.environ.get('NEO4J_PASSWORD'),
-        'openai_api_key': os.environ.get('OPENAI_API_KEY')
+        'openai_api_key': os.environ.get('OPENAI_API_KEY'),
+        'output_dir': os.environ.get('OUTPUT_DIR', '/rag-output/'),
+        'parser': os.environ.get('PARSER', 'docling'),
+        'parse_method': os.environ.get('PARSE_METHOD', 'auto')
     }
 
 def initialize_rag_anything(env_vars):
@@ -52,7 +55,10 @@ def initialize_rag_anything(env_vars):
         neo4j_uri=env_vars['neo4j_uri'],
         neo4j_username=env_vars['neo4j_username'],
         neo4j_password=env_vars['neo4j_password'],
-        openai_api_key=env_vars['openai_api_key']
+        openai_api_key=env_vars['openai_api_key'],
+        output_dir=env_vars['output_dir'],
+        parser=env_vars['parser'],
+        parse_method=env_vars['parse_method']
     )
 
 def create_error_response(error_msg, duration, query=None):
@@ -126,9 +132,6 @@ def process_document():
         # Use RAG-Anything's native document processing with Docling parser
         result = asyncio.run(rag.process_document_complete(
             file_path=temp_file_path,
-            output_dir="/rag-output/",
-            parse_method="auto",          # Parsing method: "auto", "ocr", "txt"
-            parser="docling",             # Parser selection: "docling" or "mineru"
             doc_id=s3_key,               # Document ID for tracking
             display_stats=True,          # Display content statistics
             # Additional Docling parameters

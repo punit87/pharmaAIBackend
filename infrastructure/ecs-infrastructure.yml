@@ -430,6 +430,12 @@ Resources:
               Value: !Ref Neo4jPassword
             - Name: OPENAI_API_KEY
               Value: !Ref OpenAIApiKey
+            - Name: OUTPUT_DIR
+              Value: '/rag-output/'
+            - Name: PARSER
+              Value: 'docling'
+            - Name: PARSE_METHOD
+              Value: 'auto'
             - Name: DOCLING_SERVICE_URL
               Value: 'http://localhost:8000'
           MountPoints:
