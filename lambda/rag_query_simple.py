@@ -148,8 +148,8 @@ def lambda_handler(event, context):
         
         print(f"Docling service running at: {docling_ip}")
         
-        # Now start RAG-Anything container with Docling URL
-        print("Starting RAG-Anything container...")
+        # Start RAG-Anything container as a persistent service
+        print("Starting RAG-Anything container as persistent service...")
         response = ecs_client.run_task(
             cluster=os.environ['ECS_CLUSTER'],
             taskDefinition=os.environ['RAGANYTHING_TASK_DEFINITION'],
@@ -176,9 +176,7 @@ def lambda_handler(event, context):
                     {
                         'name': 'raganything',
                         'environment': [
-                            {'name': 'QUERY', 'value': query},
                             {'name': 'AWS_DEFAULT_REGION', 'value': os.environ.get('AWS_DEFAULT_REGION', 'us-east-1')},
-                            {'name': 'S3_BUCKET', 'value': os.environ['S3_BUCKET']},
                             {'name': 'NEO4J_URI', 'value': os.environ['NEO4J_URI']},
                             {'name': 'NEO4J_USERNAME', 'value': os.environ['NEO4J_USERNAME']},
                             {'name': 'NEO4J_PASSWORD', 'value': os.environ['NEO4J_PASSWORD']},
@@ -203,9 +201,10 @@ def lambda_handler(event, context):
         task_arn = response['tasks'][0]['taskArn']
         print(f"Started RAG-Anything task: {task_arn}")
         
-        # Wait for task completion (with timeout)
-        max_wait_time = 300  # 5 minutes
+        # Wait for RAG-Anything container to be ready
+        max_wait_time = 120  # 2 minutes
         start_time = time.time()
+        raganything_ip = None
         
         while time.time() - start_time < max_wait_time:
             task_response = ecs_client.describe_tasks(
@@ -216,41 +215,76 @@ def lambda_handler(event, context):
             task = task_response['tasks'][0]
             last_status = task['lastStatus']
             
-            if last_status == 'STOPPED':
-                # Check exit code
-                exit_code = task['containers'][0].get('exitCode', 1)
-                if exit_code == 0:
-                    print("RAG-Anything task completed successfully")
+            if last_status == 'RUNNING':
+                # Get task IP
+                for attachment in task.get('attachments', []):
+                    for detail in attachment.get('details', []):
+                        if detail['name'] == 'networkInterfaceId':
+                            eni_id = detail['value']
+                            ec2_client = boto3.client('ec2')
+                            eni_response = ec2_client.describe_network_interfaces(
+                                NetworkInterfaceIds=[eni_id]
+                            )
+                            raganything_ip = eni_response['NetworkInterfaces'][0]['PrivateIpAddress']
+                            break
+                    if raganything_ip:
+                        break
+                
+                if raganything_ip:
                     break
-                else:
-                    return {
-                        'statusCode': 500,
-                        'headers': {
-                            'Content-Type': 'application/json',
-                            'Access-Control-Allow-Origin': '*'
-                        },
-                        'body': json.dumps({'error': 'RAG-Anything task failed'})
-                    }
             
-            time.sleep(10)
+            time.sleep(5)
         
-        # For now, return a simple response indicating the task was started
-        # In a full implementation, you would retrieve the results from S3 or a database
-        return {
-            'statusCode': 200,
-            'headers': {
-                'Content-Type': 'application/json',
-                'Access-Control-Allow-Origin': '*'
-            },
-            'body': json.dumps({
-                'query': query,
-                'answer': 'RAG-Anything task started successfully. Results will be available shortly.',
-                'sources': [],
-                'confidence': 0.8,
-                'status': 'processing',
-                'task_arn': task_arn
-            })
+        if not raganything_ip:
+            return {
+                'statusCode': 500,
+                'headers': {
+                    'Content-Type': 'application/json',
+                    'Access-Control-Allow-Origin': '*'
+                },
+                'body': json.dumps({'error': 'RAG-Anything container failed to start within timeout'})
+            }
+        
+        print(f"RAG-Anything service running at: {raganything_ip}")
+        
+        # Now call the Flask endpoint to process the query
+        import requests
+        
+        raganything_url = f"http://{raganything_ip}:8000"
+        query_url = f"{raganything_url}/query"
+        
+        print(f"Calling RAG-Anything Flask endpoint: {query_url}")
+        
+        payload = {
+            'query': query
         }
+        
+        try:
+            response = requests.post(query_url, json=payload, timeout=300)
+            response.raise_for_status()
+            
+            result = response.json()
+            print(f"Query processing result: {result}")
+            
+            return {
+                'statusCode': 200,
+                'headers': {
+                    'Content-Type': 'application/json',
+                    'Access-Control-Allow-Origin': '*'
+                },
+                'body': json.dumps(result)
+            }
+            
+        except Exception as e:
+            print(f"Error calling RAG-Anything endpoint: {str(e)}")
+            return {
+                'statusCode': 500,
+                'headers': {
+                    'Content-Type': 'application/json',
+                    'Access-Control-Allow-Origin': '*'
+                },
+                'body': json.dumps({'error': f'Error processing query: {str(e)}'})
+            }
         
     except Exception as e:
         print(f"Error processing RAG query: {str(e)}")

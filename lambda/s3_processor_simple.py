@@ -124,8 +124,8 @@ def lambda_handler(event, context):
             
             print(f"Docling service running at: {docling_ip}")
             
-            # Now start RAG-Anything container with Docling URL for document processing
-            print("Starting RAG-Anything container for document processing...")
+            # Start RAG-Anything container as a persistent service
+            print("Starting RAG-Anything container as persistent service...")
             response = ecs_client.run_task(
                 cluster=os.environ['ECS_CLUSTER'],
                 taskDefinition=os.environ['RAGANYTHING_TASK_DEFINITION'],
@@ -152,8 +152,6 @@ def lambda_handler(event, context):
                         {
                             'name': 'raganything',
                             'environment': [
-                                {'name': 'S3_BUCKET', 'value': bucket},
-                                {'name': 'S3_KEY', 'value': key},
                                 {'name': 'AWS_DEFAULT_REGION', 'value': os.environ.get('AWS_DEFAULT_REGION', 'us-east-1')},
                                 {'name': 'NEO4J_URI', 'value': os.environ['NEO4J_URI']},
                                 {'name': 'NEO4J_USERNAME', 'value': os.environ['NEO4J_USERNAME']},
@@ -171,11 +169,12 @@ def lambda_handler(event, context):
                 continue
             
             task_arn = response['tasks'][0]['taskArn']
-            print(f"Started RAG-Anything task for {key}: {task_arn}")
+            print(f"Started RAG-Anything task: {task_arn}")
             
-            # Wait for task completion (with timeout)
-            max_wait_time = 600  # 10 minutes for document processing
+            # Wait for RAG-Anything container to be ready
+            max_wait_time = 120  # 2 minutes
             start_time = time.time()
+            raganything_ip = None
             
             while time.time() - start_time < max_wait_time:
                 task_response = ecs_client.describe_tasks(
@@ -186,17 +185,55 @@ def lambda_handler(event, context):
                 task = task_response['tasks'][0]
                 last_status = task['lastStatus']
                 
-                if last_status == 'STOPPED':
-                    # Check exit code
-                    exit_code = task['containers'][0].get('exitCode', 1)
-                    if exit_code == 0:
-                        print(f"RAG-Anything task completed successfully for {key}")
-                        break
-                    else:
-                        print(f"RAG-Anything task failed for {key}")
+                if last_status == 'RUNNING':
+                    # Get task IP
+                    for attachment in task.get('attachments', []):
+                        for detail in attachment.get('details', []):
+                            if detail['name'] == 'networkInterfaceId':
+                                eni_id = detail['value']
+                                ec2_client = boto3.client('ec2')
+                                eni_response = ec2_client.describe_network_interfaces(
+                                    NetworkInterfaceIds=[eni_id]
+                                )
+                                raganything_ip = eni_response['NetworkInterfaces'][0]['PrivateIpAddress']
+                                break
+                        if raganything_ip:
+                            break
+                    
+                    if raganything_ip:
                         break
                 
-                time.sleep(30)  # Check every 30 seconds for document processing
+                time.sleep(5)
+            
+            if not raganything_ip:
+                print(f"RAG-Anything container failed to start for {key}")
+                continue
+            
+            print(f"RAG-Anything service running at: {raganything_ip}")
+            
+            # Now call the Flask endpoint to process the document
+            import requests
+            
+            raganything_url = f"http://{raganything_ip}:8000"
+            process_url = f"{raganything_url}/process"
+            
+            print(f"Calling RAG-Anything Flask endpoint: {process_url}")
+            
+            payload = {
+                'bucket': bucket,
+                'key': key
+            }
+            
+            try:
+                response = requests.post(process_url, json=payload, timeout=600)
+                response.raise_for_status()
+                
+                result = response.json()
+                print(f"Document processing result: {result}")
+                
+            except Exception as e:
+                print(f"Error calling RAG-Anything endpoint: {str(e)}")
+                continue
             
             print(f"Document processing completed for {key}")
         
