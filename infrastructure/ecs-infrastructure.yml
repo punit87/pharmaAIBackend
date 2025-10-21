@@ -8,10 +8,6 @@ Parameters:
     AllowedValues: [dev, staging, prod]
     Description: Environment name
   
-  DoclingImageUri:
-    Type: String
-    Description: ECR URI for Docling container image
-  
   RaganythingImageUri:
     Type: String
     Description: ECR URI for RAG-Anything container image
@@ -38,31 +34,6 @@ Parameters:
 
 Resources:
   # ECR Repositories for container images
-  DoclingRepository:
-    Type: AWS::ECR::Repository
-    Properties:
-      RepositoryName: !Sub 'pharma-docling-${Environment}'
-      ImageScanningConfiguration:
-        ScanOnPush: true
-      LifecyclePolicy:
-        LifecyclePolicyText: |
-          {
-            "rules": [
-              {
-                "rulePriority": 1,
-                "description": "Keep only 1 image",
-                "selection": {
-                  "tagStatus": "any",
-                  "countType": "imageCountMoreThan",
-                  "countNumber": 1
-                },
-                "action": {
-                  "type": "expire"
-                }
-              }
-            ]
-          }
-
   RaganythingRepository:
     Type: AWS::ECR::Repository
     Properties:
@@ -346,54 +317,6 @@ Resources:
         - IpProtocol: -1
           CidrIp: 0.0.0.0/0
 
-  # ECS Task Definition for Docling
-  DoclingTaskDefinition:
-    Type: AWS::ECS::TaskDefinition
-    Properties:
-      Family: !Sub 'pharma-docling-${Environment}'
-      NetworkMode: awsvpc
-      RequiresCompatibilities:
-        - FARGATE
-      Cpu: 2048
-      Memory: 4096
-      ExecutionRoleArn: !GetAtt ECSTaskExecutionRole.Arn
-      TaskRoleArn: !GetAtt ECSTaskRole.Arn
-      ContainerDefinitions:
-        - Name: docling
-          Image: !Ref DoclingImageUri
-          Essential: true
-          PortMappings:
-            - ContainerPort: 8000
-              Protocol: tcp
-          LogConfiguration:
-            LogDriver: awslogs
-            Options:
-              awslogs-group: !Ref DoclingLogGroup
-              awslogs-region: !Ref AWS::Region
-              awslogs-stream-prefix: ecs
-          Environment:
-            - Name: AWS_DEFAULT_REGION
-              Value: !Ref AWS::Region
-            - Name: S3_BUCKET
-              Value: !Ref DocumentBucket
-            - Name: NEO4J_URI
-              Value: !Ref Neo4jUri
-            - Name: NEO4J_USERNAME
-              Value: !Ref Neo4jUsername
-            - Name: NEO4J_PASSWORD
-              Value: !Ref Neo4jPassword
-            - Name: OPENAI_API_KEY
-              Value: !Ref OpenAIApiKey
-            - Name: PORT
-              Value: "8000"
-          HealthCheck:
-            Command:
-              - CMD-SHELL
-              - "curl -f http://localhost:8000/health || exit 1"
-            Interval: 30
-            Timeout: 5
-            Retries: 3
-            StartPeriod: 60
 
   # ECS Task Definition for RAG-Anything
   RaganythingTaskDefinition:
@@ -442,12 +365,6 @@ Resources:
             StartPeriod: 60
 
   # CloudWatch Log Groups
-  DoclingLogGroup:
-    Type: AWS::Logs::LogGroup
-    Properties:
-      LogGroupName: !Sub '/ecs/pharma-docling-${Environment}'
-      RetentionInDays: 30
-
   RaganythingLogGroup:
     Type: AWS::Logs::LogGroup
     Properties:
@@ -579,7 +496,6 @@ Resources:
         Variables:
           ECS_CLUSTER: !Ref ECSCluster
           RAGANYTHING_TASK_DEFINITION: !Ref RaganythingTaskDefinition
-          DOCLING_TASK_DEFINITION: !Ref DoclingTaskDefinition
           SUBNETS: !Sub '${PrivateSubnet1},${PrivateSubnet2}'
           SECURITY_GROUP: !Ref ECSSecurityGroup
           S3_BUCKET: !Ref DocumentBucket
@@ -604,7 +520,6 @@ Resources:
       Environment:
         Variables:
           ECS_CLUSTER: !Ref ECSCluster
-          DOCLING_TASK_DEFINITION: !Ref DoclingTaskDefinition
           SUBNETS: !Sub '${PrivateSubnet1},${PrivateSubnet2}'
           SECURITY_GROUP: !Ref ECSSecurityGroup
       Timeout: 300

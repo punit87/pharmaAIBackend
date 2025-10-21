@@ -43,8 +43,7 @@ def get_environment_variables():
         'neo4j_uri': os.environ.get('NEO4J_URI'),
         'neo4j_username': os.environ.get('NEO4J_USERNAME'),
         'neo4j_password': os.environ.get('NEO4J_PASSWORD'),
-        'openai_api_key': os.environ.get('OPENAI_API_KEY'),
-        'docling_url': os.environ.get('DOCLING_SERVICE_URL', 'http://localhost:8000')
+        'openai_api_key': os.environ.get('OPENAI_API_KEY')
     }
 
 def initialize_rag_anything(env_vars):
@@ -53,8 +52,7 @@ def initialize_rag_anything(env_vars):
         neo4j_uri=env_vars['neo4j_uri'],
         neo4j_username=env_vars['neo4j_username'],
         neo4j_password=env_vars['neo4j_password'],
-        openai_api_key=env_vars['openai_api_key'],
-        docling_url=env_vars['docling_url']
+        openai_api_key=env_vars['openai_api_key']
     )
 
 def create_error_response(error_msg, duration, query=None):
