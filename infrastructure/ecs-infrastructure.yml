@@ -136,6 +136,15 @@ Resources:
         BlockPublicPolicy: true
         IgnorePublicAcls: true
         RestrictPublicBuckets: true
+      NotificationConfiguration:
+        LambdaConfigurations:
+          - Event: s3:ObjectCreated:*
+            Function: !GetAtt DocumentProcessorFunction.Arn
+            Filter:
+              S3Key:
+                Rules:
+                  - Name: suffix
+                    Value: .pdf
 
   # VPC and Networking
   VPC:
@@ -436,11 +445,11 @@ Resources:
           HealthCheck:
             Command:
               - CMD-SHELL
-              - "python3 -c 'import raganything; print(\"healthy\")' || exit 1"
+              - "python3 -c 'import requests; requests.get(\"http://localhost:8000/health\", timeout=5)' || exit 1"
             Interval: 30
-            Timeout: 5
+            Timeout: 10
             Retries: 3
-            StartPeriod: 60
+            StartPeriod: 120
 
   # CloudWatch Log Groups
   RaganythingLogGroup:
@@ -600,8 +609,33 @@ Resources:
           ECS_CLUSTER: !Ref ECSCluster
           SUBNETS: !Sub '${PrivateSubnet1},${PrivateSubnet2}'
           SECURITY_GROUP: !Ref ECSSecurityGroup
-      Timeout: 300
+        Timeout: 300
 
+  # RAG Query Lambda Function
+  RagQueryFunction:
+    Type: AWS::Lambda::Function
+    Properties:
+      FunctionName: !Sub 'pharma-rag-query-${Environment}'
+      Runtime: python3.11
+      Handler: index.lambda_handler
+      Code:
+        ZipFile: |
+          # This will be replaced by the actual Lambda function code during deployment
+          def lambda_handler(event, context):
+              return {'statusCode': 200}
+      Role: !GetAtt LambdaExecutionRole.Arn
+      Environment:
+        Variables:
+          ECS_CLUSTER: !Ref ECSCluster
+          RAGANYTHING_TASK_DEFINITION: !Ref RaganythingTaskDefinition
+          SUBNETS: !Sub '${PrivateSubnet1},${PrivateSubnet2}'
+          SECURITY_GROUP: !Ref ECSSecurityGroup
+          S3_BUCKET: !Ref DocumentBucket
+          NEO4J_URI: !Ref Neo4jUri
+          NEO4J_USERNAME: !Ref Neo4jUsername
+          NEO4J_PASSWORD: !Ref Neo4jPassword
+          OPENAI_API_KEY: !Ref OpenAIApiKey
+      Timeout: 300
 
   # Lambda Execution Role
   LambdaExecutionRole:
@@ -723,14 +757,17 @@ Resources:
       Principal: apigateway.amazonaws.com
       SourceArn: !Sub 'arn:aws:execute-api:${AWS::Region}:${AWS::AccountId}:${ApiGateway}/*/*'
 
+  # S3 Lambda Permission
+  S3LambdaPermission:
+    Type: AWS::Lambda::Permission
+    Properties:
+      FunctionName: !Ref DocumentProcessorFunction
+      Action: lambda:InvokeFunction
+      Principal: s3.amazonaws.com
+      SourceArn: !GetAtt DocumentBucket.Arn
+
 
 Outputs:
-  DoclingRepositoryUri:
-    Description: ECR Repository URI for Docling
-    Value: !Sub '${AWS::AccountId}.dkr.ecr.${AWS::Region}.amazonaws.com/${DoclingRepository}'
-    Export:
-      Name: !Sub '${AWS::StackName}-DoclingRepositoryUri'
-
   RaganythingRepositoryUri:
     Description: ECR Repository URI for RAG-Anything
     Value: !Sub '${AWS::AccountId}.dkr.ecr.${AWS::Region}.amazonaws.com/${RaganythingRepository}'
