@@ -21,19 +21,16 @@ jobs:
     steps:
     - name: Checkout
       uses: actions/checkout@v4
-      run: echo "✅ Checkout completed at $(date)"
 
     - name: Configure AWS credentials
       uses: aws-actions/configure-aws-credentials@v4
       with:
         role-to-assume: ${{ secrets.AWS_ROLE_ARN }}
         aws-region: ${{ env.AWS_REGION }}
-      run: echo "✅ AWS credentials configured at $(date)"
 
     - name: Login to Amazon ECR
       id: login-ecr
       uses: aws-actions/amazon-ecr-login@v2
-      run: echo "✅ ECR login completed at $(date)"
 
     - name: Build and push Docling image
       env:
