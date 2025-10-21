@@ -9,7 +9,6 @@ import boto3
 import asyncio
 import threading
 import time
-import requests
 from typing import Dict, Any
 from flask import Flask, request, jsonify
 from raganything import RAGAnything
@@ -43,8 +42,7 @@ def get_environment_variables():
         'neo4j_uri': os.environ.get('NEO4J_URI'),
         'neo4j_username': os.environ.get('NEO4J_USERNAME'),
         'neo4j_password': os.environ.get('NEO4J_PASSWORD'),
-        'openai_api_key': os.environ.get('OPENAI_API_KEY'),
-        'docling_url': os.environ.get('DOCLING_SERVICE_URL', 'http://localhost:8000')
+        'openai_api_key': os.environ.get('OPENAI_API_KEY')
     }
 
 def initialize_rag_anything(env_vars):
@@ -53,8 +51,7 @@ def initialize_rag_anything(env_vars):
         neo4j_uri=env_vars['neo4j_uri'],
         neo4j_username=env_vars['neo4j_username'],
         neo4j_password=env_vars['neo4j_password'],
-        openai_api_key=env_vars['openai_api_key'],
-        docling_url=env_vars['docling_url']
+        openai_api_key=env_vars['openai_api_key']
     )
 
 def create_error_response(error_msg, duration, query=None):
@@ -115,48 +112,28 @@ def process_document():
         download_duration = time.time() - download_start
         print(f"📥 [RAG] S3 download completed in {download_duration:.3f}s")
         
-        # Call Docling service for document parsing
-        print(f"🔗 [RAG] Calling Docling service at {env_vars['docling_url']}")
-        docling_start = time.time()
-        
-        with open(temp_file_path, 'rb') as file:
-            files = {'file': (os.path.basename(s3_key), file, 'application/octet-stream')}
-            response = requests.post(f"{env_vars['docling_url']}/parse", files=files, timeout=300)
-            response.raise_for_status()
-            
-            docling_result = response.json()
-            docling_duration = time.time() - docling_start
-            print(f"🔍 [RAG] Docling parsing completed in {docling_duration:.3f}s")
-            print(f"📊 [RAG] Docling result: {docling_result.get('message', 'Success')}")
-        
-        # Now use RAG-Anything for RAG processing with the parsed content
-        rag_start = time.time()
-        
-        # Initialize RAG-Anything with Docling URL
+        # Initialize RAG-Anything with Docling parser
         init_start = time.time()
         rag = initialize_rag_anything(env_vars)
         init_duration = time.time() - init_start
         print(f"🚀 [RAG] RAG-Anything initialization completed in {init_duration:.3f}s")
         
-        # Process the parsed content with RAG-Anything
-        parsed_content = docling_result.get('content', '')
+        # Process document using RAG-Anything with Docling parser
+        process_start = time.time()
+        print(f"🔍 [RAG] Processing document with RAG-Anything + Docling parser")
         
-        if parsed_content:
-            process_start = time.time()
-            # Store the parsed content in Neo4j using RAG-Anything
-            result = asyncio.run(rag.process_content(
-                content=parsed_content,
-                doc_id=s3_key,
-                content_type="document"
-            ))
-            process_duration = time.time() - process_start
-            print(f"💾 [RAG] Content processing completed in {process_duration:.3f}s")
-        else:
-            result = {"error": "No content parsed from Docling"}
-            process_duration = 0
-            print(f"⚠️ [RAG] No content to process")
+        # Use RAG-Anything's native document processing with Docling parser
+        result = asyncio.run(rag.process_document_complete(
+            file_path=temp_file_path,
+            output_dir="/tmp/rag_output",
+            parse_method="auto",
+            parser="docling",  # Use Docling parser as specified in README
+            doc_id=s3_key,
+            display_stats=True
+        ))
         
-        rag_duration = time.time() - rag_start
+        process_duration = time.time() - process_start
+        print(f"💾 [RAG] Document processing completed in {process_duration:.3f}s")
         
         # Clean up temp file
         cleanup_start = time.time()
@@ -170,12 +147,10 @@ def process_document():
         return jsonify({
             "status": "success",
             "result": result,
-            "docling_result": docling_result,
-            "message": "Document processed successfully with Docling + RAG-Anything",
+            "message": "Document processed successfully with RAG-Anything + Docling parser",
             "timing": {
                 "total_duration": total_duration,
                 "download_duration": download_duration,
-                "docling_duration": docling_duration,
                 "rag_init_duration": init_duration,
                 "rag_process_duration": process_duration,
                 "cleanup_duration": cleanup_duration
