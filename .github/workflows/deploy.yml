@@ -46,7 +46,12 @@ jobs:
           aws ecr create-repository \
             --repository-name "$ECR_REPOSITORY" \
             --region "$AWS_REGION" \
-            --image-scanning-configuration scanOnPush=true \
+            --image-scanning-configuration scanOnPush=true
+          
+          echo "📋 [ECR] Setting lifecycle policy..."
+          aws ecr put-lifecycle-policy \
+            --repository-name "$ECR_REPOSITORY" \
+            --region "$AWS_REGION" \
             --lifecycle-policy-text '{
               "rules": [
                 {
@@ -63,6 +68,7 @@ jobs:
                 }
               ]
             }'
+          
           echo "✅ [ECR] Repository created successfully: $ECR_REPOSITORY"
         fi
 
