@@ -62,6 +62,7 @@ Resources:
         VPCId: !GetAtt NetworkStack.Outputs.VPCId
         PublicSubnet1: !GetAtt NetworkStack.Outputs.PublicSubnet1Id
         PublicSubnet2: !GetAtt NetworkStack.Outputs.PublicSubnet2Id
+        ALBSecurityGroup: !GetAtt NetworkStack.Outputs.ALBSecurityGroup
         ECSSecurityGroup: !GetAtt NetworkStack.Outputs.ECSSecurityGroup
         RaganythingImageUri: !Ref RaganythingImageUri
         OpenAIApiKey: !Ref OpenAIApiKey

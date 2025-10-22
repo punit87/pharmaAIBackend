@@ -20,6 +20,10 @@ Parameters:
     Type: String
     Description: Public Subnet 2 from network stack
 
+  ALBSecurityGroup:
+    Type: String
+    Description: ALB Security Group from network stack
+
   ECSSecurityGroup:
     Type: String
     Description: ECS Security Group from network stack
@@ -47,6 +51,49 @@ Parameters:
     Description: Neo4j Password
 
 Resources:
+  # Application Load Balancer
+  ApplicationLoadBalancer:
+    Type: AWS::ElasticLoadBalancingV2::LoadBalancer
+    Properties:
+      Name: !Sub 'pharma-rag-alb-${Environment}'
+      Scheme: internet-facing
+      Type: application
+      Subnets:
+        - !Ref PublicSubnet1
+        - !Ref PublicSubnet2
+      SecurityGroups:
+        - !Ref ALBSecurityGroup
+
+  # Target Group for ECS Tasks
+  ECSTargetGroup:
+    Type: AWS::ElasticLoadBalancingV2::TargetGroup
+    Properties:
+      Name: !Sub 'pharma-ecs-tg-${Environment}'
+      Port: 8000
+      Protocol: HTTP
+      VpcId: !Ref VPCId
+      TargetType: ip
+      HealthCheckPath: /health
+      HealthCheckProtocol: HTTP
+      HealthCheckIntervalSeconds: 30
+      HealthCheckTimeoutSeconds: 5
+      HealthyThresholdCount: 2
+      UnhealthyThresholdCount: 3
+      Tags:
+        - Key: Name
+          Value: !Sub 'pharma-ecs-tg-${Environment}'
+
+  # ALB Listener
+  ALBListener:
+    Type: AWS::ElasticLoadBalancingV2::Listener
+    Properties:
+      DefaultActions:
+        - Type: forward
+          TargetGroupArn: !Ref ECSTargetGroup
+      LoadBalancerArn: !Ref ApplicationLoadBalancer
+      Port: 80
+      Protocol: HTTP
+
   ECSCluster:
     Type: AWS::ECS::Cluster
     Properties:
@@ -224,6 +271,29 @@ Resources:
       LogGroupName: !Sub '/ecs/pharma-raganything-${Environment}'
       RetentionInDays: 7
 
+  # ECS Service with ALB
+  RaganythingService:
+    Type: AWS::ECS::Service
+    Properties:
+      ServiceName: !Sub 'pharma-raganything-service-${Environment}'
+      Cluster: !Ref ECSCluster
+      TaskDefinition: !Ref RaganythingTaskDefinition
+      DesiredCount: 0  # Start with 0, scale up on demand
+      LaunchType: FARGATE
+      NetworkConfiguration:
+        AwsvpcConfiguration:
+          Subnets:
+            - !Ref PublicSubnet1
+            - !Ref PublicSubnet2
+          SecurityGroups:
+            - !Ref ECSSecurityGroup
+          AssignPublicIp: ENABLED
+      LoadBalancers:
+        - ContainerName: raganything
+          ContainerPort: 8000
+          TargetGroupArn: !Ref ECSTargetGroup
+      EnableExecuteCommand: true
+
 Outputs:
   ECSCluster:
     Description: ECS Cluster Name
@@ -242,3 +312,21 @@ Outputs:
     Value: !Ref EFSFileSystem
     Export:
       Name: !Sub '${AWS::StackName}-EFSFileSystem'
+
+  ApplicationLoadBalancer:
+    Description: ALB DNS Name
+    Value: !GetAtt ApplicationLoadBalancer.DNSName
+    Export:
+      Name: !Sub '${AWS::StackName}-ApplicationLoadBalancer'
+
+  ALBSecurityGroup:
+    Description: ALB Security Group ID
+    Value: !Ref ALBSecurityGroup
+    Export:
+      Name: !Sub '${AWS::StackName}-ALBSecurityGroup'
+
+  RaganythingService:
+    Description: ECS Service Name
+    Value: !Ref RaganythingService
+    Export:
+      Name: !Sub '${AWS::StackName}-RaganythingService'
