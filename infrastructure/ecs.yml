@@ -196,7 +196,7 @@ Resources:
     Type: AWS::EFS::MountTarget
     Properties:
       FileSystemId: !Ref EFSFileSystem
-      SubnetId: !Ref PrivateSubnet1
+      SubnetId: !Ref PublicSubnet1
       SecurityGroups:
         - !Ref EFSSecurityGroup
 
@@ -204,7 +204,7 @@ Resources:
     Type: AWS::EFS::MountTarget
     Properties:
       FileSystemId: !Ref EFSFileSystem
-      SubnetId: !Ref PrivateSubnet2
+      SubnetId: !Ref PublicSubnet2
       SecurityGroups:
         - !Ref EFSSecurityGroup
 

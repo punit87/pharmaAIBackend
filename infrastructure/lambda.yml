@@ -173,6 +173,7 @@ Resources:
           SUBNETS: !Sub '${PublicSubnet1},${PublicSubnet2}'
           SECURITY_GROUP: !Ref ECSSecurityGroup
           ALB_ENDPOINT: !Ref ALBEndpoint
+          S3_BUCKET: !Ref DocumentBucket
 
   DocumentProcessorFunction:
     Type: AWS::Lambda::Function
@@ -200,6 +201,7 @@ Resources:
           SUBNETS: !Sub '${PublicSubnet1},${PublicSubnet2}'
           SECURITY_GROUP: !Ref ECSSecurityGroup
           ALB_ENDPOINT: !Ref ALBEndpoint
+          S3_BUCKET: !Ref DocumentBucket
 
   RagQueryMultimodalFunction:
     Type: AWS::Lambda::Function
@@ -227,6 +229,7 @@ Resources:
           SUBNETS: !Sub '${PublicSubnet1},${PublicSubnet2}'
           SECURITY_GROUP: !Ref ECSSecurityGroup
           ALB_ENDPOINT: !Ref ALBEndpoint
+          S3_BUCKET: !Ref DocumentBucket
 
 Outputs:
   PresignedUrlFunction:
