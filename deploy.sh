@@ -118,6 +118,7 @@ aws cloudformation deploy \
   --template-file "$MAIN_TEMPLATE" \
   --stack-name "$STACK_NAME" \
   --capabilities CAPABILITY_IAM CAPABILITY_NAMED_IAM \
+  --disable-rollback \
   --parameter-overrides \
     Environment="dev" \
     RaganythingImageUri="$RAGANYTHING_IMAGE_URI" \
