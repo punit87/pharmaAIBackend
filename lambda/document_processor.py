@@ -21,9 +21,11 @@ def lambda_handler(event, context):
                 body = json.loads(event['body'])
                 document_key = body.get('document_key', '')
                 document_name = body.get('document_name', '')
+                bucket_name = body.get('bucket', os.environ.get('S3_BUCKET', ''))
             else:
                 document_key = event.get('document_key', '')
                 document_name = event.get('document_name', '')
+                bucket_name = event.get('bucket', os.environ.get('S3_BUCKET', ''))
 
         if not document_key:
             return {
@@ -33,6 +35,16 @@ def lambda_handler(event, context):
                     'Access-Control-Allow-Origin': '*'
                 },
                 'body': json.dumps({'error': 'No document_key provided'})
+            }
+            
+        if not bucket_name:
+            return {
+                'statusCode': 400,
+                'headers': {
+                    'Content-Type': 'application/json',
+                    'Access-Control-Allow-Origin': '*'
+                },
+                'body': json.dumps({'error': 'No bucket name provided'})
             }
 
         print(f"Processing document: {document_key}")
@@ -65,8 +77,11 @@ def lambda_handler(event, context):
             try:
                 print(f"Attempt {attempt + 1}/{max_retries}: Making document processing request to ALB: {process_url}")
                 
-                # Prepare request payload
-                payload = {'document_key': document_key}
+                # Prepare request payload - RAG-Anything expects 'bucket' and 'key'
+                payload = {
+                    'bucket': bucket_name,
+                    'key': document_key
+                }
                 if document_name:
                     payload['document_name'] = document_name
                 
