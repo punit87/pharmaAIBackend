@@ -28,6 +28,8 @@ Resources:
   # Custom resource to configure S3 bucket notifications
   S3NotificationConfiguration:
     Type: AWS::CloudFormation::CustomResource
+    DeletionPolicy: Delete
+    UpdateReplacePolicy: Delete
     Properties:
       ServiceToken: !GetAtt NotificationConfigFunction.Arn
       BucketName: !Ref DocumentBucket
@@ -72,35 +74,51 @@ Resources:
                   bucket_name = event['ResourceProperties']['BucketName']
                   lambda_arn = event['ResourceProperties']['LambdaFunctionArn']
                   
+                  print(f"Processing {event['RequestType']} for bucket: {bucket_name}")
+                  
                   if event['RequestType'] == 'Create' or event['RequestType'] == 'Update':
                       # Configure S3 bucket notification
-                      s3.put_bucket_notification_configuration(
-                          Bucket=bucket_name,
-                          NotificationConfiguration={
-                              'LambdaConfigurations': [
-                                  {
-                                      'Id': 'DocumentProcessorTrigger',
-                                      'LambdaFunctionArn': lambda_arn,
-                                      'Events': ['s3:ObjectCreated:*'],
-                                      'Filter': {
-                                          'Key': {
-                                              'FilterRules': [
-                                                  {
-                                                      'Name': 'suffix',
-                                                      'Value': '.pdf'
-                                                  }
-                                              ]
-                                          }
+                      notification_config = {
+                          'LambdaFunctionConfigurations': [
+                              {
+                                  'Id': 'DocumentProcessorTrigger',
+                                  'LambdaFunctionArn': lambda_arn,
+                                  'Events': ['s3:ObjectCreated:*'],
+                                  'Filter': {
+                                      'Key': {
+                                          'FilterRules': [
+                                              {
+                                                  'Name': 'suffix',
+                                                  'Value': '.pdf'
+                                              }
+                                          ]
                                       }
                                   }
-                              ]
-                          }
+                              }
+                          ]
+                      }
+                      
+                      print(f"Setting notification configuration: {notification_config}")
+                      s3.put_bucket_notification_configuration(
+                          Bucket=bucket_name,
+                          NotificationConfiguration=notification_config
                       )
+                      print("Successfully configured S3 notifications")
+                  
+                  elif event['RequestType'] == 'Delete':
+                      # Clear notifications on delete
+                      s3.put_bucket_notification_configuration(
+                          Bucket=bucket_name,
+                          NotificationConfiguration={}
+                      )
+                      print("Successfully cleared S3 notifications")
                   
                   send_response(event, context, 'SUCCESS', {})
               except Exception as e:
-                  print(f"Error: {str(e)}")
-                  send_response(event, context, 'FAILED', {})
+                  error_msg = f"Error: {str(e)}"
+                  print(error_msg)
+                  # Send FAILED response with detailed error
+                  send_response(event, context, 'FAILED', {'Error': error_msg})
 
   NotificationConfigRole:
     Type: AWS::IAM::Role
