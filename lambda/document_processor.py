@@ -39,101 +39,23 @@ def lambda_handler(event, context):
         if document_name:
             print(f"Document name: {document_name}")
 
-        # Find the running ECS task and use its IP directly
-        ecs_client = boto3.client('ecs')
-        
-        try:
-            # Find existing running tasks
-            print("Looking for existing RAG-Anything server...")
-            response = ecs_client.list_tasks(
-                cluster=os.environ['ECS_CLUSTER'],
-                desiredStatus='RUNNING'
-            )
-            
-            if not response['taskArns']:
-                print("No running tasks found - ECS service should maintain DesiredCount=1")
-                return {
-                    'statusCode': 503,
-                    'headers': {
-                        'Content-Type': 'application/json',
-                        'Access-Control-Allow-Origin': '*'
-                    },
-                    'body': json.dumps({'error': 'No ECS tasks available. Service may be starting up.'})
-                }
-            
-            # Get task details to find the IP
-            task_details = ecs_client.describe_tasks(
-                cluster=os.environ['ECS_CLUSTER'],
-                tasks=response['taskArns']
-            )
-            
-            task = task_details['tasks'][0]
-            if task['lastStatus'] != 'RUNNING':
-                print(f"Task status: {task['lastStatus']}")
-                return {
-                    'statusCode': 503,
-                    'headers': {
-                        'Content-Type': 'application/json',
-                        'Access-Control-Allow-Origin': '*'
-                    },
-                    'body': json.dumps({'error': 'ECS task not running yet.'})
-                }
-            
-            # Get the task's public IP
-            task_arn = task['taskArn']
-            attachments = task.get('attachments', [])
-            if not attachments:
-                print("No attachments found for task")
-                return {
-                    'statusCode': 503,
-                    'headers': {
-                        'Content-Type': 'application/json',
-                        'Access-Control-Allow-Origin': '*'
-                    },
-                    'body': json.dumps({'error': 'Task has no network attachments.'})
-                }
-            
-            # Find the public IP from the attachment details
-            public_ip = None
-            for attachment in attachments:
-                for detail in attachment.get('details', []):
-                    if detail['name'] == 'networkInterfaceId':
-                        network_interface_id = detail['value']
-                        ec2_client = boto3.client('ec2')
-                        ni_response = ec2_client.describe_network_interfaces(
-                            NetworkInterfaceIds=[network_interface_id]
-                        )
-                        public_ip = ni_response['NetworkInterfaces'][0]['Association']['PublicIp']
-                        break
-                if public_ip:
-                    break
-            
-            if not public_ip:
-                print("Could not find public IP for task")
-                return {
-                    'statusCode': 503,
-                    'headers': {
-                        'Content-Type': 'application/json',
-                        'Access-Control-Allow-Origin': '*'
-                    },
-                    'body': json.dumps({'error': 'Could not find task public IP.'})
-                }
-            
-            server_url = f"http://{public_ip}:8000"
-            process_url = f"{server_url}/process"
-            
-            print(f"Making document processing request to ECS task: {process_url}")
-            
-        except Exception as e:
-            print(f"Error finding ECS task: {str(e)}")
+        # Use ALB endpoint for reliable connection to ECS tasks
+        alb_endpoint = os.environ.get('ALB_ENDPOINT')
+        if not alb_endpoint:
+            print("ALB_ENDPOINT not configured")
             return {
                 'statusCode': 500,
                 'headers': {
                     'Content-Type': 'application/json',
                     'Access-Control-Allow-Origin': '*'
                 },
-                'body': json.dumps({'error': f'Error finding ECS task: {str(e)}'})
+                'body': json.dumps({'error': 'ALB endpoint not configured'})
             }
+        
+        server_url = f"http://{alb_endpoint}"
+        process_url = f"{server_url}/process"
+        
+        print(f"Making document processing request via ALB: {process_url}")
 
         # Retry logic with exponential backoff
         max_retries = 5

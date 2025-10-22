@@ -96,6 +96,15 @@ Resources:
                 Action:
                   - ec2:DescribeNetworkInterfaces
                 Resource: '*'
+        - PolicyName: ELBAccess
+          PolicyDocument:
+            Version: '2012-10-17'
+            Statement:
+              - Effect: Allow
+                Action:
+                  - elasticloadbalancing:DescribeTargetGroups
+                  - elasticloadbalancing:DescribeTargetHealth
+                Resource: '*'
 
   RequestsLayer:
     Type: AWS::Lambda::LayerVersion

@@ -307,6 +307,10 @@ Resources:
           SecurityGroups:
             - !Ref ECSSecurityGroup
           AssignPublicIp: ENABLED
+      LoadBalancers:
+        - TargetGroupArn: !Ref ECSTargetGroup
+          ContainerName: raganything
+          ContainerPort: 8000
       EnableExecuteCommand: true
 
 Outputs:
