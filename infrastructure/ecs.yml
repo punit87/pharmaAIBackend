@@ -258,6 +258,8 @@ Resources:
               Value: /mnt/efs
             - Name: RAG_OUTPUT_DIR
               Value: /mnt/efs/rag_output
+            - Name: OUTPUT_DIR
+              Value: /mnt/efs/rag_output
           MountPoints:
             - SourceVolume: efs-storage
               ContainerPath: /mnt/efs
