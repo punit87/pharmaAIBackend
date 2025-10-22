@@ -20,10 +20,6 @@ Parameters:
     Type: String
     Description: RAG Query Lambda Function ARN
 
-  DocumentProcessorFunction:
-    Type: String
-    Description: Document Processor Lambda Function ARN
-
   RagQueryMultimodalFunction:
     Type: String
     Description: RAG Query Multimodal Lambda Function ARN

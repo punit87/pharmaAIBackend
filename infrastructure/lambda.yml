@@ -40,9 +40,9 @@ Parameters:
     Type: String
     Description: S3 bucket for Lambda packages
 
-  DocumentBucket:
+  ALBEndpoint:
     Type: String
-    Description: S3 bucket for document storage
+    Description: ALB DNS Name for connecting to ECS tasks
 
 Resources:
   LambdaExecutionRole:
@@ -149,8 +149,9 @@ Resources:
         Variables:
           ECS_CLUSTER: !Ref ECSCluster
           RAGANYTHING_TASK_DEFINITION: !Ref RaganythingTaskDefinition
-                  SUBNETS: !Sub '${PublicSubnet1},${PublicSubnet2}'
+          SUBNETS: !Sub '${PublicSubnet1},${PublicSubnet2}'
           SECURITY_GROUP: !Ref ECSSecurityGroup
+          ALB_ENDPOINT: !Ref ALBEndpoint
 
   DocumentProcessorFunction:
     Type: AWS::Lambda::Function
@@ -175,8 +176,9 @@ Resources:
         Variables:
           ECS_CLUSTER: !Ref ECSCluster
           RAGANYTHING_TASK_DEFINITION: !Ref RaganythingTaskDefinition
-                  SUBNETS: !Sub '${PublicSubnet1},${PublicSubnet2}'
+          SUBNETS: !Sub '${PublicSubnet1},${PublicSubnet2}'
           SECURITY_GROUP: !Ref ECSSecurityGroup
+          ALB_ENDPOINT: !Ref ALBEndpoint
 
   RagQueryMultimodalFunction:
     Type: AWS::Lambda::Function
@@ -201,8 +203,9 @@ Resources:
         Variables:
           ECS_CLUSTER: !Ref ECSCluster
           RAGANYTHING_TASK_DEFINITION: !Ref RaganythingTaskDefinition
-                  SUBNETS: !Sub '${PublicSubnet1},${PublicSubnet2}'
+          SUBNETS: !Sub '${PublicSubnet1},${PublicSubnet2}'
           SECURITY_GROUP: !Ref ECSSecurityGroup
+          ALB_ENDPOINT: !Ref ALBEndpoint
 
 Outputs:
   PresignedUrlFunction:

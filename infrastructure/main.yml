@@ -52,6 +52,35 @@ Resources:
       Parameters:
         Environment: !Ref Environment
 
+  # ALB Infrastructure (included directly)
+  ApplicationLoadBalancer:
+    Type: AWS::ElasticLoadBalancingV2::LoadBalancer
+    Properties:
+      Name: !Sub 'pharma-rag-alb-${Environment}'
+      Scheme: internet-facing
+      Type: application
+      Subnets:
+        - !GetAtt NetworkStack.Outputs.PublicSubnet1
+        - !GetAtt NetworkStack.Outputs.PublicSubnet2
+      SecurityGroups:
+        - !GetAtt NetworkStack.Outputs.ALBSecurityGroup
+      Tags:
+        - Key: Name
+          Value: !Sub 'pharma-rag-alb-${Environment}'
+        - Key: Environment
+          Value: !Ref Environment
+
+  # ALB Listener
+  ALBListener:
+    Type: AWS::ElasticLoadBalancingV2::Listener
+    Properties:
+      DefaultActions:
+        - Type: forward
+          TargetGroupArn: !GetAtt ECSStack.Outputs.ECSTargetGroupArn
+      LoadBalancerArn: !Ref ApplicationLoadBalancer
+      Port: 80
+      Protocol: HTTP
+
   # ECS Infrastructure
   ECSStack:
     Type: AWS::CloudFormation::Stack
@@ -60,9 +89,10 @@ Resources:
       Parameters:
         Environment: !Ref Environment
         VPCId: !GetAtt NetworkStack.Outputs.VPCId
-        PublicSubnet1: !GetAtt NetworkStack.Outputs.PublicSubnet1Id
-        PublicSubnet2: !GetAtt NetworkStack.Outputs.PublicSubnet2Id
-        ALBSecurityGroup: !GetAtt NetworkStack.Outputs.ALBSecurityGroup
+        PublicSubnet1: !GetAtt NetworkStack.Outputs.PublicSubnet1
+        PublicSubnet2: !GetAtt NetworkStack.Outputs.PublicSubnet2
+        PrivateSubnet1: !GetAtt NetworkStack.Outputs.PrivateSubnet1
+        PrivateSubnet2: !GetAtt NetworkStack.Outputs.PrivateSubnet2
         ECSSecurityGroup: !GetAtt NetworkStack.Outputs.ECSSecurityGroup
         RaganythingImageUri: !Ref RaganythingImageUri
         OpenAIApiKey: !Ref OpenAIApiKey
@@ -78,14 +108,25 @@ Resources:
       Parameters:
         Environment: !Ref Environment
         VPCId: !GetAtt NetworkStack.Outputs.VPCId
-        PublicSubnet1: !GetAtt NetworkStack.Outputs.PublicSubnet1Id
-        PublicSubnet2: !GetAtt NetworkStack.Outputs.PublicSubnet2Id
+        PublicSubnet1: !GetAtt NetworkStack.Outputs.PublicSubnet1
+        PublicSubnet2: !GetAtt NetworkStack.Outputs.PublicSubnet2
         LambdaSecurityGroup: !GetAtt NetworkStack.Outputs.LambdaSecurityGroup
         ECSCluster: !GetAtt ECSStack.Outputs.ECSCluster
         RaganythingTaskDefinition: !GetAtt ECSStack.Outputs.RaganythingTaskDefinition
         ECSSecurityGroup: !GetAtt NetworkStack.Outputs.ECSSecurityGroup
+        ALBEndpoint: !GetAtt ApplicationLoadBalancer.DNSName
         DocumentBucket: !GetAtt StorageStack.Outputs.DocumentBucketName
         S3Bucket: !Ref S3Bucket
+
+  # S3 Notifications
+  S3NotificationsStack:
+    Type: AWS::CloudFormation::Stack
+    Properties:
+      TemplateURL: !Sub 'https://${S3Bucket}.s3.${AWS::Region}.amazonaws.com/cloudformation-templates/s3-notifications.yml'
+      Parameters:
+        Environment: !Ref Environment
+        DocumentBucket: !GetAtt StorageStack.Outputs.DocumentBucketName
+        DocumentProcessorFunctionArn: !GetAtt LambdaStack.Outputs.DocumentProcessorFunction
 
   # API Gateway
   ApiGatewayStack:
@@ -97,7 +138,6 @@ Resources:
         PresignedUrlFunction: !GetAtt LambdaStack.Outputs.PresignedUrlFunction
         HealthFunction: !GetAtt LambdaStack.Outputs.HealthFunction
         RagQueryFunction: !GetAtt LambdaStack.Outputs.RagQueryFunction
-        DocumentProcessorFunction: !GetAtt LambdaStack.Outputs.DocumentProcessorFunction
         RagQueryMultimodalFunction: !GetAtt LambdaStack.Outputs.RagQueryMultimodalFunction
 
 
@@ -125,6 +165,12 @@ Outputs:
     Value: !GetAtt ECSStack.Outputs.ECSCluster
     Export:
       Name: !Sub '${AWS::StackName}-ECSClusterName'
+
+  ALBEndpoint:
+    Description: ALB DNS Name
+    Value: !GetAtt ApplicationLoadBalancer.DNSName
+    Export:
+      Name: !Sub '${AWS::StackName}-ALBEndpoint'
 
   RaganythingRepositoryUri:
     Description: ECR Repository URI for RAG-Anything

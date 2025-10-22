@@ -98,7 +98,7 @@ done
 
 # Upload CloudFormation templates to S3
 echo "📦 [DEPLOY] Uploading CloudFormation templates to S3..."
-TEMPLATES=("infrastructure/network.yml" "infrastructure/storage.yml" "infrastructure/ecs.yml" "infrastructure/lambda.yml" "infrastructure/api-gateway.yml")
+TEMPLATES=("infrastructure/network.yml" "infrastructure/storage.yml" "infrastructure/ecs.yml" "infrastructure/lambda.yml" "infrastructure/api-gateway.yml" "infrastructure/s3-notifications.yml")
 
 for template in "${TEMPLATES[@]}"; do
     if [ -f "$template" ]; then

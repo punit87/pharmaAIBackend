@@ -2,6 +2,7 @@ import json
 import boto3
 import os
 import requests
+import time
 
 def lambda_handler(event, context):
     try:
@@ -42,7 +43,6 @@ def lambda_handler(event, context):
             )
             
             task_arn = None
-            private_ip = None
             
             # Combine both RUNNING and PENDING task ARNs
             all_task_arns = response['taskArns'] + pending_response['taskArns']
@@ -59,58 +59,32 @@ def lambda_handler(event, context):
                     if task['lastStatus'] in ['RUNNING', 'PENDING']:
                         task_arn = task['taskArn']
                         print(f"Found existing task: {task_arn} (status: {task['lastStatus']})")
-                        
-                        # Get private IP from task attachments (only if RUNNING)
-                        if task['lastStatus'] == 'RUNNING':
-                            for attachment in task['attachments']:
-                                if attachment['type'] == 'ElasticNetworkInterface':
-                                    for detail in attachment['details']:
-                                        if detail['name'] == 'privateIPv4Address':
-                                            private_ip = detail['value']
-                                            break
-                                    if private_ip:
-                                        break
                         break
             
             # If we found a PENDING task, wait for it to become RUNNING
-            if task_arn and not private_ip:
-                print(f"Found PENDING task {task_arn}, waiting for it to become RUNNING...")
-                try:
-                    waiter = ecs_client.get_waiter('tasks_running')
-                    waiter.wait(
-                        cluster=os.environ['ECS_CLUSTER'],
-                        tasks=[task_arn],
-                        WaiterConfig={
-                            'Delay': 10,
-                            'MaxAttempts': 30  # 5 minutes max to start
-                        }
-                    )
-                    
-                    # Get updated task details to find the private IP
-                    task_details = ecs_client.describe_tasks(
-                        cluster=os.environ['ECS_CLUSTER'],
-                        tasks=[task_arn]
-                    )
-                    
-                    task = task_details['tasks'][0]
-                    if task['lastStatus'] == 'RUNNING':
-                        # Get private IP from task attachments
-                        for attachment in task['attachments']:
-                            if attachment['type'] == 'ElasticNetworkInterface':
-                                for detail in attachment['details']:
-                                    if detail['name'] == 'privateIPv4Address':
-                                        private_ip = detail['value']
-                                        break
-                                if private_ip:
-                                    break
-                    else:
-                        print(f"Task {task_arn} failed to start, status: {task['lastStatus']}")
+            if task_arn:
+                task_details = ecs_client.describe_tasks(
+                    cluster=os.environ['ECS_CLUSTER'],
+                    tasks=[task_arn]
+                )
+                task = task_details['tasks'][0]
+                
+                if task['lastStatus'] == 'PENDING':
+                    print(f"Found PENDING task {task_arn}, waiting for it to become RUNNING...")
+                    try:
+                        waiter = ecs_client.get_waiter('tasks_running')
+                        waiter.wait(
+                            cluster=os.environ['ECS_CLUSTER'],
+                            tasks=[task_arn],
+                            WaiterConfig={
+                                'Delay': 10,
+                                'MaxAttempts': 30  # 5 minutes max to start
+                            }
+                        )
+                        print(f"Task {task_arn} is now RUNNING")
+                    except Exception as e:
+                        print(f"Error waiting for task {task_arn} to start: {str(e)}")
                         task_arn = None
-                        private_ip = None
-                except Exception as e:
-                    print(f"Error waiting for task {task_arn} to start: {str(e)}")
-                    task_arn = None
-                    private_ip = None
             
             if not task_arn:
                 # Start new RAG-Anything server task
@@ -148,42 +122,8 @@ def lambda_handler(event, context):
                             'MaxAttempts': 30  # 5 minutes max to start
                         }
                     )
+                    print(f"Task {task_arn} is now RUNNING")
                     
-                    # Get task details to find the private IP
-                    task_details = ecs_client.describe_tasks(
-                        cluster=os.environ['ECS_CLUSTER'],
-                        tasks=[task_arn]
-                    )
-                    
-                    task = task_details['tasks'][0]
-                    if task['lastStatus'] != 'RUNNING':
-                        return {
-                            'statusCode': 500,
-                            'headers': {
-                                'Content-Type': 'application/json',
-                                'Access-Control-Allow-Origin': '*'
-                            },
-                            'body': json.dumps({'error': 'Server failed to start'})
-                        }
-                    
-                    # Get private IP from network interfaces
-                    for container in task['containers']:
-                        if 'networkInterfaces' in container:
-                            for ni in container['networkInterfaces']:
-                                private_ip = ni.get('privateIpv4Address')
-                                break
-                        if private_ip:
-                            break
-                    
-                    if not private_ip:
-                        return {
-                            'statusCode': 500,
-                            'headers': {
-                                'Content-Type': 'application/json',
-                                'Access-Control-Allow-Origin': '*'
-                            },
-                            'body': json.dumps({'error': 'Could not get server IP address'})
-                        }
                 except Exception as e:
                     print(f"Error running RAG-Anything task: {str(e)}")
                     return {
@@ -195,11 +135,17 @@ def lambda_handler(event, context):
                         'body': json.dumps({'error': f'Error running RAG-Anything task: {str(e)}'})
                     }
             
-            # Make HTTP request to the server
-            server_url = f"http://{private_ip}:8000"
+            # Use ALB endpoint instead of direct IP
+            alb_endpoint = os.environ['ALB_ENDPOINT']
+            server_url = f"http://{alb_endpoint}"
             query_url = f"{server_url}/query"
             
-            print(f"Making query request to: {query_url}")
+            print(f"Making query request to ALB: {query_url}")
+            
+            # Wait a bit for the ALB to register the task as healthy
+            print("Waiting for ALB health check to pass...")
+            time.sleep(30)  # Give ALB time to register the task
+            
             query_response = requests.post(
                 query_url,
                 json={'query': query},
