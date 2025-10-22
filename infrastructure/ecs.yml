@@ -290,7 +290,9 @@ Resources:
   # ECS Service with ALB
   RaganythingService:
     Type: AWS::ECS::Service
-    DependsOn: RaganythingTaskDefinition
+    DependsOn: 
+      - RaganythingTaskDefinition
+      - ALBListener
     Properties:
       ServiceName: !Sub 'pharma-raganything-service-${Environment}'
       Cluster: !Ref ECSCluster
@@ -305,10 +307,6 @@ Resources:
           SecurityGroups:
             - !Ref ECSSecurityGroup
           AssignPublicIp: ENABLED
-      LoadBalancers:
-        - ContainerName: raganything
-          ContainerPort: 8000
-          TargetGroupArn: !Ref ECSTargetGroup
       EnableExecuteCommand: true
 
 Outputs:

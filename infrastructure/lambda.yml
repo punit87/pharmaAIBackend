@@ -88,14 +88,13 @@ Resources:
                   - s3:DeleteObject
                   - s3:ListBucket
                 Resource: '*'
-        - PolicyName: ELBAccess
+        - PolicyName: EC2Access
           PolicyDocument:
             Version: '2012-10-17'
             Statement:
               - Effect: Allow
                 Action:
-                  - elasticloadbalancing:DescribeTargetGroups
-                  - elasticloadbalancing:DescribeTargetHealth
+                  - ec2:DescribeNetworkInterfaces
                 Resource: '*'
 
   RequestsLayer:
