@@ -60,15 +60,16 @@ def lambda_handler(event, context):
                         task_arn = task['taskArn']
                         print(f"Found existing task: {task_arn} (status: {task['lastStatus']})")
                         
-                        # Get private IP from network interfaces (only if RUNNING)
+                        # Get private IP from task attachments (only if RUNNING)
                         if task['lastStatus'] == 'RUNNING':
-                            for container in task['containers']:
-                                if 'networkInterfaces' in container:
-                                    for ni in container['networkInterfaces']:
-                                        private_ip = ni.get('privateIpv4Address')
+                            for attachment in task['attachments']:
+                                if attachment['type'] == 'ElasticNetworkInterface':
+                                    for detail in attachment['details']:
+                                        if detail['name'] == 'privateIPv4Address':
+                                            private_ip = detail['value']
+                                            break
+                                    if private_ip:
                                         break
-                                if private_ip:
-                                    break
                         break
             
             # If we found a PENDING task, wait for it to become RUNNING
@@ -93,14 +94,15 @@ def lambda_handler(event, context):
                     
                     task = task_details['tasks'][0]
                     if task['lastStatus'] == 'RUNNING':
-                        # Get private IP from network interfaces
-                        for container in task['containers']:
-                            if 'networkInterfaces' in container:
-                                for ni in container['networkInterfaces']:
-                                    private_ip = ni.get('privateIpv4Address')
+                        # Get private IP from task attachments
+                        for attachment in task['attachments']:
+                            if attachment['type'] == 'ElasticNetworkInterface':
+                                for detail in attachment['details']:
+                                    if detail['name'] == 'privateIPv4Address':
+                                        private_ip = detail['value']
+                                        break
+                                if private_ip:
                                     break
-                            if private_ip:
-                                break
                     else:
                         print(f"Task {task_arn} failed to start, status: {task['lastStatus']}")
                         task_arn = None

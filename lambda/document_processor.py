@@ -2,6 +2,7 @@ import json
 import boto3
 import os
 import requests
+import urllib.parse
 
 def lambda_handler(event, context):
     try:
@@ -9,7 +10,7 @@ def lambda_handler(event, context):
         if 'Records' in event:
             record = event['Records'][0]
             bucket = record['s3']['bucket']['name']
-            key = record['s3']['object']['key']
+            key = urllib.parse.unquote_plus(record['s3']['object']['key'])
         else:
             bucket = event.get('bucket', '')
             key = event.get('key', '')
@@ -74,15 +75,16 @@ def lambda_handler(event, context):
                     'body': json.dumps({'error': 'Server failed to start'})
                 }
             
-            # Get private IP from network interfaces
+            # Get private IP from task attachments
             private_ip = None
-            for container in task['containers']:
-                if 'networkInterfaces' in container:
-                    for ni in container['networkInterfaces']:
-                        private_ip = ni.get('privateIpv4Address')
+            for attachment in task['attachments']:
+                if attachment['type'] == 'ElasticNetworkInterface':
+                    for detail in attachment['details']:
+                        if detail['name'] == 'privateIPv4Address':
+                            private_ip = detail['value']
+                            break
+                    if private_ip:
                         break
-                if private_ip:
-                    break
             
             if not private_ip:
                 return {
