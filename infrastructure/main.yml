@@ -30,6 +30,11 @@ Parameters:
     NoEcho: true
     Description: Neo4j Password
 
+  S3Bucket:
+    Type: String
+    Default: pharma-deployments-864899869769
+    Description: S3 bucket for CloudFormation templates and Lambda packages
+
 Resources:
   # Network Infrastructure
   NetworkStack:
@@ -46,7 +51,6 @@ Resources:
       TemplateURL: !Sub 'https://${S3Bucket}.s3.${AWS::Region}.amazonaws.com/cloudformation-templates/storage.yml'
       Parameters:
         Environment: !Ref Environment
-      DependsOn: NetworkStack
 
   # ECS Infrastructure
   ECSStack:
@@ -56,15 +60,14 @@ Resources:
       Parameters:
         Environment: !Ref Environment
         VPCId: !GetAtt NetworkStack.Outputs.VPCId
-        PrivateSubnet1: !GetAtt NetworkStack.Outputs.PrivateSubnet1
-        PrivateSubnet2: !GetAtt NetworkStack.Outputs.PrivateSubnet2
+        PublicSubnet1: !GetAtt NetworkStack.Outputs.PublicSubnet1Id
+        PublicSubnet2: !GetAtt NetworkStack.Outputs.PublicSubnet2Id
         ECSSecurityGroup: !GetAtt NetworkStack.Outputs.ECSSecurityGroup
         RaganythingImageUri: !Ref RaganythingImageUri
         OpenAIApiKey: !Ref OpenAIApiKey
         Neo4jUri: !Ref Neo4jUri
         Neo4jUsername: !Ref Neo4jUsername
         Neo4jPassword: !Ref Neo4jPassword
-      DependsOn: NetworkStack
 
   # Lambda Functions
   LambdaStack:
@@ -74,18 +77,14 @@ Resources:
       Parameters:
         Environment: !Ref Environment
         VPCId: !GetAtt NetworkStack.Outputs.VPCId
-        PrivateSubnet1: !GetAtt NetworkStack.Outputs.PrivateSubnet1
-        PrivateSubnet2: !GetAtt NetworkStack.Outputs.PrivateSubnet2
+        PublicSubnet1: !GetAtt NetworkStack.Outputs.PublicSubnet1Id
+        PublicSubnet2: !GetAtt NetworkStack.Outputs.PublicSubnet2Id
         LambdaSecurityGroup: !GetAtt NetworkStack.Outputs.LambdaSecurityGroup
         ECSCluster: !GetAtt ECSStack.Outputs.ECSCluster
         RaganythingTaskDefinition: !GetAtt ECSStack.Outputs.RaganythingTaskDefinition
         ECSSecurityGroup: !GetAtt NetworkStack.Outputs.ECSSecurityGroup
         DocumentBucket: !GetAtt StorageStack.Outputs.DocumentBucketName
         S3Bucket: !Ref S3Bucket
-      DependsOn: 
-        - NetworkStack
-        - ECSStack
-        - StorageStack
 
   # API Gateway
   ApiGatewayStack:
@@ -99,18 +98,7 @@ Resources:
         RagQueryFunction: !GetAtt LambdaStack.Outputs.RagQueryFunction
         DocumentProcessorFunction: !GetAtt LambdaStack.Outputs.DocumentProcessorFunction
         RagQueryMultimodalFunction: !GetAtt LambdaStack.Outputs.RagQueryMultimodalFunction
-      DependsOn: LambdaStack
 
-  # S3 Bucket for CloudFormation templates
-  S3Bucket:
-    Type: AWS::S3::Bucket
-    Properties:
-      BucketName: !Sub 'pharma-deployments-${AWS::AccountId}'
-      PublicAccessBlockConfiguration:
-        BlockPublicAcls: true
-        BlockPublicPolicy: true
-        IgnorePublicAcls: true
-        RestrictPublicBuckets: true
 
 Outputs:
   ApiGatewayUrl:

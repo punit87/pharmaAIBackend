@@ -12,7 +12,7 @@ Resources:
   DocumentBucket:
     Type: AWS::S3::Bucket
     Properties:
-      BucketName: !Sub 'pharma-documents-${Environment}-${AWS::AccountId}-${AWS::Region}'
+      BucketName: !Sub 'pharma-documents-${Environment}-${AWS::AccountId}-${AWS::Region}-v2'
       VersioningConfiguration:
         Status: Enabled
       PublicAccessBlockConfiguration:
@@ -20,38 +20,12 @@ Resources:
         BlockPublicPolicy: true
         IgnorePublicAcls: true
         RestrictPublicBuckets: true
-      NotificationConfiguration:
-        LambdaConfigurations:
-          - Event: s3:ObjectCreated:*
-            Function: !Ref DocumentProcessorFunction
-            Filter:
-              S3Key:
-                Rules:
-                  - Name: prefix
-                    Value: test-documents/
       Tags:
         - Key: Name
           Value: !Sub 'pharma-documents-${Environment}'
         - Key: Environment
           Value: !Ref Environment
 
-  DocumentBucketPolicy:
-    Type: AWS::S3::BucketPolicy
-    Properties:
-      Bucket: !Ref DocumentBucket
-      PolicyDocument:
-        Version: '2012-10-17'
-        Statement:
-          - Sid: DenyInsecureConnections
-            Effect: Deny
-            Principal: '*'
-            Action: 's3:*'
-            Resource:
-              - !Sub '${DocumentBucket}/*'
-              - !GetAtt DocumentBucket.Arn
-            Condition:
-              Bool:
-                'aws:SecureTransport': 'false'
 
 Outputs:
   DocumentBucketName:

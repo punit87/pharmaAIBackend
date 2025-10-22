@@ -79,10 +79,13 @@ for lambda_file in lambda/*.py; do
         temp_dir=$(mktemp -d)
         cp "$lambda_file" "$temp_dir/"
         
-        # Create zip file
+        # Create zip file in the temp directory
         cd "$temp_dir"
-        zip -r "../$LAMBDA_PACKAGE_DIR/${lambda_name}.zip" .
+        zip -r "${lambda_name}.zip" .
         cd - > /dev/null
+        
+        # Move zip file to package directory
+        mv "$temp_dir/${lambda_name}.zip" "$LAMBDA_PACKAGE_DIR/"
         
         # Upload to S3
         aws s3 cp "$LAMBDA_PACKAGE_DIR/${lambda_name}.zip" "s3://$S3_BUCKET/lambda-packages/${lambda_name}.zip" --profile "$AWS_PROFILE" --region "$AWS_REGION"

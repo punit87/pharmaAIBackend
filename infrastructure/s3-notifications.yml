@@ -1,0 +1,47 @@
+AWSTemplateFormatVersion: '2010-09-09'
+Description: 'S3 Notification Configuration for Pharma RAG system'
+
+Parameters:
+  Environment:
+    Type: String
+    Default: dev
+    AllowedValues: [dev, dev-1, dev-2, staging, prod]
+    Description: Environment name
+
+  DocumentBucket:
+    Type: String
+    Description: S3 Bucket name for document storage
+
+  DocumentProcessorFunctionArn:
+    Type: String
+    Description: ARN of the Document Processor Lambda Function
+
+Resources:
+  DocumentBucketNotification:
+    Type: AWS::S3::Bucket
+    Properties:
+      Bucket: !Ref DocumentBucket
+      NotificationConfiguration:
+        LambdaConfigurations:
+          - Event: s3:ObjectCreated:*
+            Function: !Ref DocumentProcessorFunctionArn
+            Filter:
+              S3Key:
+                Rules:
+                  - Name: suffix
+                    Value: .pdf
+
+  DocumentProcessorPermission:
+    Type: AWS::Lambda::Permission
+    Properties:
+      FunctionName: !Ref DocumentProcessorFunctionArn
+      Action: lambda:InvokeFunction
+      Principal: s3.amazonaws.com
+      SourceArn: !Sub 'arn:aws:s3:::${DocumentBucket}'
+
+Outputs:
+  S3NotificationConfigured:
+    Description: S3 notification configuration status
+    Value: 'Configured'
+    Export:
+      Name: !Sub '${AWS::StackName}-S3NotificationConfigured'

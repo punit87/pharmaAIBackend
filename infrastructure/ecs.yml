@@ -12,13 +12,13 @@ Parameters:
     Type: String
     Description: VPC ID from network stack
 
-  PrivateSubnet1:
+  PublicSubnet1:
     Type: String
-    Description: Private Subnet 1 from network stack
+    Description: Public Subnet 1 from network stack
 
-  PrivateSubnet2:
+  PublicSubnet2:
     Type: String
-    Description: Private Subnet 2 from network stack
+    Description: Public Subnet 2 from network stack
 
   ECSSecurityGroup:
     Type: String
