@@ -17,20 +17,6 @@ Parameters:
     Description: ARN of the Document Processor Lambda Function
 
 Resources:
-  DocumentBucketNotification:
-    Type: AWS::S3::Bucket
-    Properties:
-      Bucket: !Ref DocumentBucket
-      NotificationConfiguration:
-        LambdaConfigurations:
-          - Event: s3:ObjectCreated:*
-            Function: !Ref DocumentProcessorFunctionArn
-            Filter:
-              S3Key:
-                Rules:
-                  - Name: suffix
-                    Value: .pdf
-
   DocumentProcessorPermission:
     Type: AWS::Lambda::Permission
     Properties:
@@ -38,6 +24,106 @@ Resources:
       Action: lambda:InvokeFunction
       Principal: s3.amazonaws.com
       SourceArn: !Sub 'arn:aws:s3:::${DocumentBucket}'
+
+  # Custom resource to configure S3 bucket notifications
+  S3NotificationConfiguration:
+    Type: AWS::CloudFormation::CustomResource
+    Properties:
+      ServiceToken: !GetAtt NotificationConfigFunction.Arn
+      BucketName: !Ref DocumentBucket
+      LambdaFunctionArn: !Ref DocumentProcessorFunctionArn
+
+  NotificationConfigFunction:
+    Type: AWS::Lambda::Function
+    Properties:
+      FunctionName: !Sub 'pharma-s3-notification-config-${Environment}'
+      Runtime: python3.11
+      Handler: index.lambda_handler
+      Role: !GetAtt NotificationConfigRole.Arn
+      Code:
+        ZipFile: |
+          import json
+          import boto3
+          import urllib3
+          
+          def send_response(event, context, response_status, response_data=None):
+              """Send response to CloudFormation"""
+              if response_data is None:
+                  response_data = {}
+              
+              response_body = json.dumps({
+                  'Status': response_status,
+                  'Reason': f'See CloudWatch Log Stream: {context.log_stream_name}',
+                  'PhysicalResourceId': event.get('PhysicalResourceId', context.log_stream_name),
+                  'StackId': event['StackId'],
+                  'RequestId': event['RequestId'],
+                  'LogicalResourceId': event['LogicalResourceId'],
+                  'Data': response_data
+              })
+              
+              http = urllib3.PoolManager()
+              http.request('PUT', event['ResponseURL'], 
+                          body=response_body,
+                          headers={'Content-Type': 'application/json'})
+          
+          def lambda_handler(event, context):
+              try:
+                  s3 = boto3.client('s3')
+                  bucket_name = event['ResourceProperties']['BucketName']
+                  lambda_arn = event['ResourceProperties']['LambdaFunctionArn']
+                  
+                  if event['RequestType'] == 'Create' or event['RequestType'] == 'Update':
+                      # Configure S3 bucket notification
+                      s3.put_bucket_notification_configuration(
+                          Bucket=bucket_name,
+                          NotificationConfiguration={
+                              'LambdaConfigurations': [
+                                  {
+                                      'Id': 'DocumentProcessorTrigger',
+                                      'LambdaFunctionArn': lambda_arn,
+                                      'Events': ['s3:ObjectCreated:*'],
+                                      'Filter': {
+                                          'Key': {
+                                              'FilterRules': [
+                                                  {
+                                                      'Name': 'suffix',
+                                                      'Value': '.pdf'
+                                                  }
+                                              ]
+                                          }
+                                      }
+                                  }
+                              ]
+                          }
+                      )
+                  
+                  send_response(event, context, 'SUCCESS', {})
+              except Exception as e:
+                  print(f"Error: {str(e)}")
+                  send_response(event, context, 'FAILED', {})
+
+  NotificationConfigRole:
+    Type: AWS::IAM::Role
+    Properties:
+      AssumeRolePolicyDocument:
+        Version: '2012-10-17'
+        Statement:
+          - Effect: Allow
+            Principal:
+              Service: lambda.amazonaws.com
+            Action: sts:AssumeRole
+      ManagedPolicyArns:
+        - arn:aws:iam::aws:policy/service-role/AWSLambdaBasicExecutionRole
+      Policies:
+        - PolicyName: S3NotificationConfig
+          PolicyDocument:
+            Version: '2012-10-17'
+            Statement:
+              - Effect: Allow
+                Action:
+                  - s3:PutBucketNotification
+                  - s3:GetBucketNotification
+                Resource: !Sub 'arn:aws:s3:::${DocumentBucket}'
 
 Outputs:
   S3NotificationConfigured:

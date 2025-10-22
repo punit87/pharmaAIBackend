@@ -12,7 +12,7 @@ Resources:
   DocumentBucket:
     Type: AWS::S3::Bucket
     Properties:
-      BucketName: !Sub 'pharma-documents-${Environment}-${AWS::AccountId}-${AWS::Region}-v2'
+      BucketName: !Sub 'pharma-documents-${Environment}-${AWS::AccountId}-${AWS::Region}-v3'
       VersioningConfiguration:
         Status: Enabled
       PublicAccessBlockConfiguration:

@@ -52,34 +52,6 @@ Resources:
       Parameters:
         Environment: !Ref Environment
 
-  # ALB Infrastructure (included directly)
-  ApplicationLoadBalancer:
-    Type: AWS::ElasticLoadBalancingV2::LoadBalancer
-    Properties:
-      Name: !Sub 'pharma-rag-alb-${Environment}'
-      Scheme: internet-facing
-      Type: application
-      Subnets:
-        - !GetAtt NetworkStack.Outputs.PublicSubnet1
-        - !GetAtt NetworkStack.Outputs.PublicSubnet2
-      SecurityGroups:
-        - !GetAtt NetworkStack.Outputs.ALBSecurityGroup
-      Tags:
-        - Key: Name
-          Value: !Sub 'pharma-rag-alb-${Environment}'
-        - Key: Environment
-          Value: !Ref Environment
-
-  # ALB Listener
-  ALBListener:
-    Type: AWS::ElasticLoadBalancingV2::Listener
-    Properties:
-      DefaultActions:
-        - Type: forward
-          TargetGroupArn: !GetAtt ECSStack.Outputs.ECSTargetGroupArn
-      LoadBalancerArn: !Ref ApplicationLoadBalancer
-      Port: 80
-      Protocol: HTTP
 
   # ECS Infrastructure
   ECSStack:
@@ -93,6 +65,7 @@ Resources:
         PublicSubnet2: !GetAtt NetworkStack.Outputs.PublicSubnet2
         PrivateSubnet1: !GetAtt NetworkStack.Outputs.PrivateSubnet1
         PrivateSubnet2: !GetAtt NetworkStack.Outputs.PrivateSubnet2
+        ALBSecurityGroup: !GetAtt NetworkStack.Outputs.ALBSecurityGroup
         ECSSecurityGroup: !GetAtt NetworkStack.Outputs.ECSSecurityGroup
         RaganythingImageUri: !Ref RaganythingImageUri
         OpenAIApiKey: !Ref OpenAIApiKey
@@ -114,7 +87,7 @@ Resources:
         ECSCluster: !GetAtt ECSStack.Outputs.ECSCluster
         RaganythingTaskDefinition: !GetAtt ECSStack.Outputs.RaganythingTaskDefinition
         ECSSecurityGroup: !GetAtt NetworkStack.Outputs.ECSSecurityGroup
-        ALBEndpoint: !GetAtt ApplicationLoadBalancer.DNSName
+        ALBEndpoint: !GetAtt ECSStack.Outputs.ALBEndpoint
         DocumentBucket: !GetAtt StorageStack.Outputs.DocumentBucketName
         S3Bucket: !Ref S3Bucket
 
@@ -168,7 +141,7 @@ Outputs:
 
   ALBEndpoint:
     Description: ALB DNS Name
-    Value: !GetAtt ApplicationLoadBalancer.DNSName
+    Value: !GetAtt ECSStack.Outputs.ALBEndpoint
     Export:
       Name: !Sub '${AWS::StackName}-ALBEndpoint'
 
