@@ -1,0 +1,232 @@
+AWSTemplateFormatVersion: '2010-09-09'
+Description: 'Lambda functions for Pharma RAG system'
+
+Parameters:
+  Environment:
+    Type: String
+    Default: dev
+    AllowedValues: [dev, dev-1, dev-2, staging, prod]
+    Description: Environment name
+
+  VPCId:
+    Type: String
+    Description: VPC ID from network stack
+
+  PrivateSubnet1:
+    Type: String
+    Description: Private Subnet 1 from network stack
+
+  PrivateSubnet2:
+    Type: String
+    Description: Private Subnet 2 from network stack
+
+  LambdaSecurityGroup:
+    Type: String
+    Description: Lambda Security Group from network stack
+
+  ECSCluster:
+    Type: String
+    Description: ECS Cluster name
+
+  RaganythingTaskDefinition:
+    Type: String
+    Description: RAG-Anything Task Definition ARN
+
+  ECSSecurityGroup:
+    Type: String
+    Description: ECS Security Group from network stack
+
+  S3Bucket:
+    Type: String
+    Description: S3 bucket for Lambda packages
+
+Resources:
+  LambdaExecutionRole:
+    Type: AWS::IAM::Role
+    Properties:
+      RoleName: !Sub 'pharma-lambda-execution-role-${Environment}'
+      AssumeRolePolicyDocument:
+        Version: '2012-10-17'
+        Statement:
+          - Effect: Allow
+            Principal:
+              Service: lambda.amazonaws.com
+            Action: sts:AssumeRole
+      ManagedPolicyArns:
+        - arn:aws:iam::aws:policy/service-role/AWSLambdaBasicExecutionRole
+        - arn:aws:iam::aws:policy/service-role/AWSLambdaVPCAccessExecutionRole
+      Policies:
+        - PolicyName: ECSTaskExecution
+          PolicyDocument:
+            Version: '2012-10-17'
+            Statement:
+              - Effect: Allow
+                Action:
+                  - ecs:RunTask
+                  - ecs:StopTask
+                  - ecs:DescribeTasks
+                  - ecs:DescribeTaskDefinition
+                  - ecs:ListTasks
+                  - iam:PassRole
+                Resource: '*'
+        - PolicyName: S3Access
+          PolicyDocument:
+            Version: '2012-10-17'
+            Statement:
+              - Effect: Allow
+                Action:
+                  - s3:GetObject
+                  - s3:PutObject
+                  - s3:DeleteObject
+                  - s3:ListBucket
+                Resource: '*'
+
+  RequestsLayer:
+    Type: AWS::Lambda::LayerVersion
+    Properties:
+      LayerName: !Sub 'pharma-requests-${Environment}'
+      Description: 'Requests library for Lambda functions'
+      Content:
+        S3Bucket: pharma-lambda-layers-864899869769-us-east-1
+        S3Key: requests-layer.zip
+      CompatibleRuntimes:
+        - python3.11
+
+  PresignedUrlFunction:
+    Type: AWS::Lambda::Function
+    Properties:
+      FunctionName: !Sub 'pharma-presigned-url-${Environment}'
+      Runtime: python3.11
+      Handler: presigned_url.lambda_handler
+      Code:
+        S3Bucket: !Sub '${S3Bucket}'
+        S3Key: !Sub 'lambda-packages/presigned_url.zip'
+      Role: !GetAtt LambdaExecutionRole.Arn
+      Environment:
+        Variables:
+          S3_BUCKET: !Ref DocumentBucket
+      Timeout: 30
+
+  HealthFunction:
+    Type: AWS::Lambda::Function
+    Properties:
+      FunctionName: !Sub 'pharma-health-${Environment}'
+      Runtime: python3.11
+      Handler: health.lambda_handler
+      Code:
+        S3Bucket: !Sub '${S3Bucket}'
+        S3Key: !Sub 'lambda-packages/health.zip'
+      Role: !GetAtt LambdaExecutionRole.Arn
+      Environment:
+        Variables:
+          ECS_CLUSTER: !Ref ECSCluster
+      Timeout: 30
+
+  RagQueryFunction:
+    Type: AWS::Lambda::Function
+    Properties:
+      FunctionName: !Sub 'pharma-rag-query-${Environment}'
+      Runtime: python3.11
+      Handler: rag_query.lambda_handler
+      Code:
+        S3Bucket: !Sub '${S3Bucket}'
+        S3Key: !Sub 'lambda-packages/rag_query.zip'
+      Role: !GetAtt LambdaExecutionRole.Arn
+      VpcConfig:
+        SecurityGroupIds:
+          - !Ref LambdaSecurityGroup
+        SubnetIds:
+          - !Ref PrivateSubnet1
+          - !Ref PrivateSubnet2
+      Layers:
+        - !Ref RequestsLayer
+      Timeout: 300
+      Environment:
+        Variables:
+          ECS_CLUSTER: !Ref ECSCluster
+          RAGANYTHING_TASK_DEFINITION: !Ref RaganythingTaskDefinition
+          SUBNETS: !Sub '${PrivateSubnet1},${PrivateSubnet2}'
+          SECURITY_GROUP: !Ref ECSSecurityGroup
+
+  DocumentProcessorFunction:
+    Type: AWS::Lambda::Function
+    Properties:
+      FunctionName: !Sub 'pharma-document-processor-${Environment}'
+      Runtime: python3.11
+      Handler: document_processor.lambda_handler
+      Code:
+        S3Bucket: !Sub '${S3Bucket}'
+        S3Key: !Sub 'lambda-packages/document_processor.zip'
+      Role: !GetAtt LambdaExecutionRole.Arn
+      VpcConfig:
+        SecurityGroupIds:
+          - !Ref LambdaSecurityGroup
+        SubnetIds:
+          - !Ref PrivateSubnet1
+          - !Ref PrivateSubnet2
+      Layers:
+        - !Ref RequestsLayer
+      Timeout: 300
+      Environment:
+        Variables:
+          ECS_CLUSTER: !Ref ECSCluster
+          RAGANYTHING_TASK_DEFINITION: !Ref RaganythingTaskDefinition
+          SUBNETS: !Sub '${PrivateSubnet1},${PrivateSubnet2}'
+          SECURITY_GROUP: !Ref ECSSecurityGroup
+
+  RagQueryMultimodalFunction:
+    Type: AWS::Lambda::Function
+    Properties:
+      FunctionName: !Sub 'pharma-rag-query-multimodal-${Environment}'
+      Runtime: python3.11
+      Handler: rag_query_multimodal.lambda_handler
+      Code:
+        S3Bucket: !Sub '${S3Bucket}'
+        S3Key: !Sub 'lambda-packages/rag_query_multimodal.zip'
+      Role: !GetAtt LambdaExecutionRole.Arn
+      VpcConfig:
+        SecurityGroupIds:
+          - !Ref LambdaSecurityGroup
+        SubnetIds:
+          - !Ref PrivateSubnet1
+          - !Ref PrivateSubnet2
+      Layers:
+        - !Ref RequestsLayer
+      Timeout: 300
+      Environment:
+        Variables:
+          ECS_CLUSTER: !Ref ECSCluster
+          RAGANYTHING_TASK_DEFINITION: !Ref RaganythingTaskDefinition
+          SUBNETS: !Sub '${PrivateSubnet1},${PrivateSubnet2}'
+          SECURITY_GROUP: !Ref ECSSecurityGroup
+
+Outputs:
+  PresignedUrlFunction:
+    Description: Presigned URL Lambda Function ARN
+    Value: !GetAtt PresignedUrlFunction.Arn
+    Export:
+      Name: !Sub '${AWS::StackName}-PresignedUrlFunction'
+
+  HealthFunction:
+    Description: Health Lambda Function ARN
+    Value: !GetAtt HealthFunction.Arn
+    Export:
+      Name: !Sub '${AWS::StackName}-HealthFunction'
+
+  RagQueryFunction:
+    Description: RAG Query Lambda Function ARN
+    Value: !GetAtt RagQueryFunction.Arn
+    Export:
+      Name: !Sub '${AWS::StackName}-RagQueryFunction'
+
+  DocumentProcessorFunction:
+    Description: Document Processor Lambda Function ARN
+    Value: !GetAtt DocumentProcessorFunction.Arn
+    Export:
+      Name: !Sub '${AWS::StackName}-DocumentProcessorFunction'
+
+  RagQueryMultimodalFunction:
+    Description: RAG Query Multimodal Lambda Function ARN
+    Value: !GetAtt RagQueryMultimodalFunction.Arn
+    Export:
+      Name: !Sub '${AWS::StackName}-RagQueryMultimodalFunction'

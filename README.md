@@ -9,12 +9,7 @@ This repository contains the infrastructure and application code for a serverles
 - Docker image built and pushed to ECR (via GitHub Actions)
 
 ### Setup Environment Variables
-1. **Copy the example environment file:**
-   ```bash
-   cp env.example .env
-   ```
-
-2. **Edit `.env` file with your actual values:**
+1. **Create a `.env` file with your configuration:**
    ```bash
    # OpenAI API Configuration
    OPENAI_API_KEY=sk-your-actual-openai-api-key
@@ -27,6 +22,7 @@ This repository contains the infrastructure and application code for a serverles
    # AWS Configuration (optional)
    AWS_PROFILE=pharma
    AWS_REGION=us-east-1
+   S3_BUCKET=pharma-deployments-864899869769
    ```
 
 ### Deploy Infrastructure
@@ -36,10 +32,14 @@ This repository contains the infrastructure and application code for a serverles
 ```
 
 ### What the script does:
-1. ✅ Validates ECR image exists
-2. 🚀 Deploys CloudFormation stack
-3. 📊 Shows stack outputs and API endpoints
-4. ⏱️ Provides timing information
+1. ✅ Validates required environment variables
+2. ✅ Checks ECR image exists
+3. 📦 Packages Lambda functions and uploads to S3
+4. 📦 Uploads CloudFormation templates to S3
+5. 🚀 Deploys modular CloudFormation stack
+6. 📊 Shows stack outputs and API endpoints
+7. ⏱️ Provides timing information
+8. 🧹 Cleans up temporary files
 
 ## Architecture Overview
 

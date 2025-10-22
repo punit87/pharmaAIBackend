@@ -1,11 +1,11 @@
 #!/bin/bash
 
 # Pharma RAG Infrastructure Deployment Script
-# This script deploys the CloudFormation stack locally
+# This script deploys the complete CloudFormation infrastructure with proper Lambda packaging
 
 set -e  # Exit on any error
 
-echo "🚀 [DEPLOY] Starting local CloudFormation deployment at $(date)"
+echo "🚀 [DEPLOY] Starting CloudFormation deployment at $(date)"
 DEPLOY_START=$(date +%s.%3N)
 
 # Load environment variables from .env file if it exists
@@ -14,12 +14,12 @@ if [ -f .env ]; then
     export $(grep -v '^#' .env | xargs)
 else
     echo "⚠️  [DEPLOY] No .env file found. Using environment variables from shell."
-    echo "💡 [DEPLOY] Create a .env file from env.example for easier configuration."
+    echo "💡 [DEPLOY] Create a .env file with your configuration for easier management."
 fi
 
 # Configuration
 STACK_NAME="pharma-rag-infrastructure-dev"
-TEMPLATE_FILE="infrastructure/ecs-infrastructure.yml"
+MAIN_TEMPLATE="infrastructure/main.yml"
 AWS_REGION="${AWS_REGION:-us-east-1}"
 AWS_PROFILE="${AWS_PROFILE:-pharma}"
 S3_BUCKET="${S3_BUCKET:-pharma-deployments-864899869769}"
@@ -51,12 +51,12 @@ AWS_ACCOUNT_ID=$(aws sts get-caller-identity --query Account --output text --pro
 echo "📋 [DEPLOY] AWS Account ID: $AWS_ACCOUNT_ID"
 
 # Set image URI
-RAGANYTHING_IMAGE_URI="$AWS_ACCOUNT_ID.dkr.ecr.$AWS_REGION.amazonaws.com/pharma-raganything-dev-2:latest"
+RAGANYTHING_IMAGE_URI="$AWS_ACCOUNT_ID.dkr.ecr.$AWS_REGION.amazonaws.com/pharma-raganything-dev:latest"
 echo "📋 [DEPLOY] RAG-Anything Image URI: $RAGANYTHING_IMAGE_URI"
 
-# Check if ECR image exists
+# Validate ECR image exists
 echo "🔍 [DEPLOY] Checking if ECR image exists..."
-if aws ecr describe-images --repository-name pharma-raganything-dev-2 --image-ids imageTag=latest --region $AWS_REGION --profile $AWS_PROFILE >/dev/null 2>&1; then
+if aws ecr describe-images --repository-name pharma-raganything-dev --image-ids imageTag=latest --region $AWS_REGION --profile $AWS_PROFILE >/dev/null 2>&1; then
     echo "✅ [DEPLOY] ECR image exists: $RAGANYTHING_IMAGE_URI"
 else
     echo "❌ [DEPLOY] ECR image not found: $RAGANYTHING_IMAGE_URI"
@@ -64,29 +64,67 @@ else
     exit 1
 fi
 
-# Deploy CloudFormation stack
+# Package Lambda functions
+echo "📦 [DEPLOY] Packaging Lambda functions..."
+LAMBDA_PACKAGE_DIR="lambda-packages"
+mkdir -p "$LAMBDA_PACKAGE_DIR"
+
+# Package each Lambda function
+for lambda_file in lambda/*.py; do
+    if [ -f "$lambda_file" ]; then
+        lambda_name=$(basename "$lambda_file" .py)
+        echo "📦 [DEPLOY] Packaging $lambda_name..."
+        
+        # Create a temporary directory for this Lambda
+        temp_dir=$(mktemp -d)
+        cp "$lambda_file" "$temp_dir/"
+        
+        # Create zip file
+        cd "$temp_dir"
+        zip -r "../$LAMBDA_PACKAGE_DIR/${lambda_name}.zip" .
+        cd - > /dev/null
+        
+        # Upload to S3
+        aws s3 cp "$LAMBDA_PACKAGE_DIR/${lambda_name}.zip" "s3://$S3_BUCKET/lambda-packages/${lambda_name}.zip" --profile "$AWS_PROFILE" --region "$AWS_REGION"
+        echo "✅ [DEPLOY] Uploaded $lambda_name.zip to S3"
+        
+        # Clean up temp directory
+        rm -rf "$temp_dir"
+    fi
+done
+
+# Upload CloudFormation templates to S3
+echo "📦 [DEPLOY] Uploading CloudFormation templates to S3..."
+TEMPLATES=("infrastructure/network.yml" "infrastructure/storage.yml" "infrastructure/ecs.yml" "infrastructure/lambda.yml" "infrastructure/api-gateway.yml")
+
+for template in "${TEMPLATES[@]}"; do
+    if [ -f "$template" ]; then
+        template_name=$(basename "$template")
+        aws s3 cp "$template" "s3://$S3_BUCKET/cloudformation-templates/$template_name" --profile "$AWS_PROFILE" --region "$AWS_REGION"
+        echo "✅ [DEPLOY] Uploaded $template_name"
+    else
+        echo "❌ [DEPLOY] Template not found: $template"
+        exit 1
+    fi
+done
+
 echo "🚀 [DEPLOY] Starting CloudFormation deployment..."
 CF_START=$(date +%s.%3N)
 
-        # Upload template to S3 (required for large templates)
-        TEMPLATE_S3_KEY="cloudformation-templates/pharma-rag-infrastructure-dev.yml"
-        aws s3 cp "$TEMPLATE_FILE" "s3://$S3_BUCKET/$TEMPLATE_S3_KEY" --profile "$AWS_PROFILE" --region "$AWS_REGION"
-        echo "📦 [DEPLOY] Template uploaded to s3://$S3_BUCKET/$TEMPLATE_S3_KEY"
-
-        aws cloudformation deploy \
-          --template-file "$TEMPLATE_FILE" \
-          --stack-name "$STACK_NAME" \
-          --capabilities CAPABILITY_IAM CAPABILITY_NAMED_IAM \
-          --parameter-overrides \
-            Environment="dev" \
-            RaganythingImageUri="$RAGANYTHING_IMAGE_URI" \
-            OpenAIApiKey="$OPENAI_API_KEY" \
-            Neo4jUri="$NEO4J_URI" \
-            Neo4jUsername="$NEO4J_USERNAME" \
-            Neo4jPassword="$NEO4J_PASSWORD" \
-          --region "$AWS_REGION" \
-          --profile "$AWS_PROFILE" \
-          --s3-bucket "$S3_BUCKET"
+aws cloudformation deploy \
+  --template-file "$MAIN_TEMPLATE" \
+  --stack-name "$STACK_NAME" \
+  --capabilities CAPABILITY_IAM CAPABILITY_NAMED_IAM \
+  --parameter-overrides \
+    Environment="dev" \
+    RaganythingImageUri="$RAGANYTHING_IMAGE_URI" \
+    OpenAIApiKey="$OPENAI_API_KEY" \
+    Neo4jUri="$NEO4J_URI" \
+    Neo4jUsername="$NEO4J_USERNAME" \
+    Neo4jPassword="$NEO4J_PASSWORD" \
+  --region "$AWS_REGION" \
+  --profile "$AWS_PROFILE" \
+  --s3-bucket "$S3_BUCKET"
 
 CF_END=$(date +%s.%3N)
 CF_DURATION=$(echo "$CF_END - $CF_START" | bc)
@@ -132,7 +170,11 @@ if [ ! -z "$API_URL" ]; then
   echo "  GET  $API_URL/health                 # Health check"
   echo "📋 [DEPLOY] Query modes: hybrid, local, global, naive"
   echo "📋 [DEPLOY] Parsers: docling"
-  echo "📋 [DEPLOY] Server: MVP Mode with ECS Task execution"
+  echo "📋 [DEPLOY] Server: ECS Task execution with auto-scaling"
 fi
 
-echo "✅ [DEPLOY] Deployment completed successfully!"
+# Clean up local packages
+echo "🧹 [DEPLOY] Cleaning up local packages..."
+rm -rf "$LAMBDA_PACKAGE_DIR"
+
+echo "✅ [DEPLOY] CloudFormation deployment completed successfully!"

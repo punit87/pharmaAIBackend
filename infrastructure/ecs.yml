@@ -1,0 +1,244 @@
+AWSTemplateFormatVersion: '2010-09-09'
+Description: 'ECS infrastructure for Pharma RAG system'
+
+Parameters:
+  Environment:
+    Type: String
+    Default: dev
+    AllowedValues: [dev, dev-1, dev-2, staging, prod]
+    Description: Environment name
+
+  VPCId:
+    Type: String
+    Description: VPC ID from network stack
+
+  PrivateSubnet1:
+    Type: String
+    Description: Private Subnet 1 from network stack
+
+  PrivateSubnet2:
+    Type: String
+    Description: Private Subnet 2 from network stack
+
+  ECSSecurityGroup:
+    Type: String
+    Description: ECS Security Group from network stack
+
+  RaganythingImageUri:
+    Type: String
+    Description: RAG-Anything Docker image URI
+
+  OpenAIApiKey:
+    Type: String
+    NoEcho: true
+    Description: OpenAI API Key
+
+  Neo4jUri:
+    Type: String
+    Description: Neo4j URI
+
+  Neo4jUsername:
+    Type: String
+    Description: Neo4j Username
+
+  Neo4jPassword:
+    Type: String
+    NoEcho: true
+    Description: Neo4j Password
+
+Resources:
+  ECSCluster:
+    Type: AWS::ECS::Cluster
+    Properties:
+      ClusterName: !Sub 'pharma-cluster-${Environment}'
+      CapacityProviders:
+        - FARGATE
+        - FARGATE_SPOT
+      DefaultCapacityProviderStrategy:
+        - CapacityProvider: FARGATE
+          Weight: 1
+
+  ECSTaskExecutionRole:
+    Type: AWS::IAM::Role
+    Properties:
+      RoleName: !Sub 'pharma-ecs-task-execution-role-${Environment}'
+      AssumeRolePolicyDocument:
+        Version: '2012-10-17'
+        Statement:
+          - Effect: Allow
+            Principal:
+              Service: ecs-tasks.amazonaws.com
+            Action: sts:AssumeRole
+      ManagedPolicyArns:
+        - arn:aws:iam::aws:policy/service-role/AmazonECSTaskExecutionRolePolicy
+      Policies:
+        - PolicyName: EFSAccess
+          PolicyDocument:
+            Version: '2012-10-17'
+            Statement:
+              - Effect: Allow
+                Action:
+                  - elasticfilesystem:ClientMount
+                  - elasticfilesystem:ClientWrite
+                  - elasticfilesystem:ClientRootAccess
+                Resource: '*'
+
+  ECSTaskRole:
+    Type: AWS::IAM::Role
+    Properties:
+      RoleName: !Sub 'pharma-ecs-task-role-${Environment}'
+      AssumeRolePolicyDocument:
+        Version: '2012-10-17'
+        Statement:
+          - Effect: Allow
+            Principal:
+              Service: ecs-tasks.amazonaws.com
+            Action: sts:AssumeRole
+      Policies:
+        - PolicyName: S3Access
+          PolicyDocument:
+            Version: '2012-10-17'
+            Statement:
+              - Effect: Allow
+                Action:
+                  - s3:GetObject
+                  - s3:PutObject
+                  - s3:DeleteObject
+                  - s3:ListBucket
+                Resource: '*'
+        - PolicyName: EFSAccess
+          PolicyDocument:
+            Version: '2012-10-17'
+            Statement:
+              - Effect: Allow
+                Action:
+                  - elasticfilesystem:ClientMount
+                  - elasticfilesystem:ClientWrite
+                  - elasticfilesystem:ClientRootAccess
+                Resource: '*'
+
+  EFSFileSystem:
+    Type: AWS::EFS::FileSystem
+    Properties:
+      FileSystemTags:
+        - Key: Name
+          Value: !Sub 'pharma-efs-${Environment}'
+        - Key: Environment
+          Value: !Ref Environment
+      PerformanceMode: generalPurpose
+      ThroughputMode: provisioned
+      ProvisionedThroughputInMibps: 100
+
+  EFSMountTarget1:
+    Type: AWS::EFS::MountTarget
+    Properties:
+      FileSystemId: !Ref EFSFileSystem
+      SubnetId: !Ref PrivateSubnet1
+      SecurityGroups:
+        - !Ref EFSSecurityGroup
+
+  EFSMountTarget2:
+    Type: AWS::EFS::MountTarget
+    Properties:
+      FileSystemId: !Ref EFSFileSystem
+      SubnetId: !Ref PrivateSubnet2
+      SecurityGroups:
+        - !Ref EFSSecurityGroup
+
+  EFSSecurityGroup:
+    Type: AWS::EC2::SecurityGroup
+    Properties:
+      GroupName: !Sub 'pharma-efs-sg-${Environment}'
+      GroupDescription: Security group for EFS
+      VpcId: !Ref VPCId
+      SecurityGroupIngress:
+        - IpProtocol: tcp
+          FromPort: 2049
+          ToPort: 2049
+          SourceSecurityGroupId: !Ref ECSSecurityGroup
+      SecurityGroupEgress:
+        - IpProtocol: -1
+          CidrIp: 0.0.0.0/0
+      Tags:
+        - Key: Name
+          Value: !Sub 'pharma-efs-sg-${Environment}'
+        - Key: Environment
+          Value: !Ref Environment
+
+  RaganythingTaskDefinition:
+    Type: AWS::ECS::TaskDefinition
+    Properties:
+      Family: !Sub 'pharma-raganything-${Environment}'
+      NetworkMode: awsvpc
+      RequiresCompatibilities:
+        - FARGATE
+      Cpu: 4096
+      Memory: 8192
+      ExecutionRoleArn: !GetAtt ECSTaskExecutionRole.Arn
+      TaskRoleArn: !GetAtt ECSTaskRole.Arn
+      ContainerDefinitions:
+        - Name: raganything
+          Image: !Ref RaganythingImageUri
+          PortMappings:
+            - ContainerPort: 8000
+              Protocol: tcp
+          Environment:
+            - Name: OPENAI_API_KEY
+              Value: !Ref OpenAIApiKey
+            - Name: NEO4J_URI
+              Value: !Ref Neo4jUri
+            - Name: NEO4J_USERNAME
+              Value: !Ref Neo4jUsername
+            - Name: NEO4J_PASSWORD
+              Value: !Ref Neo4jPassword
+            - Name: EFS_MOUNT_PATH
+              Value: /mnt/efs
+            - Name: RAG_OUTPUT_DIR
+              Value: /mnt/efs/rag_output
+          MountPoints:
+            - SourceVolume: efs-storage
+              ContainerPath: /mnt/efs
+          LogConfiguration:
+            LogDriver: awslogs
+            Options:
+              awslogs-group: !Ref RaganythingLogGroup
+              awslogs-region: !Ref AWS::Region
+              awslogs-stream-prefix: raganything
+          HealthCheck:
+            Command:
+              - CMD-SHELL
+              - curl -f http://localhost:8000/health || exit 1
+            Interval: 30
+            Timeout: 5
+            Retries: 3
+            StartPeriod: 180
+      Volumes:
+        - Name: efs-storage
+          EfsVolumeConfiguration:
+            FileSystemId: !Ref EFSFileSystem
+            RootDirectory: /
+
+  RaganythingLogGroup:
+    Type: AWS::Logs::LogGroup
+    Properties:
+      LogGroupName: !Sub '/ecs/pharma-raganything-${Environment}'
+      RetentionInDays: 7
+
+Outputs:
+  ECSCluster:
+    Description: ECS Cluster Name
+    Value: !Ref ECSCluster
+    Export:
+      Name: !Sub '${AWS::StackName}-ECSCluster'
+
+  RaganythingTaskDefinition:
+    Description: RAG-Anything Task Definition ARN
+    Value: !Ref RaganythingTaskDefinition
+    Export:
+      Name: !Sub '${AWS::StackName}-RaganythingTaskDefinition'
+
+  EFSFileSystem:
+    Description: EFS File System ID
+    Value: !Ref EFSFileSystem
+    Export:
+      Name: !Sub '${AWS::StackName}-EFSFileSystem'

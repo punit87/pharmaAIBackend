@@ -1,0 +1,144 @@
+AWSTemplateFormatVersion: '2010-09-09'
+Description: 'Main CloudFormation template for Pharma RAG system - orchestrates all modules'
+
+Parameters:
+  Environment:
+    Type: String
+    Default: dev
+    AllowedValues: [dev, dev-1, dev-2, staging, prod]
+    Description: Environment name
+
+  RaganythingImageUri:
+    Type: String
+    Description: RAG-Anything Docker image URI
+
+  OpenAIApiKey:
+    Type: String
+    NoEcho: true
+    Description: OpenAI API Key
+
+  Neo4jUri:
+    Type: String
+    Description: Neo4j URI
+
+  Neo4jUsername:
+    Type: String
+    Description: Neo4j Username
+
+  Neo4jPassword:
+    Type: String
+    NoEcho: true
+    Description: Neo4j Password
+
+Resources:
+  # Network Infrastructure
+  NetworkStack:
+    Type: AWS::CloudFormation::Stack
+    Properties:
+      TemplateURL: !Sub 'https://${S3Bucket}.s3.${AWS::Region}.amazonaws.com/cloudformation-templates/network.yml'
+      Parameters:
+        Environment: !Ref Environment
+
+  # Storage Infrastructure
+  StorageStack:
+    Type: AWS::CloudFormation::Stack
+    Properties:
+      TemplateURL: !Sub 'https://${S3Bucket}.s3.${AWS::Region}.amazonaws.com/cloudformation-templates/storage.yml'
+      Parameters:
+        Environment: !Ref Environment
+      DependsOn: NetworkStack
+
+  # ECS Infrastructure
+  ECSStack:
+    Type: AWS::CloudFormation::Stack
+    Properties:
+      TemplateURL: !Sub 'https://${S3Bucket}.s3.${AWS::Region}.amazonaws.com/cloudformation-templates/ecs.yml'
+      Parameters:
+        Environment: !Ref Environment
+        VPCId: !GetAtt NetworkStack.Outputs.VPCId
+        PrivateSubnet1: !GetAtt NetworkStack.Outputs.PrivateSubnet1
+        PrivateSubnet2: !GetAtt NetworkStack.Outputs.PrivateSubnet2
+        ECSSecurityGroup: !GetAtt NetworkStack.Outputs.ECSSecurityGroup
+        RaganythingImageUri: !Ref RaganythingImageUri
+        OpenAIApiKey: !Ref OpenAIApiKey
+        Neo4jUri: !Ref Neo4jUri
+        Neo4jUsername: !Ref Neo4jUsername
+        Neo4jPassword: !Ref Neo4jPassword
+      DependsOn: NetworkStack
+
+  # Lambda Functions
+  LambdaStack:
+    Type: AWS::CloudFormation::Stack
+    Properties:
+      TemplateURL: !Sub 'https://${S3Bucket}.s3.${AWS::Region}.amazonaws.com/cloudformation-templates/lambda.yml'
+      Parameters:
+        Environment: !Ref Environment
+        VPCId: !GetAtt NetworkStack.Outputs.VPCId
+        PrivateSubnet1: !GetAtt NetworkStack.Outputs.PrivateSubnet1
+        PrivateSubnet2: !GetAtt NetworkStack.Outputs.PrivateSubnet2
+        LambdaSecurityGroup: !GetAtt NetworkStack.Outputs.LambdaSecurityGroup
+        ECSCluster: !GetAtt ECSStack.Outputs.ECSCluster
+        RaganythingTaskDefinition: !GetAtt ECSStack.Outputs.RaganythingTaskDefinition
+        ECSSecurityGroup: !GetAtt NetworkStack.Outputs.ECSSecurityGroup
+        DocumentBucket: !GetAtt StorageStack.Outputs.DocumentBucketName
+        S3Bucket: !Ref S3Bucket
+      DependsOn: 
+        - NetworkStack
+        - ECSStack
+        - StorageStack
+
+  # API Gateway
+  ApiGatewayStack:
+    Type: AWS::CloudFormation::Stack
+    Properties:
+      TemplateURL: !Sub 'https://${S3Bucket}.s3.${AWS::Region}.amazonaws.com/cloudformation-templates/api-gateway.yml'
+      Parameters:
+        Environment: !Ref Environment
+        PresignedUrlFunction: !GetAtt LambdaStack.Outputs.PresignedUrlFunction
+        HealthFunction: !GetAtt LambdaStack.Outputs.HealthFunction
+        RagQueryFunction: !GetAtt LambdaStack.Outputs.RagQueryFunction
+        DocumentProcessorFunction: !GetAtt LambdaStack.Outputs.DocumentProcessorFunction
+        RagQueryMultimodalFunction: !GetAtt LambdaStack.Outputs.RagQueryMultimodalFunction
+      DependsOn: LambdaStack
+
+  # S3 Bucket for CloudFormation templates
+  S3Bucket:
+    Type: AWS::S3::Bucket
+    Properties:
+      BucketName: !Sub 'pharma-deployments-${AWS::AccountId}'
+      PublicAccessBlockConfiguration:
+        BlockPublicAcls: true
+        BlockPublicPolicy: true
+        IgnorePublicAcls: true
+        RestrictPublicBuckets: true
+
+Outputs:
+  ApiGatewayUrl:
+    Description: API Gateway URL
+    Value: !GetAtt ApiGatewayStack.Outputs.ApiGatewayUrl
+    Export:
+      Name: !Sub '${AWS::StackName}-ApiGatewayUrl'
+
+  DocumentBucketName:
+    Description: S3 Bucket for document storage
+    Value: !GetAtt StorageStack.Outputs.DocumentBucketName
+    Export:
+      Name: !Sub '${AWS::StackName}-DocumentBucketName'
+
+  VPCId:
+    Description: VPC ID
+    Value: !GetAtt NetworkStack.Outputs.VPCId
+    Export:
+      Name: !Sub '${AWS::StackName}-VPCId'
+
+  ECSClusterName:
+    Description: ECS Cluster Name
+    Value: !GetAtt ECSStack.Outputs.ECSCluster
+    Export:
+      Name: !Sub '${AWS::StackName}-ECSClusterName'
+
+  RaganythingRepositoryUri:
+    Description: ECR Repository URI for RAG-Anything
+    Value: !Sub '${AWS::AccountId}.dkr.ecr.${AWS::Region}.amazonaws.com/pharma-raganything-${Environment}'
+    Export:
+      Name: !Sub '${AWS::StackName}-RaganythingRepositoryUri'

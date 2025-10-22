@@ -1,0 +1,67 @@
+AWSTemplateFormatVersion: '2010-09-09'
+Description: 'Storage infrastructure for Pharma RAG system'
+
+Parameters:
+  Environment:
+    Type: String
+    Default: dev
+    AllowedValues: [dev, dev-1, dev-2, staging, prod]
+    Description: Environment name
+
+Resources:
+  DocumentBucket:
+    Type: AWS::S3::Bucket
+    Properties:
+      BucketName: !Sub 'pharma-documents-${Environment}-${AWS::AccountId}-${AWS::Region}'
+      VersioningConfiguration:
+        Status: Enabled
+      PublicAccessBlockConfiguration:
+        BlockPublicAcls: true
+        BlockPublicPolicy: true
+        IgnorePublicAcls: true
+        RestrictPublicBuckets: true
+      NotificationConfiguration:
+        LambdaConfigurations:
+          - Event: s3:ObjectCreated:*
+            Function: !Ref DocumentProcessorFunction
+            Filter:
+              S3Key:
+                Rules:
+                  - Name: prefix
+                    Value: test-documents/
+      Tags:
+        - Key: Name
+          Value: !Sub 'pharma-documents-${Environment}'
+        - Key: Environment
+          Value: !Ref Environment
+
+  DocumentBucketPolicy:
+    Type: AWS::S3::BucketPolicy
+    Properties:
+      Bucket: !Ref DocumentBucket
+      PolicyDocument:
+        Version: '2012-10-17'
+        Statement:
+          - Sid: DenyInsecureConnections
+            Effect: Deny
+            Principal: '*'
+            Action: 's3:*'
+            Resource:
+              - !Sub '${DocumentBucket}/*'
+              - !GetAtt DocumentBucket.Arn
+            Condition:
+              Bool:
+                'aws:SecureTransport': 'false'
+
+Outputs:
+  DocumentBucketName:
+    Description: S3 Bucket for document storage
+    Value: !Ref DocumentBucket
+    Export:
+      Name: !Sub '${AWS::StackName}-DocumentBucketName'
+
+  DocumentBucketArn:
+    Description: S3 Bucket ARN for document storage
+    Value: !GetAtt DocumentBucket.Arn
+    Export:
+      Name: !Sub '${AWS::StackName}-DocumentBucketArn'
