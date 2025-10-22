@@ -43,7 +43,6 @@ Resources:
       TemplateURL: !Sub 'https://${S3Bucket}.s3.${AWS::Region}.amazonaws.com/cloudformation-templates/network.yml'
       Parameters:
         Environment: !Ref Environment
-      OnFailure: DO_NOTHING
 
   # Storage Infrastructure
   StorageStack:
@@ -52,7 +51,6 @@ Resources:
       TemplateURL: !Sub 'https://${S3Bucket}.s3.${AWS::Region}.amazonaws.com/cloudformation-templates/storage.yml'
       Parameters:
         Environment: !Ref Environment
-      OnFailure: DO_NOTHING
 
 
   # ECS Infrastructure
@@ -74,7 +72,6 @@ Resources:
         Neo4jUri: !Ref Neo4jUri
         Neo4jUsername: !Ref Neo4jUsername
         Neo4jPassword: !Ref Neo4jPassword
-      OnFailure: DO_NOTHING
 
   # Lambda Functions
   LambdaStack:
@@ -93,7 +90,6 @@ Resources:
         ALBEndpoint: !GetAtt ECSStack.Outputs.ALBEndpoint
         DocumentBucket: !GetAtt StorageStack.Outputs.DocumentBucketName
         S3Bucket: !Ref S3Bucket
-      OnFailure: DO_NOTHING
 
   # S3 Notifications (Non-critical - can fail without affecting core functionality)
   S3NotificationsStack:
@@ -104,7 +100,6 @@ Resources:
         Environment: !Ref Environment
         DocumentBucket: !GetAtt StorageStack.Outputs.DocumentBucketName
         DocumentProcessorFunctionArn: !GetAtt LambdaStack.Outputs.DocumentProcessorFunction
-      OnFailure: DO_NOTHING
 
   # API Gateway
   ApiGatewayStack:
@@ -117,7 +112,6 @@ Resources:
         HealthFunction: !GetAtt LambdaStack.Outputs.HealthFunction
         RagQueryFunction: !GetAtt LambdaStack.Outputs.RagQueryFunction
         RagQueryMultimodalFunction: !GetAtt LambdaStack.Outputs.RagQueryMultimodalFunction
-      OnFailure: DO_NOTHING
 
 
 Outputs:
