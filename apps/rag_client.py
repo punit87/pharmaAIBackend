@@ -110,7 +110,7 @@ def get_rag_config():
     config = RAGAnythingConfig(
         working_dir=os.environ.get('OUTPUT_DIR', '/rag-output/'),
         parser=os.environ.get('PARSER', 'docling'),
-        parse_method=os.environ.get('PARSE_METHOD', 'auto'),
+        parse_method=os.environ.get('PARSE_METHOD', 'ocr'),  # Enable OCR for better text extraction
         enable_image_processing=True,
         enable_table_processing=True,
         enable_equation_processing=True,
@@ -118,6 +118,12 @@ def get_rag_config():
         chunk_size=int(os.environ.get('CHUNK_SIZE', '1000')),  # Smaller chunks for token limit
         chunk_overlap=int(os.environ.get('CHUNK_OVERLAP', '100')),  # Overlap between chunks
         max_context_length=int(os.environ.get('MAX_CONTEXT_LENGTH', '4000')),  # Reduced context length
+        # OCR-specific optimizations
+        ocr_options={
+            'engine': 'easy_ocr',
+            'force_full_page_ocr': True,
+            'language': 'en'
+        },
         # Neo4j-specific optimizations
         # RAG-Anything will use the 1536-dimension embeddings for Neo4j vector indexes
         # This ensures compatibility with Neo4j's vector search capabilities
@@ -126,6 +132,9 @@ def get_rag_config():
     logger.info(f"⚙️ [CONFIG] RAG configuration loaded in {time.time() - start_time:.3f}s")
     logger.info(f"⚙️ [CONFIG] Working dir: {config.working_dir}")
     logger.info(f"⚙️ [CONFIG] Parser: {config.parser}")
+    logger.info(f"⚙️ [CONFIG] Parse method: {config.parse_method}")
+    logger.info(f"⚙️ [CONFIG] OCR enabled: {config.parse_method == 'ocr'}")
+    logger.info(f"⚙️ [CONFIG] OCR options: {getattr(config, 'ocr_options', 'Not set')}")
     logger.info(f"⚙️ [CONFIG] Chunk size: {config.chunk_size}")
     logger.info(f"⚙️ [CONFIG] Chunk overlap: {config.chunk_overlap}")
     logger.info(f"⚙️ [CONFIG] Max context length: {config.max_context_length}")

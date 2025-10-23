@@ -268,6 +268,10 @@ Resources:
               Value: '4000'
             - Name: MAX_TOKENS
               Value: '4000'
+            - Name: PARSER
+              Value: 'docling'
+            - Name: PARSE_METHOD
+              Value: 'ocr'
           MountPoints:
             - SourceVolume: efs-storage
               ContainerPath: /mnt/efs
