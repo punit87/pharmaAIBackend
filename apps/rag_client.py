@@ -120,9 +120,9 @@ def get_rag_config():
         max_context_length=int(os.environ.get('MAX_CONTEXT_LENGTH', '4000')),  # Reduced context length
         # OCR-specific optimizations
         ocr_options={
-            'engine': 'easy_ocr',
+            'engine': 'tesseract',
             'force_full_page_ocr': True,
-            'language': 'en'
+            'language': 'eng'
         },
         # Neo4j-specific optimizations
         # RAG-Anything will use the 1536-dimension embeddings for Neo4j vector indexes
