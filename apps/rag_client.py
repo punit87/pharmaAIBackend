@@ -411,21 +411,19 @@ def process_document():
         
         logger.info(f"🔍 [PROCESS] Processing with {parser} parser ({parse_method} mode)")
         
-        # Fix async handling - ensure we're calling the right method
+        # Fix async handling - process_document_complete is async and must be awaited
         try:
-            # Try synchronous method first
-            result = rag.process_document_complete(**process_kwargs)
-            if asyncio.iscoroutine(result):
-                # If it returns a coroutine, run it properly
-                result = run_async(result)
+            # The process_document_complete method is async and returns a coroutine
+            # We need to await it properly using our async handler
+            logger.info("🔄 [PROCESS] Processing document asynchronously...")
+            result = run_async(rag.process_document_complete(**process_kwargs))
+            logger.info("✅ [PROCESS] Document processing completed successfully")
         except Exception as e:
             logger.error(f"❌ [PROCESS] Error in document processing: {str(e)}")
-            # Try alternative approach
-            try:
-                result = run_async(rag.process_document_complete(**process_kwargs))
-            except Exception as e2:
-                logger.error(f"❌ [PROCESS] Alternative approach also failed: {str(e2)}")
-                raise e2
+            # Log the full error for debugging
+            import traceback
+            logger.error(f"❌ [PROCESS] Full traceback: {traceback.format_exc()}")
+            raise e
         
         process_duration = time.time() - process_start
         
@@ -516,21 +514,18 @@ def process_query():
         if vlm_enhanced is not None:
             query_kwargs['vlm_enhanced'] = vlm_enhanced
         
-        # Fix async handling for queries
+        # Fix async handling for queries - use async query method
         try:
-            # Try synchronous method first
-            result = rag.query(query, **query_kwargs)
-            if asyncio.iscoroutine(result):
-                # If it returns a coroutine, run it properly
-                result = run_async(result)
+            # Use the async query method directly
+            logger.info("🔄 [QUERY] Processing query asynchronously...")
+            result = run_async(rag.aquery(query, **query_kwargs))
+            logger.info("✅ [QUERY] Query processing completed successfully")
         except Exception as e:
             logger.error(f"❌ [QUERY] Error in query processing: {str(e)}")
-            # Try async method as fallback
-            try:
-                result = run_async(rag.aquery(query, **query_kwargs))
-            except Exception as e2:
-                logger.error(f"❌ [QUERY] Alternative approach also failed: {str(e2)}")
-                raise e2
+            # Log the full error for debugging
+            import traceback
+            logger.error(f"❌ [QUERY] Full traceback: {traceback.format_exc()}")
+            raise e
         
         query_duration = time.time() - query_start
         
@@ -615,29 +610,22 @@ def process_multimodal_query():
         # Process multimodal query
         query_start = time.time()
         
-        # Fix async handling for multimodal queries
+        # Fix async handling for multimodal queries - use async method
         try:
-            # Try synchronous method first
-            result = rag.query_with_multimodal(
+            # Use the async multimodal query method directly
+            print("🔄 [MULTIMODAL] Processing multimodal query asynchronously...")
+            result = run_async(rag.aquery_with_multimodal(
                 query,
                 multimodal_content=multimodal_content,
                 mode=mode
-            )
-            if asyncio.iscoroutine(result):
-                # If it returns a coroutine, run it properly
-                result = run_async(result)
+            ))
+            print("✅ [MULTIMODAL] Multimodal query processing completed successfully")
         except Exception as e:
             print(f"❌ [MULTIMODAL] Error in multimodal query processing: {str(e)}")
-            # Try async method as fallback
-            try:
-                result = run_async(rag.aquery_with_multimodal(
-                    query,
-                    multimodal_content=multimodal_content,
-                    mode=mode
-                ))
-            except Exception as e2:
-                print(f"❌ [MULTIMODAL] Alternative approach also failed: {str(e2)}")
-                raise e2
+            # Log the full error for debugging
+            import traceback
+            print(f"❌ [MULTIMODAL] Full traceback: {traceback.format_exc()}")
+            raise e
         
         query_duration = time.time() - query_start
         
