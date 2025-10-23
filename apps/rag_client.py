@@ -113,14 +113,9 @@ def get_rag_config():
         parse_method=os.environ.get('PARSE_METHOD', 'ocr'),  # Enable OCR for better text extraction
         enable_image_processing=True,
         enable_table_processing=True,
-        enable_equation_processing=True,
-        # OCR-specific optimizations
-        ocr_options={
-            'engine': 'tesseract',
-            'force_full_page_ocr': True,
-            'language': 'eng'
-        }
+        enable_equation_processing=True
         # Note: chunk_size, chunk_overlap, and max_context_length are handled internally by RAG-Anything
+        # OCR-specific parameters like lang, device, formula, table are passed to process_document_complete()
         # Neo4j-specific optimizations
         # RAG-Anything will use the 1536-dimension embeddings for Neo4j vector indexes
         # This ensures compatibility with Neo4j's vector search capabilities
@@ -131,7 +126,6 @@ def get_rag_config():
     logger.info(f"⚙️ [CONFIG] Parser: {config.parser}")
     logger.info(f"⚙️ [CONFIG] Parse method: {config.parse_method}")
     logger.info(f"⚙️ [CONFIG] OCR enabled: {config.parse_method == 'ocr'}")
-    logger.info(f"⚙️ [CONFIG] OCR options: {getattr(config, 'ocr_options', 'Not set')}")
     logger.info(f"⚙️ [CONFIG] Image processing: {config.enable_image_processing}")
     logger.info(f"⚙️ [CONFIG] Table processing: {config.enable_table_processing}")
     logger.info(f"⚙️ [CONFIG] Equation processing: {config.enable_equation_processing}")
