@@ -413,19 +413,50 @@ def process_document():
         
         logger.info(f"🔍 [PROCESS] Processing with {parser} parser ({parse_method} mode)")
         
-        # Fix async handling - process_document_complete is async and must be awaited
+        # Fix async handling - try alternative approach with insert_multimodal
         try:
-            # The process_document_complete method is async and returns a coroutine
-            # We need to await it properly using our async handler
+            # First, let's try the standard process_document_complete method
             logger.info("🔄 [PROCESS] Processing document asynchronously...")
             result = run_async(rag.process_document_complete(**process_kwargs))
             logger.info("✅ [PROCESS] Document processing completed successfully")
         except Exception as e:
             logger.error(f"❌ [PROCESS] Error in document processing: {str(e)}")
-            # Log the full error for debugging
-            import traceback
-            logger.error(f"❌ [PROCESS] Full traceback: {traceback.format_exc()}")
-            raise e
+            # Try alternative approach with insert_multimodal
+            try:
+                logger.info("🔄 [PROCESS] Trying alternative approach with insert_multimodal...")
+                # Read the parsed content and use insert_multimodal
+                import json
+                parsed_file = f"{process_kwargs['output_dir']}/{process_kwargs['doc_id']}/docling/{process_kwargs['doc_id']}.json"
+                if os.path.exists(parsed_file):
+                    with open(parsed_file, 'r') as f:
+                        parsed_content = json.load(f)
+                    
+                    # Extract text content from parsed document
+                    multimodal_content = []
+                    if 'texts' in parsed_content:
+                        for text_item in parsed_content['texts']:
+                            if 'text' in text_item:
+                                multimodal_content.append({
+                                    'type': 'text',
+                                    'content': text_item['text']
+                                })
+                    
+                    if multimodal_content:
+                        logger.info(f"🔄 [PROCESS] Inserting {len(multimodal_content)} text items...")
+                        result = run_async(rag.insert_multimodal(multimodal_content, doc_id=process_kwargs['doc_id']))
+                        logger.info("✅ [PROCESS] Alternative processing completed successfully")
+                    else:
+                        logger.error("❌ [PROCESS] No text content found in parsed document")
+                        raise Exception("No text content found")
+                else:
+                    logger.error(f"❌ [PROCESS] Parsed file not found: {parsed_file}")
+                    raise e
+            except Exception as e2:
+                logger.error(f"❌ [PROCESS] Alternative approach also failed: {str(e2)}")
+                # Log the full error for debugging
+                import traceback
+                logger.error(f"❌ [PROCESS] Full traceback: {traceback.format_exc()}")
+                raise e2
         
         process_duration = time.time() - process_start
         
