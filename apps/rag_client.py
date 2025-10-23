@@ -386,7 +386,7 @@ def process_document():
         # Step 3: Process document
         process_start = time.time()
         parser = os.environ.get('PARSER', 'docling')
-        parse_method = os.environ.get('PARSE_METHOD', 'auto')
+        parse_method = os.environ.get('PARSE_METHOD', 'ocr')
         
         logger.info(f"🔧 [PROCESS] Using parser: {parser}, method: {parse_method}")
         
@@ -396,9 +396,10 @@ def process_document():
             'doc_id': s3_key,
             'display_stats': True,
             'parse_method': parse_method,
+            'split_by_character': None,  # Let RAG-Anything handle chunking automatically
         }
         
-        # Add parser-specific parameters
+        # Add parser-specific parameters only for MinerU
         if parser == 'mineru':
             process_kwargs.update({
                 'lang': os.environ.get('LANG', 'en'),
@@ -408,6 +409,7 @@ def process_document():
                 'backend': 'pipeline',
                 'source': 'local',
             })
+        # For docling parser, don't add MinerU-specific parameters
         
         logger.info(f"🔍 [PROCESS] Processing with {parser} parser ({parse_method} mode)")
         
