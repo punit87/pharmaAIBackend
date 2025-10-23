@@ -66,12 +66,16 @@ def run_async(coro):
     start_time = time.time()
     logger.info("🔄 [ASYNC] Executing async coroutine...")
     
-    loop = get_event_loop()
-    future = asyncio.run_coroutine_threadsafe(coro, loop)
-    result = future.result()
-    
-    logger.info(f"🔄 [ASYNC] Async coroutine completed in {time.time() - start_time:.3f}s")
-    return result
+    try:
+        loop = get_event_loop()
+        future = asyncio.run_coroutine_threadsafe(coro, loop)
+        result = future.result(timeout=300)  # 5 minute timeout
+        
+        logger.info(f"🔄 [ASYNC] Async coroutine completed in {time.time() - start_time:.3f}s")
+        return result
+    except Exception as e:
+        logger.error(f"❌ [ASYNC] Async coroutine failed after {time.time() - start_time:.3f}s: {str(e)}")
+        raise e
 
 def cleanup_event_loop():
     """Cleanup event loop on shutdown"""
@@ -161,6 +165,11 @@ def get_llm_model_func():
             **kwargs,
         )
         
+        # Fix async handling - check if result is a coroutine and await it
+        if asyncio.iscoroutine(result):
+            logger.info("🤖 [LLM] Result is coroutine, awaiting...")
+            result = run_async(result)
+        
         logger.info(f"🤖 [LLM] LLM completion completed in {time.time() - llm_start_time:.3f}s")
         logger.info(f"🤖 [LLM] Response length: {len(result) if result else 0} characters")
         
@@ -177,14 +186,14 @@ def get_vision_model_func(llm_func):
                    image_data=None, messages=None, **kwargs):
         # Multimodal VLM enhanced query format
         if messages:
-            return openai_complete_if_cache(
+            result = openai_complete_if_cache(
                 "gpt-4o", "", system_prompt=None, history_messages=[],
                 messages=messages, api_key=config['api_key'], 
                 base_url=config['base_url'], **kwargs
             )
         # Single image format
         elif image_data:
-            return openai_complete_if_cache(
+            result = openai_complete_if_cache(
                 "gpt-4o", "", system_prompt=None, history_messages=[],
                 messages=[
                     {"role": "system", "content": system_prompt} if system_prompt else None,
@@ -203,7 +212,13 @@ def get_vision_model_func(llm_func):
             )
         # Pure text fallback
         else:
-            return llm_func(prompt, system_prompt, history_messages, **kwargs)
+            result = llm_func(prompt, system_prompt, history_messages, **kwargs)
+        
+        # Fix async handling - check if result is a coroutine and await it
+        if asyncio.iscoroutine(result):
+            result = run_async(result)
+        
+        return result
     
     return vision_func
 
@@ -395,7 +410,23 @@ def process_document():
             })
         
         logger.info(f"🔍 [PROCESS] Processing with {parser} parser ({parse_method} mode)")
-        result = run_async(rag.process_document_complete(**process_kwargs))
+        
+        # Fix async handling - ensure we're calling the right method
+        try:
+            # Try synchronous method first
+            result = rag.process_document_complete(**process_kwargs)
+            if asyncio.iscoroutine(result):
+                # If it returns a coroutine, run it properly
+                result = run_async(result)
+        except Exception as e:
+            logger.error(f"❌ [PROCESS] Error in document processing: {str(e)}")
+            # Try alternative approach
+            try:
+                result = run_async(rag.process_document_complete(**process_kwargs))
+            except Exception as e2:
+                logger.error(f"❌ [PROCESS] Alternative approach also failed: {str(e2)}")
+                raise e2
+        
         process_duration = time.time() - process_start
         
         logger.info(f"💾 [PROCESS] Document processed in {process_duration:.3f}s")
@@ -485,7 +516,22 @@ def process_query():
         if vlm_enhanced is not None:
             query_kwargs['vlm_enhanced'] = vlm_enhanced
         
-        result = run_async(rag.aquery(query, **query_kwargs))
+        # Fix async handling for queries
+        try:
+            # Try synchronous method first
+            result = rag.query(query, **query_kwargs)
+            if asyncio.iscoroutine(result):
+                # If it returns a coroutine, run it properly
+                result = run_async(result)
+        except Exception as e:
+            logger.error(f"❌ [QUERY] Error in query processing: {str(e)}")
+            # Try async method as fallback
+            try:
+                result = run_async(rag.aquery(query, **query_kwargs))
+            except Exception as e2:
+                logger.error(f"❌ [QUERY] Alternative approach also failed: {str(e2)}")
+                raise e2
+        
         query_duration = time.time() - query_start
         
         logger.info(f"📊 [QUERY] Query processed in {query_duration:.3f}s")
@@ -568,11 +614,31 @@ def process_multimodal_query():
         
         # Process multimodal query
         query_start = time.time()
-        result = run_async(rag.aquery_with_multimodal(
-            query,
-            multimodal_content=multimodal_content,
-            mode=mode
-        ))
+        
+        # Fix async handling for multimodal queries
+        try:
+            # Try synchronous method first
+            result = rag.query_with_multimodal(
+                query,
+                multimodal_content=multimodal_content,
+                mode=mode
+            )
+            if asyncio.iscoroutine(result):
+                # If it returns a coroutine, run it properly
+                result = run_async(result)
+        except Exception as e:
+            print(f"❌ [MULTIMODAL] Error in multimodal query processing: {str(e)}")
+            # Try async method as fallback
+            try:
+                result = run_async(rag.aquery_with_multimodal(
+                    query,
+                    multimodal_content=multimodal_content,
+                    mode=mode
+                ))
+            except Exception as e2:
+                print(f"❌ [MULTIMODAL] Alternative approach also failed: {str(e2)}")
+                raise e2
+        
         query_duration = time.time() - query_start
         
         print(f"📊 [MULTIMODAL] Completed in {query_duration:.3f}s")
