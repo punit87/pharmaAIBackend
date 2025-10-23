@@ -13,11 +13,23 @@ import boto3
 import asyncio
 import threading
 import atexit
+import logging
 from functools import lru_cache
 from flask import Flask, request, jsonify
 from raganything import RAGAnything, RAGAnythingConfig
 from lightrag.llm.openai import openai_complete_if_cache, openai_embed
 from lightrag.utils import EmbeddingFunc
+
+# Configure logging
+logging.basicConfig(
+    level=logging.INFO,
+    format='%(asctime)s - %(name)s - %(levelname)s - %(message)s',
+    handlers=[
+        logging.StreamHandler(),
+        logging.FileHandler('/tmp/rag_client.log')
+    ]
+)
+logger = logging.getLogger(__name__)
 
 app = Flask(__name__)
 
@@ -33,18 +45,32 @@ _rag_lock = threading.Lock()
 def get_event_loop():
     """Get or create persistent event loop for async operations"""
     global _event_loop
+    start_time = time.time()
+    logger.info("🔄 [EVENT_LOOP] Getting event loop...")
+    
     if _event_loop is None or _event_loop.is_closed():
+        logger.info("🔄 [EVENT_LOOP] Creating new event loop...")
         _event_loop = asyncio.new_event_loop()
         # Run loop in background thread
         loop_thread = threading.Thread(target=_event_loop.run_forever, daemon=True)
         loop_thread.start()
+        logger.info(f"🔄 [EVENT_LOOP] Event loop created and started in {time.time() - start_time:.3f}s")
+    else:
+        logger.info(f"🔄 [EVENT_LOOP] Using existing event loop in {time.time() - start_time:.3f}s")
+    
     return _event_loop
 
 def run_async(coro):
     """Execute async coroutine in persistent event loop"""
+    start_time = time.time()
+    logger.info("🔄 [ASYNC] Executing async coroutine...")
+    
     loop = get_event_loop()
     future = asyncio.run_coroutine_threadsafe(coro, loop)
-    return future.result()
+    result = future.result()
+    
+    logger.info(f"🔄 [ASYNC] Async coroutine completed in {time.time() - start_time:.3f}s")
+    return result
 
 def cleanup_event_loop():
     """Cleanup event loop on shutdown"""
@@ -78,7 +104,10 @@ def get_api_config():
 @lru_cache(maxsize=1)
 def get_rag_config():
     """Cache RAG configuration optimized for large documents"""
-    return RAGAnythingConfig(
+    start_time = time.time()
+    logger.info("⚙️ [CONFIG] Getting RAG configuration...")
+    
+    config = RAGAnythingConfig(
         working_dir=os.environ.get('OUTPUT_DIR', '/rag-output/'),
         parser=os.environ.get('PARSER', 'docling'),
         parse_method=os.environ.get('PARSE_METHOD', 'auto'),
@@ -93,16 +122,35 @@ def get_rag_config():
         # RAG-Anything will use the 1536-dimension embeddings for Neo4j vector indexes
         # This ensures compatibility with Neo4j's vector search capabilities
     )
+    
+    logger.info(f"⚙️ [CONFIG] RAG configuration loaded in {time.time() - start_time:.3f}s")
+    logger.info(f"⚙️ [CONFIG] Working dir: {config.working_dir}")
+    logger.info(f"⚙️ [CONFIG] Parser: {config.parser}")
+    logger.info(f"⚙️ [CONFIG] Chunk size: {config.chunk_size}")
+    logger.info(f"⚙️ [CONFIG] Chunk overlap: {config.chunk_overlap}")
+    logger.info(f"⚙️ [CONFIG] Max context length: {config.max_context_length}")
+    
+    return config
 
 def get_llm_model_func():
     """Create LLM model function with cached config"""
+    start_time = time.time()
+    logger.info("🤖 [LLM] Creating LLM model function...")
+    
     config = get_api_config()
     
     def llm_func(prompt, system_prompt=None, history_messages=[], **kwargs):
+        llm_start_time = time.time()
+        logger.info(f"🤖 [LLM] Starting LLM completion...")
+        logger.info(f"🤖 [LLM] Prompt length: {len(prompt)} characters")
+        logger.info(f"🤖 [LLM] System prompt length: {len(system_prompt) if system_prompt else 0} characters")
+        logger.info(f"🤖 [LLM] History messages: {len(history_messages)} messages")
+        
         # Handle token limits for large prompts
         max_tokens = int(os.environ.get('MAX_TOKENS', '4000'))
+        logger.info(f"🤖 [LLM] Max tokens: {max_tokens}")
         
-        return openai_complete_if_cache(
+        result = openai_complete_if_cache(
             "gpt-4o-mini",
             prompt,
             system_prompt=system_prompt,
@@ -112,6 +160,13 @@ def get_llm_model_func():
             max_tokens=max_tokens,
             **kwargs,
         )
+        
+        logger.info(f"🤖 [LLM] LLM completion completed in {time.time() - llm_start_time:.3f}s")
+        logger.info(f"🤖 [LLM] Response length: {len(result) if result else 0} characters")
+        
+        return result
+    
+    logger.info(f"🤖 [LLM] LLM model function created in {time.time() - start_time:.3f}s")
     return llm_func
 
 def get_vision_model_func(llm_func):
@@ -193,27 +248,46 @@ def get_embedding_func():
 def get_rag_instance():
     """Get or create singleton RAG instance (lazy initialization)"""
     global _rag_instance
+    start_time = time.time()
+    logger.info("🚀 [RAG_INIT] Getting RAG instance...")
     
     # Thread-safe singleton pattern
     if _rag_instance is None:
         with _rag_lock:
             if _rag_instance is None:
-                print("🔧 [RAG] Initializing RAG-Anything singleton...")
-                start = time.time()
+                logger.info("🚀 [RAG_INIT] Creating new RAG-Anything singleton...")
+                init_start_time = time.time()
                 
-                config = get_rag_config()
-                llm_func = get_llm_model_func()
-                vision_func = get_vision_model_func(llm_func)
-                embedding_func = get_embedding_func()
-                
-                _rag_instance = RAGAnything(
-                    config=config,
-                    llm_model_func=llm_func,
-                    vision_model_func=vision_func,
-                    embedding_func=embedding_func,
-                )
-                
-                print(f"✅ [RAG] Singleton initialized in {time.time()-start:.3f}s")
+                try:
+                    logger.info("🚀 [RAG_INIT] Getting configuration...")
+                    config = get_rag_config()
+                    
+                    logger.info("🚀 [RAG_INIT] Getting LLM model function...")
+                    llm_func = get_llm_model_func()
+                    
+                    logger.info("🚀 [RAG_INIT] Getting vision model function...")
+                    vision_func = get_vision_model_func(llm_func)
+                    
+                    logger.info("🚀 [RAG_INIT] Getting embedding function...")
+                    embedding_func = get_embedding_func()
+                    
+                    logger.info("🚀 [RAG_INIT] Initializing RAGAnything...")
+                    _rag_instance = RAGAnything(
+                        config=config,
+                        llm_model_func=llm_func,
+                        vision_model_func=vision_func,
+                        embedding_func=embedding_func,
+                    )
+                    
+                    logger.info(f"🚀 [RAG_INIT] RAG-Anything singleton initialized successfully in {time.time()-init_start_time:.3f}s")
+                    
+                except Exception as e:
+                    logger.error(f"🚀 [RAG_INIT] Failed to initialize RAG-Anything: {str(e)}")
+                    raise
+            else:
+                logger.info(f"🚀 [RAG_INIT] RAG instance already created by another thread in {time.time() - start_time:.3f}s")
+    else:
+        logger.info(f"🚀 [RAG_INIT] Using existing RAG instance in {time.time() - start_time:.3f}s")
     
     return _rag_instance
 
@@ -224,12 +298,33 @@ def get_rag_instance():
 @app.route('/health', methods=['GET'])
 def health():
     """Health check endpoint"""
-    return jsonify({
-        "status": "healthy",
-        "service": "raganything",
-        "uptime": 0,  # Simplified - no activity tracking
-        "rag_initialized": _rag_instance is not None
-    })
+    start_time = time.time()
+    logger.info("🏥 [HEALTH] Health check requested...")
+    
+    try:
+        rag_instance = get_rag_instance()
+        rag_initialized = rag_instance is not None
+        
+        response = {
+            "status": "healthy",
+            "service": "raganything",
+            "uptime": time.time() - start_time,
+            "rag_initialized": rag_initialized
+        }
+        
+        logger.info(f"🏥 [HEALTH] Health check completed in {time.time() - start_time:.3f}s")
+        logger.info(f"🏥 [HEALTH] RAG initialized: {rag_initialized}")
+        
+        return jsonify(response)
+        
+    except Exception as e:
+        logger.error(f"🏥 [HEALTH] Health check failed: {str(e)}")
+        return jsonify({
+            "status": "unhealthy",
+            "service": "raganything",
+            "error": str(e),
+            "uptime": time.time() - start_time
+        }), 500
 
 # ============================================================================
 # DOCUMENT PROCESSING ENDPOINT
@@ -239,10 +334,7 @@ def health():
 def process_document():
     """Process document from S3 using RAG-Anything"""
     start_time = time.time()
-    update_activity()
-    
-    print(f"\n{'='*60}")
-    print(f"📄 [PROCESS] Starting at {time.strftime('%H:%M:%S')}")
+    logger.info("📄 [PROCESS] Document processing started...")
     
     temp_file_path = None
     
@@ -253,30 +345,35 @@ def process_document():
         s3_key = data.get('key')
         
         if not s3_bucket or not s3_key:
+            logger.error("📄 [PROCESS] Missing bucket or key in request")
             return jsonify({"error": "Missing bucket or key"}), 400
         
-        print(f"📦 [PROCESS] Source: s3://{s3_bucket}/{s3_key}")
+        logger.info(f"📦 [PROCESS] Processing document: s3://{s3_bucket}/{s3_key}")
         
         # Step 1: Download from S3
         download_start = time.time()
+        logger.info("📥 [PROCESS] Starting S3 download...")
         s3_client = boto3.client('s3')
         temp_file_path = f"/tmp/{os.path.basename(s3_key)}"
         s3_client.download_file(s3_bucket, s3_key, temp_file_path)
         download_duration = time.time() - download_start
         
         file_size = os.path.getsize(temp_file_path) / (1024 * 1024)  # MB
-        print(f"📥 [PROCESS] Downloaded {file_size:.2f}MB in {download_duration:.3f}s")
+        logger.info(f"📥 [PROCESS] Downloaded {file_size:.2f}MB in {download_duration:.3f}s")
         
         # Step 2: Get RAG instance (lazy init on first call)
         init_start = time.time()
+        logger.info("🚀 [PROCESS] Getting RAG instance...")
         rag = get_rag_instance()
         init_duration = time.time() - init_start
-        print(f"🚀 [PROCESS] RAG ready in {init_duration:.3f}s")
+        logger.info(f"🚀 [PROCESS] RAG instance ready in {init_duration:.3f}s")
         
         # Step 3: Process document
         process_start = time.time()
         parser = os.environ.get('PARSER', 'docling')
         parse_method = os.environ.get('PARSE_METHOD', 'auto')
+        
+        logger.info(f"🔧 [PROCESS] Using parser: {parser}, method: {parse_method}")
         
         process_kwargs = {
             'file_path': temp_file_path,
@@ -297,20 +394,19 @@ def process_document():
                 'source': 'local',
             })
         
-        print(f"🔍 [PROCESS] Processing with {parser} parser ({parse_method} mode)")
+        logger.info(f"🔍 [PROCESS] Processing with {parser} parser ({parse_method} mode)")
         result = run_async(rag.process_document_complete(**process_kwargs))
         process_duration = time.time() - process_start
         
-        print(f"💾 [PROCESS] Document processed in {process_duration:.3f}s")
+        logger.info(f"💾 [PROCESS] Document processed in {process_duration:.3f}s")
         
         # Step 4: Cleanup
         if temp_file_path and os.path.exists(temp_file_path):
             os.remove(temp_file_path)
-            print(f"🧹 [PROCESS] Temp file cleaned")
+            logger.info(f"🧹 [PROCESS] Temp file cleaned up")
         
         total_duration = time.time() - start_time
-        print(f"✅ [PROCESS] Total: {total_duration:.3f}s")
-        print(f"{'='*60}\n")
+        logger.info(f"✅ [PROCESS] Document processing completed successfully in {total_duration:.3f}s")
         
         return jsonify({
             "status": "success",
@@ -334,7 +430,7 @@ def process_document():
         
     except Exception as e:
         total_duration = time.time() - start_time
-        print(f"❌ [PROCESS] Error after {total_duration:.3f}s: {str(e)}")
+        logger.error(f"❌ [PROCESS] Document processing failed after {total_duration:.3f}s: {str(e)}")
         
         import traceback
         traceback.print_exc()
@@ -359,10 +455,7 @@ def process_document():
 def process_query():
     """Process RAG query"""
     start_time = time.time()
-    update_activity()
-    
-    print(f"\n{'='*60}")
-    print(f"🔍 [QUERY] Starting at {time.strftime('%H:%M:%S')}")
+    logger.info("🔍 [QUERY] RAG query started...")
     
     try:
         # Validate request
@@ -372,18 +465,22 @@ def process_query():
         vlm_enhanced = data.get('vlm_enhanced')
         
         if not query:
+            logger.error("🔍 [QUERY] Missing query in request")
             return jsonify({"error": "Missing query"}), 400
         
-        print(f"❓ [QUERY] Text: {query[:80]}{'...' if len(query) > 80 else ''}")
-        print(f"⚙️ [QUERY] Mode: {mode}, VLM: {vlm_enhanced if vlm_enhanced is not None else 'auto'}")
+        logger.info(f"❓ [QUERY] Processing query: '{query[:80]}{'...' if len(query) > 80 else ''}'")
+        logger.info(f"⚙️ [QUERY] Mode: {mode}, VLM: {vlm_enhanced if vlm_enhanced is not None else 'auto'}")
         
         # Get RAG instance (reuses existing singleton)
         init_start = time.time()
+        logger.info("🚀 [QUERY] Getting RAG instance...")
         rag = get_rag_instance()
         init_duration = time.time() - init_start
+        logger.info(f"🚀 [QUERY] RAG instance ready in {init_duration:.3f}s")
         
         # Process query
         query_start = time.time()
+        logger.info("🔍 [QUERY] Starting query processing...")
         query_kwargs = {'mode': mode}
         if vlm_enhanced is not None:
             query_kwargs['vlm_enhanced'] = vlm_enhanced
@@ -391,7 +488,7 @@ def process_query():
         result = run_async(rag.aquery(query, **query_kwargs))
         query_duration = time.time() - query_start
         
-        print(f"📊 [QUERY] Completed in {query_duration:.3f}s")
+        logger.info(f"📊 [QUERY] Query processed in {query_duration:.3f}s")
         
         # Parse result
         if isinstance(result, dict):
@@ -404,8 +501,7 @@ def process_query():
             confidence = 0.0
         
         total_duration = time.time() - start_time
-        print(f"✅ [QUERY] Total: {total_duration:.3f}s")
-        print(f"{'='*60}\n")
+        logger.info(f"✅ [QUERY] Query completed successfully in {total_duration:.3f}s")
         
         return jsonify({
             "query": query,
@@ -424,7 +520,7 @@ def process_query():
         
     except Exception as e:
         total_duration = time.time() - start_time
-        print(f"❌ [QUERY] Error after {total_duration:.3f}s: {str(e)}")
+        logger.error(f"❌ [QUERY] Query processing failed after {total_duration:.3f}s: {str(e)}")
         
         import traceback
         traceback.print_exc()
@@ -530,9 +626,15 @@ def process_multimodal_query():
 @app.route('/analyze_efs', methods=['GET'])
 def analyze_efs():
     """Analyze EFS contents - chunks, embeddings, metadata, graphs"""
+    start_time = time.time()
+    logger.info("📊 [EFS_ANALYSIS] EFS analysis started...")
+    
     try:
         efs_path = os.environ.get('EFS_MOUNT_PATH', '/mnt/efs')
         rag_output_dir = os.environ.get('RAG_OUTPUT_DIR', '/mnt/efs/rag_output')
+        
+        logger.info(f"📊 [EFS_ANALYSIS] Analyzing EFS path: {efs_path}")
+        logger.info(f"📊 [EFS_ANALYSIS] RAG output dir: {rag_output_dir}")
         
         analysis = {
             'efs_path': efs_path,
@@ -549,10 +651,14 @@ def analyze_efs():
         }
         
         if not os.path.exists(efs_path):
+            logger.error(f"📊 [EFS_ANALYSIS] EFS path {efs_path} not found")
             return jsonify({
                 'error': f'EFS path {efs_path} not found',
                 'analysis': analysis
             }), 404
+        
+        logger.info("📊 [EFS_ANALYSIS] Walking through EFS directory...")
+        walk_start = time.time()
         
         # Walk through EFS directory and collect file information
         for root, dirs, files in os.walk(efs_path):
@@ -586,13 +692,19 @@ def analyze_efs():
                             analysis['graphs'].append(file_info)
                     
                 except Exception as e:
+                    logger.warning(f"📊 [EFS_ANALYSIS] Error processing file {file_path}: {str(e)}")
                     analysis['files'].append({
                         'path': file_path,
                         'name': file,
                         'error': str(e)
                     })
         
+        walk_duration = time.time() - walk_start
+        logger.info(f"📊 [EFS_ANALYSIS] Directory walk completed in {walk_duration:.3f}s")
+        logger.info(f"📊 [EFS_ANALYSIS] Found {analysis['total_files']} files, {len(analysis['chunks'])} chunks, {len(analysis['embeddings'])} embeddings")
+        
         # Try to read some sample chunk files to show content
+        logger.info("📊 [EFS_ANALYSIS] Reading sample chunk files...")
         sample_chunks = []
         for chunk_file in analysis['chunks'][:5]:  # First 5 chunk files
             try:
@@ -603,6 +715,7 @@ def analyze_efs():
                         'content_preview': str(chunk_data)[:200] + '...' if len(str(chunk_data)) > 200 else str(chunk_data)
                     })
             except Exception as e:
+                logger.warning(f"📊 [EFS_ANALYSIS] Error reading chunk file {chunk_file['path']}: {str(e)}")
                 sample_chunks.append({
                     'file': chunk_file['relative_path'],
                     'error': str(e)
@@ -611,6 +724,7 @@ def analyze_efs():
         analysis['sample_chunks'] = sample_chunks
         
         # Try to read some sample metadata files
+        logger.info("📊 [EFS_ANALYSIS] Reading sample metadata files...")
         sample_metadata = []
         for meta_file in analysis['metadata'][:3]:  # First 3 metadata files
             try:
@@ -621,6 +735,7 @@ def analyze_efs():
                         'content_preview': str(meta_data)[:200] + '...' if len(str(meta_data)) > 200 else str(meta_data)
                     })
             except Exception as e:
+                logger.warning(f"📊 [EFS_ANALYSIS] Error reading metadata file {meta_file['path']}: {str(e)}")
                 sample_metadata.append({
                     'file': meta_file['relative_path'],
                     'error': str(e)
@@ -628,12 +743,18 @@ def analyze_efs():
         
         analysis['sample_metadata'] = sample_metadata
         
+        total_duration = time.time() - start_time
+        logger.info(f"✅ [EFS_ANALYSIS] EFS analysis completed successfully in {total_duration:.3f}s")
+        
         return jsonify({
             'status': 'success',
             'analysis': analysis
         })
         
     except Exception as e:
+        total_duration = time.time() - start_time
+        logger.error(f"❌ [EFS_ANALYSIS] EFS analysis failed after {total_duration:.3f}s: {str(e)}")
+        
         return jsonify({
             'error': str(e),
             'status': 'error'
@@ -647,15 +768,13 @@ def start_server():
     """Start the Flask server"""
     port = int(os.environ.get('PORT', 8000))
     
-    print("\n" + "="*60)
-    print("🚀 RAG-Anything Server")
-    print("="*60)
-    print(f"📍 Port: {port}")
-    print(f"📂 Working Dir: {os.environ.get('OUTPUT_DIR', '/rag-output/')}")
-    print(f"🔧 Parser: {os.environ.get('PARSER', 'docling')}")
-    print(f"📝 Parse Method: {os.environ.get('PARSE_METHOD', 'auto')}")
-    print(f"🔄 Lazy Init: RAG instance created on first request")
-    print("="*60 + "\n")
+    logger.info("🚀 [SERVER] Starting RAG-Anything Server...")
+    logger.info(f"📍 [SERVER] Port: {port}")
+    logger.info(f"📂 [SERVER] Working Dir: {os.environ.get('OUTPUT_DIR', '/rag-output/')}")
+    logger.info(f"🔧 [SERVER] Parser: {os.environ.get('PARSER', 'docling')}")
+    logger.info(f"📝 [SERVER] Parse Method: {os.environ.get('PARSE_METHOD', 'auto')}")
+    logger.info(f"🔄 [SERVER] Lazy Init: RAG instance created on first request")
+    logger.info("🚀 [SERVER] Server starting...")
     
     # Use threaded mode for better request handling
     app.run(
