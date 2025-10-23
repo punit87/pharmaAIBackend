@@ -33,6 +33,47 @@ jobs:
         aws-secret-access-key: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
         aws-region: ${{ secrets.AWS_DEFAULT_REGION }}
 
+    - name: Clear Docker cache and free space
+      run: |
+        echo "🧹 [CLEANUP] Clearing Docker cache and freeing space..."
+        CLEANUP_START=$(date +%s.%3N)
+        
+        # Stop all running containers
+        echo "🛑 [CLEANUP] Stopping all running containers..."
+        docker stop $(docker ps -aq) 2>/dev/null || true
+        
+        # Remove all containers
+        echo "🗑️ [CLEANUP] Removing all containers..."
+        docker rm $(docker ps -aq) 2>/dev/null || true
+        
+        # Remove all images
+        echo "🗑️ [CLEANUP] Removing all Docker images..."
+        docker rmi $(docker images -q) 2>/dev/null || true
+        
+        # Remove all volumes
+        echo "🗑️ [CLEANUP] Removing all Docker volumes..."
+        docker volume rm $(docker volume ls -q) 2>/dev/null || true
+        
+        # Remove all networks (except default)
+        echo "🗑️ [CLEANUP] Removing custom Docker networks..."
+        docker network rm $(docker network ls -q --filter type=custom) 2>/dev/null || true
+        
+        # Prune system
+        echo "🧹 [CLEANUP] Pruning Docker system..."
+        docker system prune -af --volumes
+        
+        # Clear build cache
+        echo "🧹 [CLEANUP] Clearing Docker build cache..."
+        docker builder prune -af
+        
+        # Show disk space
+        echo "💾 [CLEANUP] Current disk usage:"
+        df -h
+        
+        CLEANUP_END=$(date +%s.%3N)
+        CLEANUP_DURATION=$(echo "$CLEANUP_END - $CLEANUP_START" | bc)
+        echo "✅ [CLEANUP] Cleanup completed in ${CLEANUP_DURATION}s"
+
     - name: Login to Amazon ECR
       id: login-ecr
       uses: aws-actions/amazon-ecr-login@v2
