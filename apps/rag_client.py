@@ -840,6 +840,222 @@ def get_chunks():
         }), 500
 
 # ============================================================================
+# EFS CONTENT ANALYSIS ENDPOINT
+# ============================================================================
+
+@app.route('/analyze_efs_content', methods=['GET'])
+def analyze_efs_content():
+    """Download and return the content of a specific EFS file"""
+    start_time = time.time()
+    logger.info("📊 [EFS_CONTENT] EFS single file download started...")
+    
+    try:
+        # Get filename from query parameters
+        filename = request.args.get('filename')
+        if not filename:
+            return jsonify({
+                'error': 'filename parameter is required',
+                'usage': 'GET /analyze_efs_content?filename=your-file-name.json'
+            }), 400
+        
+        efs_path = os.environ.get('EFS_MOUNT_PATH', '/mnt/efs')
+        rag_output_dir = os.environ.get('RAG_OUTPUT_DIR', '/mnt/efs/rag_output')
+        
+        logger.info(f"📊 [EFS_CONTENT] Downloading file: {filename}")
+        logger.info(f"📊 [EFS_CONTENT] EFS path: {efs_path}")
+        logger.info(f"📊 [EFS_CONTENT] RAG output dir: {rag_output_dir}")
+        
+        analysis = {
+            'efs_path': efs_path,
+            'rag_output_dir': rag_output_dir,
+            'efs_exists': os.path.exists(efs_path),
+            'rag_output_exists': os.path.exists(rag_output_dir),
+            'requested_filename': filename,
+            'file_info': {},
+            'file_content': {},
+            'download_status': 'pending'
+        }
+        
+        if not os.path.exists(efs_path):
+            logger.error(f"📊 [EFS_CONTENT] EFS path {efs_path} not found")
+            return jsonify({
+                'error': f'EFS path {efs_path} not found',
+                'analysis': analysis
+            }), 404
+        
+        # Search for the file in EFS
+        logger.info(f"🔍 [EFS_CONTENT] Searching for file: {filename}")
+        file_found = False
+        file_path = None
+        
+        # First try exact match in rag_output_dir
+        potential_paths = [
+            os.path.join(rag_output_dir, filename),
+            os.path.join(efs_path, filename),
+            os.path.join(efs_path, 'rag_output', filename)
+        ]
+        
+        # Also search recursively for the filename
+        for root, dirs, files in os.walk(efs_path):
+            if filename in files:
+                file_path = os.path.join(root, filename)
+                file_found = True
+                break
+        
+        # If not found recursively, try the potential paths
+        if not file_found:
+            for path in potential_paths:
+                if os.path.exists(path):
+                    file_path = path
+                    file_found = True
+                    break
+        
+        if not file_found:
+            logger.error(f"📊 [EFS_CONTENT] File not found: {filename}")
+            return jsonify({
+                'error': f'File not found: {filename}',
+                'searched_paths': potential_paths,
+                'analysis': analysis
+            }), 404
+        
+        logger.info(f"✅ [EFS_CONTENT] File found at: {file_path}")
+        
+        # Get file information
+        try:
+            file_size = os.path.getsize(file_path)
+            file_stat = os.stat(file_path)
+            file_ext = os.path.splitext(filename)[1].lower()
+            relative_path = os.path.relpath(file_path, efs_path)
+            
+            file_info = {
+                'name': filename,
+                'path': file_path,
+                'relative_path': relative_path,
+                'directory': os.path.dirname(file_path),
+                'size_bytes': file_size,
+                'size_mb': round(file_size / (1024 * 1024), 3),
+                'extension': file_ext,
+                'created_date': time.strftime('%Y-%m-%d %H:%M:%S', time.localtime(file_stat.st_ctime)),
+                'modified_date': time.strftime('%Y-%m-%d %H:%M:%S', time.localtime(file_stat.st_mtime)),
+                'accessed_date': time.strftime('%Y-%m-%d %H:%M:%S', time.localtime(file_stat.st_atime))
+            }
+            
+            analysis['file_info'] = file_info
+            
+        except Exception as e:
+            logger.error(f"❌ [EFS_CONTENT] Error getting file info for {file_path}: {str(e)}")
+            return jsonify({
+                'error': f'Error getting file info: {str(e)}',
+                'analysis': analysis
+            }), 500
+        
+        # Download file content
+        logger.info(f"📥 [EFS_CONTENT] Downloading file content: {filename}")
+        download_start = time.time()
+        
+        try:
+            if file_ext in ['.json', '.md', '.txt', '.log', '.csv', '.xml', '.yaml', '.yml', '.py', '.js', '.html', '.css']:
+                # Text files - read as text
+                with open(file_path, 'r', encoding='utf-8') as f:
+                    content = f.read()
+                    analysis['file_content'] = {
+                        'type': 'text',
+                        'content': content,
+                        'encoding': 'utf-8',
+                        'size': len(content),
+                        'lines': len(content.splitlines()) if content else 0
+                    }
+                    
+            elif file_ext in ['.pdf', '.docx', '.doc', '.xlsx', '.pptx', '.zip', '.tar', '.gz', '.png', '.jpg', '.jpeg', '.gif']:
+                # Binary files - read as base64
+                with open(file_path, 'rb') as f:
+                    binary_content = f.read()
+                    import base64
+                    base64_content = base64.b64encode(binary_content).decode('utf-8')
+                    analysis['file_content'] = {
+                        'type': 'binary',
+                        'content': base64_content,
+                        'encoding': 'base64',
+                        'size': len(binary_content),
+                        'original_size': file_size,
+                        'note': 'Use base64 decode to get original binary content'
+                    }
+                    
+            else:
+                # Unknown files - try as text first, then binary
+                try:
+                    with open(file_path, 'r', encoding='utf-8') as f:
+                        content = f.read()
+                        analysis['file_content'] = {
+                            'type': 'text',
+                            'content': content,
+                            'encoding': 'utf-8',
+                            'size': len(content),
+                            'lines': len(content.splitlines()) if content else 0,
+                            'note': 'Read as text (unknown extension)'
+                        }
+                except:
+                    # Fallback to binary
+                    with open(file_path, 'rb') as f:
+                        binary_content = f.read()
+                        import base64
+                        base64_content = base64.b64encode(binary_content).decode('utf-8')
+                        analysis['file_content'] = {
+                            'type': 'binary',
+                            'content': base64_content,
+                            'encoding': 'base64',
+                            'size': len(binary_content),
+                            'original_size': file_size,
+                            'note': 'Read as binary (unknown extension)'
+                        }
+            
+            download_duration = time.time() - download_start
+            analysis['download_status'] = 'success'
+            
+            logger.info(f"✅ [EFS_CONTENT] Successfully downloaded: {filename} ({file_size} bytes) in {download_duration:.3f}s")
+            
+        except Exception as e:
+            download_duration = time.time() - download_start
+            logger.error(f"❌ [EFS_CONTENT] Error downloading file {file_path}: {str(e)}")
+            analysis['download_status'] = 'error'
+            analysis['file_content'] = {
+                'type': 'error',
+                'error': str(e),
+                'size': 0
+            }
+            
+            return jsonify({
+                'error': f'Error downloading file: {str(e)}',
+                'analysis': analysis,
+                'timing': {'download_duration': round(download_duration, 3)}
+            }), 500
+        
+        total_duration = time.time() - start_time
+        logger.info(f"✅ [EFS_CONTENT] File download completed successfully in {total_duration:.3f}s")
+        
+        return jsonify({
+            'status': 'success',
+            'analysis': analysis,
+            'timing': {
+                'total_duration': round(total_duration, 3),
+                'download_duration': round(download_duration, 3)
+            }
+        })
+        
+    except Exception as e:
+        total_duration = time.time() - start_time
+        logger.error(f"❌ [EFS_CONTENT] EFS content analysis failed after {total_duration:.3f}s: {str(e)}")
+        
+        import traceback
+        traceback.print_exc()
+        
+        return jsonify({
+            'error': str(e),
+            'status': 'error',
+            'timing': {'total_duration': round(total_duration, 3)}
+        }), 500
+
+# ============================================================================
 # SERVER STARTUP
 # ============================================================================
 
