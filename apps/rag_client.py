@@ -5,6 +5,7 @@ RAG-Anything Server - Optimized for ECS Tasks
 - Lazy initialization to reduce cold start time
 - Proper resource cleanup
 - Memory-efficient caching
+- Latest build with all fixes applied
 """
 import os
 import time
