@@ -396,7 +396,7 @@ def process_document():
             'doc_id': s3_key,
             'display_stats': True,
             'parse_method': parse_method,
-            'split_by_character': None,  # Let RAG-Anything handle chunking automatically
+            'split_by_character': '\n',  # Use simple newline splitting to avoid complex chunking
         }
         
         # Add parser-specific parameters only for MinerU
