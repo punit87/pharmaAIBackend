@@ -113,8 +113,10 @@ def get_rag_config():
         parse_method=os.environ.get('PARSE_METHOD', 'ocr'),  # Enable OCR for better text extraction
         enable_image_processing=True,
         enable_table_processing=True,
-        enable_equation_processing=True
-        # Note: chunk_size, chunk_overlap, and max_context_length are handled internally by RAG-Anything
+        enable_equation_processing=True,
+        chunk_size=1000,  # Smaller chunks to avoid token limit issues
+        chunk_overlap=200,  # Overlap for better context
+        max_context_length=4000  # Limit context to avoid token overflow
         # OCR-specific parameters like lang, device, formula, table are passed to process_document_complete()
         # Neo4j-specific optimizations
         # RAG-Anything will use the 1536-dimension embeddings for Neo4j vector indexes
@@ -461,8 +463,8 @@ def process_query():
         # Validate request
         data = request.get_json()
         query = data.get('query', '')
-        mode = data.get('mode', 'hybrid')
-        vlm_enhanced = data.get('vlm_enhanced')
+        mode = data.get('mode', 'local')  # Use local mode to avoid VLM issues
+        vlm_enhanced = False  # Disable VLM processing to avoid async errors
         
         if not query:
             logger.error("🔍 [QUERY] Missing query in request")
