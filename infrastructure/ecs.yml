@@ -189,8 +189,7 @@ Resources:
         - Key: Environment
           Value: !Ref Environment
       PerformanceMode: generalPurpose
-      ThroughputMode: provisioned
-      ProvisionedThroughputInMibps: 100
+      ThroughputMode: bursting
 
   EFSMountTarget1:
     Type: AWS::EFS::MountTarget
