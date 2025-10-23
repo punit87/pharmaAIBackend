@@ -77,7 +77,7 @@ def get_api_config():
 
 @lru_cache(maxsize=1)
 def get_rag_config():
-    """Cache RAG configuration optimized for Neo4j integration"""
+    """Cache RAG configuration optimized for large documents"""
     return RAGAnythingConfig(
         working_dir=os.environ.get('OUTPUT_DIR', '/rag-output/'),
         parser=os.environ.get('PARSER', 'docling'),
@@ -85,6 +85,10 @@ def get_rag_config():
         enable_image_processing=True,
         enable_table_processing=True,
         enable_equation_processing=True,
+        # Large document handling optimizations
+        chunk_size=int(os.environ.get('CHUNK_SIZE', '1000')),  # Smaller chunks for token limit
+        chunk_overlap=int(os.environ.get('CHUNK_OVERLAP', '100')),  # Overlap between chunks
+        max_context_length=int(os.environ.get('MAX_CONTEXT_LENGTH', '4000')),  # Reduced context length
         # Neo4j-specific optimizations
         # RAG-Anything will use the 1536-dimension embeddings for Neo4j vector indexes
         # This ensures compatibility with Neo4j's vector search capabilities
@@ -95,6 +99,9 @@ def get_llm_model_func():
     config = get_api_config()
     
     def llm_func(prompt, system_prompt=None, history_messages=[], **kwargs):
+        # Handle token limits for large prompts
+        max_tokens = int(os.environ.get('MAX_TOKENS', '4000'))
+        
         return openai_complete_if_cache(
             "gpt-4o-mini",
             prompt,
@@ -102,6 +109,7 @@ def get_llm_model_func():
             history_messages=history_messages,
             api_key=config['api_key'],
             base_url=config['base_url'],
+            max_tokens=max_tokens,
             **kwargs,
         )
     return llm_func
@@ -517,6 +525,118 @@ def process_multimodal_query():
             "confidence": 0.0,
             "status": "error",
             "timing": {"total_duration": round(total_duration, 3)}
+        }), 500
+
+@app.route('/analyze_efs', methods=['GET'])
+def analyze_efs():
+    """Analyze EFS contents - chunks, embeddings, metadata, graphs"""
+    try:
+        efs_path = os.environ.get('EFS_MOUNT_PATH', '/mnt/efs')
+        rag_output_dir = os.environ.get('RAG_OUTPUT_DIR', '/mnt/efs/rag_output')
+        
+        analysis = {
+            'efs_path': efs_path,
+            'rag_output_dir': rag_output_dir,
+            'efs_exists': os.path.exists(efs_path),
+            'rag_output_exists': os.path.exists(rag_output_dir),
+            'files': [],
+            'chunks': [],
+            'embeddings': [],
+            'metadata': [],
+            'graphs': [],
+            'total_files': 0,
+            'total_size_bytes': 0
+        }
+        
+        if not os.path.exists(efs_path):
+            return jsonify({
+                'error': f'EFS path {efs_path} not found',
+                'analysis': analysis
+            }), 404
+        
+        # Walk through EFS directory and collect file information
+        for root, dirs, files in os.walk(efs_path):
+            for file in files:
+                file_path = os.path.join(root, file)
+                try:
+                    file_size = os.path.getsize(file_path)
+                    relative_path = os.path.relpath(file_path, efs_path)
+                    
+                    file_info = {
+                        'path': file_path,
+                        'relative_path': relative_path,
+                        'name': file,
+                        'size_bytes': file_size,
+                        'directory': root
+                    }
+                    
+                    analysis['files'].append(file_info)
+                    analysis['total_files'] += 1
+                    analysis['total_size_bytes'] += file_size
+                    
+                    # Categorize files by type
+                    if file.endswith('.json'):
+                        if 'chunk' in file.lower() or 'chunks' in root.lower():
+                            analysis['chunks'].append(file_info)
+                        elif 'embedding' in file.lower() or 'embeddings' in root.lower():
+                            analysis['embeddings'].append(file_info)
+                        elif 'metadata' in file.lower() or 'meta' in file.lower():
+                            analysis['metadata'].append(file_info)
+                        elif 'graph' in file.lower() or 'neo4j' in file.lower():
+                            analysis['graphs'].append(file_info)
+                    
+                except Exception as e:
+                    analysis['files'].append({
+                        'path': file_path,
+                        'name': file,
+                        'error': str(e)
+                    })
+        
+        # Try to read some sample chunk files to show content
+        sample_chunks = []
+        for chunk_file in analysis['chunks'][:5]:  # First 5 chunk files
+            try:
+                with open(chunk_file['path'], 'r', encoding='utf-8') as f:
+                    chunk_data = json.load(f)
+                    sample_chunks.append({
+                        'file': chunk_file['relative_path'],
+                        'content_preview': str(chunk_data)[:200] + '...' if len(str(chunk_data)) > 200 else str(chunk_data)
+                    })
+            except Exception as e:
+                sample_chunks.append({
+                    'file': chunk_file['relative_path'],
+                    'error': str(e)
+                })
+        
+        analysis['sample_chunks'] = sample_chunks
+        
+        # Try to read some sample metadata files
+        sample_metadata = []
+        for meta_file in analysis['metadata'][:3]:  # First 3 metadata files
+            try:
+                with open(meta_file['path'], 'r', encoding='utf-8') as f:
+                    meta_data = json.load(f)
+                    sample_metadata.append({
+                        'file': meta_file['relative_path'],
+                        'content_preview': str(meta_data)[:200] + '...' if len(str(meta_data)) > 200 else str(meta_data)
+                    })
+            except Exception as e:
+                sample_metadata.append({
+                    'file': meta_file['relative_path'],
+                    'error': str(e)
+                })
+        
+        analysis['sample_metadata'] = sample_metadata
+        
+        return jsonify({
+            'status': 'success',
+            'analysis': analysis
+        })
+        
+    except Exception as e:
+        return jsonify({
+            'error': str(e),
+            'status': 'error'
         }), 500
 
 # ============================================================================

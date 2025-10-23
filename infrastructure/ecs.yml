@@ -260,6 +260,14 @@ Resources:
               Value: /mnt/efs/rag_output
             - Name: OUTPUT_DIR
               Value: /mnt/efs/rag_output
+            - Name: CHUNK_SIZE
+              Value: '1000'
+            - Name: CHUNK_OVERLAP
+              Value: '100'
+            - Name: MAX_CONTEXT_LENGTH
+              Value: '4000'
+            - Name: MAX_TOKENS
+              Value: '4000'
           MountPoints:
             - SourceVolume: efs-storage
               ContainerPath: /mnt/efs

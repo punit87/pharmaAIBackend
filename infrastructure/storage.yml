@@ -11,8 +11,10 @@ Parameters:
 Resources:
   DocumentBucket:
     Type: AWS::S3::Bucket
+    DeletionPolicy: Retain
+    UpdateReplacePolicy: Retain
     Properties:
-      BucketName: !Sub 'pharma-documents-${Environment}-${AWS::AccountId}-${AWS::Region}-v3'
+      BucketName: !Sub 'pharma-documents-${Environment}-${AWS::AccountId}-${AWS::Region}-v5'
       VersioningConfiguration:
         Status: Enabled
       PublicAccessBlockConfiguration:
