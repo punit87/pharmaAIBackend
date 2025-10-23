@@ -710,10 +710,20 @@ def analyze_efs():
             try:
                 with open(chunk_file['path'], 'r', encoding='utf-8') as f:
                     chunk_data = json.load(f)
-                    sample_chunks.append({
-                        'file': chunk_file['relative_path'],
-                        'content_preview': str(chunk_data)[:200] + '...' if len(str(chunk_data)) > 200 else str(chunk_data)
-                    })
+                    
+                    # For text chunks, show full content, for others show preview
+                    if 'text_chunks' in chunk_file['name']:
+                        sample_chunks.append({
+                            'file': chunk_file['relative_path'],
+                            'full_content': chunk_data,
+                            'content_type': 'text_chunks'
+                        })
+                    else:
+                        sample_chunks.append({
+                            'file': chunk_file['relative_path'],
+                            'content_preview': str(chunk_data)[:200] + '...' if len(str(chunk_data)) > 200 else str(chunk_data),
+                            'content_type': 'other'
+                        })
             except Exception as e:
                 logger.warning(f"📊 [EFS_ANALYSIS] Error reading chunk file {chunk_file['path']}: {str(e)}")
                 sample_chunks.append({
@@ -754,6 +764,73 @@ def analyze_efs():
     except Exception as e:
         total_duration = time.time() - start_time
         logger.error(f"❌ [EFS_ANALYSIS] EFS analysis failed after {total_duration:.3f}s: {str(e)}")
+        
+        return jsonify({
+            'error': str(e),
+            'status': 'error'
+        }), 500
+
+@app.route('/get_chunks', methods=['GET'])
+def get_chunks():
+    """Get full content of all chunks"""
+    start_time = time.time()
+    logger.info("📄 [CHUNKS] Getting full chunk content...")
+    
+    try:
+        efs_path = os.environ.get('EFS_MOUNT_PATH', '/mnt/efs')
+        rag_output_dir = os.environ.get('RAG_OUTPUT_DIR', '/mnt/efs/rag_output')
+        
+        chunks_data = {
+            'text_chunks': {},
+            'entity_chunks': {},
+            'relation_chunks': {},
+            'vdb_chunks': {},
+            'total_chunks': 0
+        }
+        
+        # Read text chunks
+        text_chunks_path = f"{rag_output_dir}/kv_store_text_chunks.json"
+        if os.path.exists(text_chunks_path):
+            logger.info("📄 [CHUNKS] Reading text chunks...")
+            with open(text_chunks_path, 'r', encoding='utf-8') as f:
+                chunks_data['text_chunks'] = json.load(f)
+                chunks_data['total_chunks'] += len(chunks_data['text_chunks'])
+        
+        # Read entity chunks
+        entity_chunks_path = f"{rag_output_dir}/kv_store_entity_chunks.json"
+        if os.path.exists(entity_chunks_path):
+            logger.info("📄 [CHUNKS] Reading entity chunks...")
+            with open(entity_chunks_path, 'r', encoding='utf-8') as f:
+                chunks_data['entity_chunks'] = json.load(f)
+        
+        # Read relation chunks
+        relation_chunks_path = f"{rag_output_dir}/kv_store_relation_chunks.json"
+        if os.path.exists(relation_chunks_path):
+            logger.info("📄 [CHUNKS] Reading relation chunks...")
+            with open(relation_chunks_path, 'r', encoding='utf-8') as f:
+                chunks_data['relation_chunks'] = json.load(f)
+        
+        # Read VDB chunks (vector database)
+        vdb_chunks_path = f"{rag_output_dir}/vdb_chunks.json"
+        if os.path.exists(vdb_chunks_path):
+            logger.info("📄 [CHUNKS] Reading VDB chunks...")
+            with open(vdb_chunks_path, 'r', encoding='utf-8') as f:
+                chunks_data['vdb_chunks'] = json.load(f)
+        
+        total_duration = time.time() - start_time
+        logger.info(f"✅ [CHUNKS] Retrieved {chunks_data['total_chunks']} chunks in {total_duration:.3f}s")
+        
+        return jsonify({
+            'status': 'success',
+            'chunks': chunks_data,
+            'timing': {
+                'total_duration': round(total_duration, 3)
+            }
+        })
+        
+    except Exception as e:
+        total_duration = time.time() - start_time
+        logger.error(f"❌ [CHUNKS] Failed to get chunks after {total_duration:.3f}s: {str(e)}")
         
         return jsonify({
             'error': str(e),
