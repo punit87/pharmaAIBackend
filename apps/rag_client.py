@@ -580,6 +580,8 @@ def process_document():
                 os.path.join(process_kwargs['output_dir'], f"{basename}.md"),  # Direct in output dir
                 os.path.join(process_kwargs['output_dir'], basename, 'markdown', '1.md'),  # Nested structure
                 os.path.join(process_kwargs['output_dir'], '1.md'),  # Generic 1.md
+                os.path.join(process_kwargs['output_dir'], basename, 'docling', f"{basename}.md"),  # RAG-Anything structure
+                os.path.join(process_kwargs['output_dir'], basename, 'docling', '1.md'),  # RAG-Anything structure with 1.md
             ]
             
             md_path = None
@@ -594,7 +596,7 @@ def process_document():
                     full_md = f.read().strip()
                 load_md_time = time.time() - load_md_start
                 llm_chunk_timing["load_md"] = round(load_md_time, 3)
-                logger.info(f"📄 [LLM_CHUNK] Markdown loaded in {load_md_time:.3f}s")
+                logger.info(f"📄 [LLM_CHUNK] Markdown loaded from {md_path} in {load_md_time:.3f}s")
                 
                 if len(full_md) > 2000:  # Apply to substantial content
                     logger.info("🧠 [LLM_CHUNK] Detected substantial markdown content; starting LLM chunking...")
