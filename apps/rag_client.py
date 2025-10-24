@@ -6,7 +6,7 @@ RAG-Anything Server - Optimized for ECS Tasks
 - Proper resource cleanup
 - Memory-efficient caching
 - Fixed async handling matching RAG-Anything reference implementation
-- Updated with corrected markdown path detection for LLM chunking
+- Using standard RAG-Anything chunking approach (no custom LLM chunking)
 """
 import os
 import time
@@ -355,92 +355,6 @@ def get_rag_instance():
     return _rag_instance
 
 # ============================================================================
-# LLM CHUNKING FOR MARKDOWN CONTENT
-# ============================================================================
-
-def llm_chunk_and_embed(rag, full_md, doc_id, output_dir):
-    start_time = time.time()
-    logger.info("🧠 [LLM_CHUNK] Starting LLM chunking and embedding...")
-    
-    # Prompt LLM for semantic chunking (generic for any markdown content)
-    chunk_prompt = f"""
-    You are a RAG chunking expert. Take this markdown content from a document.
-    Split it into 5-10 semantic chunks, grouping by logical sections, topics, or categories if possible.
-    Each chunk should be a self-contained portion of the markdown, preserving structure like tables, headers, and lists.
-    Output as JSON: {{"chunks": ["chunk1_md", "chunk2_md", ...]}}
-    Content (truncated for prompt): {full_md[:3000]}... (use the full content for splitting)
-    """
-    llm_start = time.time()
-    llm_coroutine = rag.llm_model_func(
-        prompt=chunk_prompt,
-        system_prompt="Focus on meaningful groups for better retrieval. Keep chunks under 2000 characters each."
-    )
-    llm_response = run_async(llm_coroutine)
-    llm_time = time.time() - llm_start
-    logger.info(f"🧠 [LLM_CHUNK] LLM chunking completed in {llm_time:.3f}s")
-    
-    # Parse LLM output
-    parse_start = time.time()
-    try:
-        chunks_data = json.loads(llm_response)
-        chunks = chunks_data['chunks']
-        parse_time = time.time() - parse_start
-        logger.info(f"✅ [LLM_CHUNK] Parsed {len(chunks)} chunks in {parse_time:.3f}s")
-    except Exception as e:
-        parse_time = time.time() - parse_start
-        logger.error(f"❌ [LLM_CHUNK] Failed to parse LLM response after {parse_time:.3f}s: {str(e)}")
-        raise ValueError("LLM chunking failed; invalid JSON output")
-
-    # Embed each chunk
-    embed_start = time.time()
-    embedding_func = get_embedding_func()
-    embed_coroutine = embedding_func.func(chunks)
-    embeddings = run_async(embed_coroutine)
-    embed_time = time.time() - embed_start
-    logger.info(f"📊 [LLM_CHUNK] Embeddings generated in {embed_time:.3f}s")
-
-    # Build content_list with chunks (use 'text' type for generic content)
-    build_start = time.time()
-    content_list = []
-    for idx, chunk_md in enumerate(chunks):
-        caption = f"Document Chunk {idx+1}"
-        content_list.append({
-            "type": "text",
-            "text": chunk_md,
-            "page_idx": 1  # Adjust as needed
-        })
-    build_time = time.time() - build_start
-    logger.info(f"🛠️ [LLM_CHUNK] Content list built in {build_time:.3f}s")
-    
-    # Insert into RAG
-    insert_start = time.time()
-    insert_coroutine = rag.insert_content_list(
-        content_list=content_list,
-        file_path=os.path.join(output_dir, doc_id),
-        doc_id=doc_id,
-        display_stats=True
-    )
-    run_async(insert_coroutine)
-    insert_time = time.time() - insert_start
-    logger.info(f"📥 [LLM_CHUNK] Content inserted in {insert_time:.3f}s")
-    
-    total_time = time.time() - start_time
-    logger.info(f"✅ [LLM_CHUNK] Completed in {total_time:.3f}s")
-    
-    return {
-        "chunks_created": len(chunks), 
-        "embeddings_generated": len(embeddings),
-        "timing": {
-            "llm_chunking": round(llm_time, 3),
-            "parsing": round(parse_time, 3),
-            "embedding": round(embed_time, 3),
-            "building_list": round(build_time, 3),
-            "insertion": round(insert_time, 3),
-            "total": round(total_time, 3)
-        }
-    }
-
-# ============================================================================
 # HEALTH CHECK
 # ============================================================================
 
@@ -570,55 +484,8 @@ def process_document():
         timing["process_duration"] = round(process_duration, 3)
         logger.info(f"🔍 [PROCESS] Document processed in {process_duration:.3f}s")
         
-        # LLM Chunking for Markdown Content (generic)
-        llm_chunk_result = None
-        llm_chunk_timing = {}
-        try:
-            # Check for markdown file in the output directory
-            basename = os.path.basename(s3_key)
-            # Try multiple possible locations for the markdown file
-            # RAG-Anything creates document IDs by removing file extensions and path separators
-            document_id = s3_key.replace('/', '-').replace('.pdf', '').replace('.docx', '').replace('.txt', '')
-            basename_no_ext = os.path.splitext(basename)[0]  # Remove extension from basename
-            
-            possible_paths = [
-                os.path.join(process_kwargs['output_dir'], f"{basename}.md"),  # Direct in output dir
-                os.path.join(process_kwargs['output_dir'], basename, 'markdown', '1.md'),  # Nested structure
-                os.path.join(process_kwargs['output_dir'], '1.md'),  # Generic 1.md
-                os.path.join(process_kwargs['output_dir'], basename, 'docling', f"{basename}.md"),  # RAG-Anything structure
-                os.path.join(process_kwargs['output_dir'], basename, 'docling', '1.md'),  # RAG-Anything structure with 1.md
-                # Additional patterns based on actual EFS structure
-                os.path.join(process_kwargs['output_dir'], document_id, 'docling', f'{document_id}.md'), # document_id/docling/document_id.md
-                os.path.join(process_kwargs['output_dir'], document_id, 'docling', '1.md'), # document_id/docling/1.md
-                os.path.join(process_kwargs['output_dir'], basename_no_ext, 'docling', f'{basename_no_ext}.md'), # basename_no_ext/docling/basename_no_ext.md
-                os.path.join(process_kwargs['output_dir'], basename_no_ext, 'docling', '1.md'), # basename_no_ext/docling/1.md
-            ]
-            
-            md_path = None
-            for path in possible_paths:
-                if os.path.exists(path):
-                    md_path = path
-                    logger.info(f"📄 [LLM_CHUNK] Found markdown file at: {md_path}")
-                    break
-            
-            if md_path and os.path.exists(md_path):
-                load_md_start = time.time()
-                with open(md_path, 'r', encoding='utf-8') as f:
-                    full_md = f.read().strip()
-                load_md_time = time.time() - load_md_start
-                llm_chunk_timing["load_md"] = round(load_md_time, 3)
-                logger.info(f"📄 [LLM_CHUNK] Markdown loaded from {md_path} in {load_md_time:.3f}s")
-                
-                if len(full_md) > 2000:  # Apply to substantial content
-                    logger.info("🧠 [LLM_CHUNK] Detected substantial markdown content; starting LLM chunking...")
-                    llm_chunk_result = llm_chunk_and_embed(rag, full_md, s3_key, process_kwargs['output_dir'])
-                    llm_chunk_timing = llm_chunk_result.pop("timing", {})
-                    logger.info(f"✅ [LLM_CHUNK] LLM chunking completed: {llm_chunk_result}")
-            else:
-                logger.warning(f"⚠️ [LLM_CHUNK] No markdown file found in any of these locations: {possible_paths}; skipping LLM chunking")
-        except Exception as chunk_error:
-            logger.error(f"❌ [LLM_CHUNK] LLM chunking failed: {str(chunk_error)}")
-            # Continue without failing the whole process
+        # Using standard RAG-Anything chunking (no custom LLM chunking)
+        logger.info("✅ [PROCESS] Using standard RAG-Anything chunking approach")
         
         # Cleanup
         cleanup_start = time.time()
