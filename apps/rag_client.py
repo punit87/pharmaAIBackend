@@ -330,27 +330,34 @@ async def custom_llm_chunking(markdown_content, doc_id, llm_func):
     logger.info("🔪 [CHUNKING] Starting custom LLM chunking...")
     
     try:
-        # System prompt to guide LLM in chunking
+        # System prompt to guide LLM in chunking - LightRAG compatible format
         system_prompt = """
-You are an expert document parser. Your task is to analyze markdown content and chunk it into meaningful segments, including tables, lists, bullets, paragraphs, sections, and regular text. For tables, break them down to individual cells with metadata (row, column, table_id). Ensure each chunk is searchable and preserves context. Return a JSON list of chunks with the following structure:
+You are an expert document parser. Your task is to analyze markdown content and chunk it into meaningful segments compatible with LightRAG format. Return a JSON list of chunks with the following structure that matches LightRAG's expected format:
+
 {
   "chunks": [
     {
-      "type": "table_cell" | "list" | "bullet" | "paragraph" | "section" | "text",
+      "type": "text",
       "content": "string content of the chunk",
       "metadata": {
         "doc_id": "string",
         "chunk_id": "string (unique within doc)",
         "page_idx": int,
-        "table_id": "string (for table cells)",
-        "row_idx": int (for table cells),
-        "col_idx": int (for table cells),
         "section_title": "string (if applicable)",
-        "list_index": int (for list items, if applicable)
+        "chunk_type": "paragraph" | "table" | "list" | "heading" | "text"
       }
     }
   ]
 }
+
+IMPORTANT FORMAT REQUIREMENTS:
+- Use "type": "text" for all chunks (LightRAG standard)
+- Keep content concise but meaningful (max 500 characters per chunk)
+- Ensure each chunk is self-contained and searchable
+- For tables: extract key information as readable text
+- For lists: convert to paragraph format
+- For headings: include as section_title in metadata
+- Preserve context and meaning in each chunk
 """
         # Split markdown into manageable chunks to avoid token limits
         max_chunk_size = 3000
@@ -384,7 +391,7 @@ You are an expert document parser. Your task is to analyze markdown content and 
                 result = json.loads(response_text)
                 chunks = result.get('chunks', [])
                 
-                # Validate and process chunks
+                # Validate and process chunks in LightRAG format
                 for chunk in chunks:
                     if not isinstance(chunk, dict):
                         logger.warning(f"⚠️ [CHUNKING] Skipping invalid chunk: {type(chunk)}")
@@ -399,9 +406,16 @@ You are an expert document parser. Your task is to analyze markdown content and 
                     if 'metadata' not in chunk:
                         chunk['metadata'] = {}
                     
+                    # Set LightRAG-compatible fields
+                    chunk['type'] = 'text'  # LightRAG standard type
                     chunk['metadata']['doc_id'] = doc_id
                     chunk['metadata']['page_idx'] = chunk_idx  # Approximate page index
                     chunk['metadata']['chunk_id'] = f"{doc_id}_{chunk_idx}_{len(all_chunks)}"
+                    
+                    # Ensure chunk_type is set
+                    if 'chunk_type' not in chunk['metadata']:
+                        chunk['metadata']['chunk_type'] = 'text'
+                    
                     all_chunks.append(chunk)
             except Exception as e:
                 logger.error(f"❌ [CHUNKING] Failed to parse LLM response: {str(e)}")
@@ -662,19 +676,22 @@ def process_document():
         timing["chunk_duration"] = round(chunk_duration, 3)
         logger.info(f"🔪 [PROCESS] Custom chunking produced {len(chunks)} chunks in {chunk_duration:.3f}s")
         
-        # Insert chunks into RAG-Anything
+        # Insert chunks into RAG-Anything in LightRAG-compatible format
         insert_start = time.time()
-        content_list = [
-            {
+        content_list = []
+        for chunk in chunks:
+            # Ensure LightRAG-compatible format
+            content_item = {
                 'content': chunk['content'],
                 'metadata': chunk['metadata'],
-                'type': chunk['type']
-            } for chunk in chunks
-        ]
+                'type': chunk.get('type', 'text')  # Default to 'text' if not specified
+            }
+            content_list.append(content_item)
+        
         run_async(rag.insert_content_list(content_list, doc_id=s3_key))
         insert_duration = time.time() - insert_start
         timing["insert_duration"] = round(insert_duration, 3)
-        logger.info(f"📥 [PROCESS] Inserted {len(content_list)} chunks in {insert_duration:.3f}s")
+        logger.info(f"📥 [PROCESS] Inserted {len(content_list)} LightRAG-compatible chunks in {insert_duration:.3f}s")
         
         total_duration = time.time() - start_time
         timing["total_duration"] = round(total_duration, 3)
@@ -738,7 +755,12 @@ def query():
         logger.info(f"🔍 [QUERY] Query processed in {query_duration:.3f}s")
         
         parse_start = time.time()
-        if isinstance(result, dict):
+        if result is None:
+            answer = "No results found for the query."
+            sources = []
+            confidence = 0.0
+            logger.warning("⚠️ [QUERY] Query returned None result")
+        elif isinstance(result, dict):
             answer = result.get('answer', str(result))
             sources = result.get('sources', [])
             confidence = result.get('confidence', 0.0)
@@ -812,7 +834,12 @@ def query_multimodal():
         logger.info(f"🔍 [MULTIMODAL] Query processed in {query_duration:.3f}s")
         
         parse_start = time.time()
-        if isinstance(result, dict):
+        if result is None:
+            answer = "No results found for the query."
+            sources = []
+            confidence = 0.0
+            logger.warning("⚠️ [MULTIMODAL] Query returned None result")
+        elif isinstance(result, dict):
             answer = result.get('answer', str(result))
             sources = result.get('sources', [])
             confidence = result.get('confidence', 0.0)
