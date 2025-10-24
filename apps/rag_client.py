@@ -6,6 +6,7 @@ RAG-Anything Server - Optimized for ECS Tasks
 - Proper resource cleanup
 - Memory-efficient caching
 - Fixed async handling matching RAG-Anything reference implementation
+- Updated with corrected markdown path detection for LLM chunking
 """
 import os
 import time
