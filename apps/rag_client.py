@@ -490,11 +490,23 @@ def process_document():
             else:
                 logger.warning(f"⚠️ [PROCESS] Content list is not iterable: {type(content_list)}")
             
+            # FIXED: Handle the actual structure returned by rag.parse_document()
+            # The actual content blocks are nested inside the first item (which is a list)
+            actual_content_blocks = []
+            if len(content_list) > 0 and isinstance(content_list[0], list):
+                # The first item contains the actual content blocks
+                actual_content_blocks = content_list[0]
+                logger.info(f"🔍 [PROCESS] Found {len(actual_content_blocks)} actual content blocks in nested structure")
+            else:
+                # Fallback: use content_list as-is
+                actual_content_blocks = content_list
+                logger.info(f"🔍 [PROCESS] Using content_list directly as content blocks")
+            
             # Step 2: Convert table items to text items
             modified_content_list = []
             table_count = 0
             
-            for item in content_list:
+            for item in actual_content_blocks:
                 # Check if item is a dictionary and has the expected structure
                 if not isinstance(item, dict):
                     logger.warning(f"⚠️ [PROCESS] Skipping non-dict item: {type(item)}")
