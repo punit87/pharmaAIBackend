@@ -133,8 +133,12 @@ def get_rag_config():
     start_time = time.time()
     logger.info("⚙️ [CONFIG] Getting RAG configuration...")
     
+    # Normalize the working directory path to avoid trailing slash issues
+    working_dir = os.environ.get('OUTPUT_DIR', '/mnt/efs/rag_output')
+    working_dir = os.path.normpath(working_dir)  # Remove trailing slashes and normalize path
+    
     config = RAGAnythingConfig(
-        working_dir=os.environ.get('OUTPUT_DIR', '/mnt/efs/rag_output/'),  # Match EFS mount path
+        working_dir=working_dir,  # Normalized path without trailing slash
         parser=os.environ.get('PARSER', 'docling'),  # Using Docling parser
         parse_method=os.environ.get('PARSE_METHOD', 'ocr'),  # Using OCR for document parsing
         enable_image_processing=True,
@@ -430,16 +434,35 @@ def get_rag_instance():
                     try:
                         # Try to initialize the underlying LightRAG instance
                         # This should automatically load existing data
-                        if hasattr(_rag_instance, 'lightrag') and _rag_instance.lightrag:
-                            logger.info("🚀 [RAG_INIT] Accessing LightRAG instance...")
-                            run_async(_rag_instance.lightrag.initialize_storages())
-                            run_async(initialize_pipeline_status())
-                            logger.info("🚀 [RAG_INIT] Existing LightRAG data loaded successfully")
+                        logger.info("🚀 [RAG_INIT] Checking LightRAG instance accessibility...")
+                        
+                        # Check if RAGAnything instance has lightrag attribute
+                        if not hasattr(_rag_instance, 'lightrag'):
+                            logger.warning("🚀 [RAG_INIT] RAGAnything instance has no 'lightrag' attribute")
+                            logger.info("🚀 [RAG_INIT] Skipping data loading - using fresh instance")
+                        elif _rag_instance.lightrag is None:
+                            logger.warning("🚀 [RAG_INIT] LightRAG instance is None")
+                            logger.info("🚀 [RAG_INIT] Skipping data loading - using fresh instance")
                         else:
-                            logger.warning("🚀 [RAG_INIT] LightRAG instance not accessible, skipping data loading")
+                            logger.info("🚀 [RAG_INIT] LightRAG instance found, attempting to load existing data...")
+                            
+                            # Check if initialize_storages method exists
+                            if not hasattr(_rag_instance.lightrag, 'initialize_storages'):
+                                logger.warning("🚀 [RAG_INIT] LightRAG instance has no 'initialize_storages' method")
+                                logger.info("🚀 [RAG_INIT] Skipping data loading - using fresh instance")
+                            else:
+                                logger.info("🚀 [RAG_INIT] Calling initialize_storages()...")
+                                run_async(_rag_instance.lightrag.initialize_storages())
+                                
+                                logger.info("🚀 [RAG_INIT] Calling initialize_pipeline_status()...")
+                                run_async(initialize_pipeline_status())
+                                
+                                logger.info("🚀 [RAG_INIT] Existing LightRAG data loaded successfully")
                     except Exception as e:
                         logger.warning(f"🚀 [RAG_INIT] Failed to load existing data: {str(e)}")
                         logger.info("🚀 [RAG_INIT] Continuing with fresh instance")
+                        import traceback
+                        logger.debug(f"🚀 [RAG_INIT] Traceback: {traceback.format_exc()}")
                 else:
                     logger.info("🚀 [RAG_INIT] No existing data found, using fresh instance")
                 
@@ -788,6 +811,7 @@ def analyze_efs():
         config_start = time.time()
         efs_path = os.environ.get('EFS_MOUNT_PATH', '/mnt/efs')
         rag_output_dir = os.environ.get('RAG_OUTPUT_DIR', '/mnt/efs/rag_output')
+        rag_output_dir = os.path.normpath(rag_output_dir)  # Normalize path to match working_dir
         config_time = time.time() - config_start
         timing["config_load"] = round(config_time, 3)
         logger.info(f"⚙️ [EFS_ANALYSIS] Config loaded in {config_time:.3f}s")
@@ -899,6 +923,7 @@ def get_chunks():
     try:
         config_start = time.time()
         rag_output_dir = os.environ.get('RAG_OUTPUT_DIR', '/mnt/efs/rag_output')
+        rag_output_dir = os.path.normpath(rag_output_dir)  # Normalize path to match working_dir
         config_time = time.time() - config_start
         timing["config_load"] = round(config_time, 3)
         logger.info(f"⚙️ [CHUNKS] Config loaded in {config_time:.3f}s")
