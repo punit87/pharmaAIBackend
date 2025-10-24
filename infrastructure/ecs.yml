@@ -58,6 +58,11 @@ Parameters:
     NoEcho: true
     Description: Neo4j Password
 
+  OpenAIBaseUrl:
+    Type: String
+    Description: OpenAI Base URL
+    Default: https://api.openai.com/v1
+
 Resources:
   # ALB Infrastructure (moved from main stack to avoid cross-stack dependencies)
   ApplicationLoadBalancer:
@@ -247,6 +252,8 @@ Resources:
           Environment:
             - Name: OPENAI_API_KEY
               Value: !Ref OpenAIApiKey
+            - Name: OPENAI_BASE_URL
+              Value: !Ref OpenAIBaseUrl
             - Name: NEO4J_URI
               Value: !Ref Neo4jUri
             - Name: NEO4J_USERNAME
