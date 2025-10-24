@@ -134,7 +134,7 @@ def get_rag_config():
     logger.info("⚙️ [CONFIG] Getting RAG configuration...")
     
     config = RAGAnythingConfig(
-        working_dir=os.environ.get('OUTPUT_DIR', '/rag-output/'),
+        working_dir=os.environ.get('OUTPUT_DIR', '/mnt/efs/rag_output/'),  # Match EFS mount path
         parser=os.environ.get('PARSER', 'docling'),  # Using Docling parser
         parse_method=os.environ.get('PARSE_METHOD', 'ocr'),  # Using OCR for document parsing
         enable_image_processing=True,
@@ -430,9 +430,13 @@ def get_rag_instance():
                     try:
                         # Try to initialize the underlying LightRAG instance
                         # This should automatically load existing data
-                        run_async(_rag_instance.lightrag.initialize_storages())
-                        run_async(initialize_pipeline_status())
-                        logger.info("🚀 [RAG_INIT] Existing LightRAG data loaded successfully")
+                        if hasattr(_rag_instance, 'lightrag') and _rag_instance.lightrag:
+                            logger.info("🚀 [RAG_INIT] Accessing LightRAG instance...")
+                            run_async(_rag_instance.lightrag.initialize_storages())
+                            run_async(initialize_pipeline_status())
+                            logger.info("🚀 [RAG_INIT] Existing LightRAG data loaded successfully")
+                        else:
+                            logger.warning("🚀 [RAG_INIT] LightRAG instance not accessible, skipping data loading")
                     except Exception as e:
                         logger.warning(f"🚀 [RAG_INIT] Failed to load existing data: {str(e)}")
                         logger.info("🚀 [RAG_INIT] Continuing with fresh instance")
