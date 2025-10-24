@@ -576,18 +576,23 @@ def process_document():
             # Check for markdown file in the output directory
             basename = os.path.basename(s3_key)
             # Try multiple possible locations for the markdown file
+            document_id = s3_key  # Use full s3_key as document_id
             possible_paths = [
                 os.path.join(process_kwargs['output_dir'], f"{basename}.md"),  # Direct in output dir
                 os.path.join(process_kwargs['output_dir'], basename, 'markdown', '1.md'),  # Nested structure
                 os.path.join(process_kwargs['output_dir'], '1.md'),  # Generic 1.md
                 os.path.join(process_kwargs['output_dir'], basename, 'docling', f"{basename}.md"),  # RAG-Anything structure
                 os.path.join(process_kwargs['output_dir'], basename, 'docling', '1.md'),  # RAG-Anything structure with 1.md
+                # Additional patterns based on actual EFS structure
+                os.path.join(process_kwargs['output_dir'], document_id, 'docling', f'{document_id}.md'), # document_id/docling/document_id.md
+                os.path.join(process_kwargs['output_dir'], document_id, 'docling', '1.md'), # document_id/docling/1.md
             ]
             
             md_path = None
             for path in possible_paths:
                 if os.path.exists(path):
                     md_path = path
+                    logger.info(f"📄 [LLM_CHUNK] Found markdown file at: {md_path}")
                     break
             
             if md_path and os.path.exists(md_path):
