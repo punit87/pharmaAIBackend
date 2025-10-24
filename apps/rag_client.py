@@ -473,9 +473,9 @@ def get_rag_instance():
                             from lightrag import LightRAG
                             
                             lightrag_instance = LightRAG(
-                                model_name="gpt-4o-mini",
-                                embedding_model="text-embedding-3-small", 
-                                storage_path=lightrag_working_dir
+                                working_dir=lightrag_working_dir,
+                                llm_model_func=llm_func,
+                                embedding_func=embedding_func
                             )
                             
                             # Set the LightRAG instance on the RAG-Anything instance
@@ -490,9 +490,9 @@ def get_rag_instance():
                             from lightrag import LightRAG
                             
                             lightrag_instance = LightRAG(
-                                model_name="gpt-4o-mini",
-                                embedding_model="text-embedding-3-small", 
-                                storage_path=lightrag_working_dir
+                                working_dir=lightrag_working_dir,
+                                llm_model_func=llm_func,
+                                embedding_func=embedding_func
                             )
                             
                             # Set the LightRAG instance on the RAG-Anything instance
