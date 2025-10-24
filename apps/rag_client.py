@@ -1028,6 +1028,80 @@ def analyze_efs_content():
         logger.error(f"❌ [EFS_CONTENT] Failed after {total_duration:.3f}s: {str(e)}")
         return jsonify({'error': str(e), "timing": timing}), 500
 
+@app.route('/delete_all_data', methods=['POST'])
+def delete_all_data():
+    """Delete all generated data files from EFS (logs, md, chunk jsons, graphs, embeddings, etc.)"""
+    start_time = time.time()
+    logger.info("🗑️ [DELETE] Starting cleanup of all EFS data...")
+    timing = {}
+    
+    try:
+        config = get_rag_config()
+        efs_path = config.working_dir
+        
+        if not os.path.exists(efs_path):
+            total_duration = time.time() - start_time
+            timing["total_duration"] = round(total_duration, 3)
+            logger.warning(f"⚠️ [DELETE] EFS path does not exist: {efs_path}")
+            return jsonify({
+                'status': 'success',
+                'message': 'EFS path does not exist - nothing to delete',
+                'deleted_files': 0,
+                'deleted_directories': 0,
+                'timing': timing
+            })
+        
+        deleted_files = 0
+        deleted_directories = 0
+        
+        # Walk through all files and directories in EFS
+        for root, dirs, files in os.walk(efs_path, topdown=False):
+            # Delete all files
+            for file in files:
+                file_path = os.path.join(root, file)
+                try:
+                    os.remove(file_path)
+                    deleted_files += 1
+                    logger.info(f"🗑️ [DELETE] Deleted file: {file_path}")
+                except Exception as e:
+                    logger.error(f"❌ [DELETE] Failed to delete file {file_path}: {str(e)}")
+            
+            # Delete empty directories (except root)
+            for dir_name in dirs:
+                dir_path = os.path.join(root, dir_name)
+                try:
+                    if os.path.exists(dir_path) and not os.listdir(dir_path):
+                        os.rmdir(dir_path)
+                        deleted_directories += 1
+                        logger.info(f"🗑️ [DELETE] Deleted directory: {dir_path}")
+                except Exception as e:
+                    logger.error(f"❌ [DELETE] Failed to delete directory {dir_path}: {str(e)}")
+        
+        # Clear any cached RAG instance to force reinitialization
+        global _rag_instance
+        _rag_instance = None
+        logger.info("🔄 [DELETE] Cleared cached RAG instance")
+        
+        total_duration = time.time() - start_time
+        timing["total_duration"] = round(total_duration, 3)
+        logger.info(f"✅ [DELETE] Cleanup completed in {total_duration:.3f}s")
+        logger.info(f"📊 [DELETE] Deleted {deleted_files} files and {deleted_directories} directories")
+        
+        return jsonify({
+            'status': 'success',
+            'message': 'All EFS data deleted successfully',
+            'deleted_files': deleted_files,
+            'deleted_directories': deleted_directories,
+            'efs_path': efs_path,
+            'timing': timing
+        })
+        
+    except Exception as e:
+        total_duration = time.time() - start_time
+        timing["total_duration"] = round(total_duration, 3)
+        logger.error(f"❌ [DELETE] Failed after {total_duration:.3f}s: {str(e)}")
+        return jsonify({'error': str(e), "timing": timing}), 500
+
 # ============================================================================
 # SERVER STARTUP
 # ============================================================================
