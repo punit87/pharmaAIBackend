@@ -862,7 +862,7 @@ def analyze_efs():
 
 @app.route('/get_chunks', methods=['GET'])
 def get_chunks():
-    """Get full content of all chunks"""
+    """Get full content of all chunks from EFS"""
     start_time = time.time()
     logger.info("📂 [CHUNKS] Get chunks started...")
     timing = {}
@@ -875,27 +875,72 @@ def get_chunks():
         logger.info(f"⚙️ [CHUNKS] Config loaded in {config_time:.3f}s")
         
         chunks_data = {
-            'text_chunks': {},
-            'entity_chunks': {},
-            'relation_chunks': {},
-            'vdb_chunks': {},
-            'total_chunks': 0
+            'documents': {},
+            'total_chunks': 0,
+            'total_documents': 0
         }
         
-        chunk_files = {
+        # First, try the legacy chunk files in root directory
+        legacy_chunk_files = {
             'text_chunks': f"{rag_output_dir}/kv_store_text_chunks.json",
             'entity_chunks': f"{rag_output_dir}/kv_store_entity_chunks.json",
             'relation_chunks': f"{rag_output_dir}/kv_store_relation_chunks.json",
             'vdb_chunks': f"{rag_output_dir}/vdb_chunks.json"
         }
         
+        legacy_found = False
         read_start = time.time()
-        for key, path in chunk_files.items():
+        
+        # Check for legacy files first
+        for key, path in legacy_chunk_files.items():
             if os.path.exists(path):
                 with open(path, 'r', encoding='utf-8') as f:
                     chunks_data[key] = json.load(f)
                     if key == 'text_chunks':
                         chunks_data['total_chunks'] += len(chunks_data[key])
+                legacy_found = True
+        
+        # If no legacy files found, look for document-specific chunks
+        if not legacy_found and os.path.exists(rag_output_dir):
+            logger.info(f"🔍 [CHUNKS] No legacy files found, searching for document-specific chunks...")
+            
+            # Walk through all document directories
+            for root, dirs, files in os.walk(rag_output_dir):
+                for file in files:
+                    if file.endswith('.json') and 'chunks' in file.lower():
+                        file_path = os.path.join(root, file)
+                        try:
+                            with open(file_path, 'r', encoding='utf-8') as f:
+                                content = json.load(f)
+                                
+                                # Extract document ID from path
+                                rel_path = os.path.relpath(file_path, rag_output_dir)
+                                doc_id = rel_path.split('/')[0] if '/' in rel_path else 'unknown'
+                                
+                                if doc_id not in chunks_data['documents']:
+                                    chunks_data['documents'][doc_id] = {
+                                        'files': {},
+                                        'total_chunks': 0
+                                    }
+                                
+                                chunks_data['documents'][doc_id]['files'][file] = {
+                                    'path': file_path,
+                                    'size': len(str(content)),
+                                    'content': content
+                                }
+                                
+                                # Count chunks if it's a structured chunk file
+                                if isinstance(content, list):
+                                    chunks_data['documents'][doc_id]['total_chunks'] += len(content)
+                                    chunks_data['total_chunks'] += len(content)
+                                elif isinstance(content, dict) and 'chunks' in content:
+                                    chunks_data['documents'][doc_id]['total_chunks'] += len(content['chunks'])
+                                    chunks_data['total_chunks'] += len(content['chunks'])
+                                    
+                        except Exception as e:
+                            logger.warning(f"⚠️ [CHUNKS] Failed to read {file_path}: {str(e)}")
+            
+            chunks_data['total_documents'] = len(chunks_data['documents'])
         
         read_time = time.time() - read_start
         timing["file_reading"] = round(read_time, 3)
