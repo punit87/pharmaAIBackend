@@ -478,6 +478,11 @@ def process_document():
             content_list = run_async(rag.parse_document(temp_file_path, parse_method=parse_method))
             logger.info(f"📋 [PROCESS] Parsed {len(content_list)} content items")
             
+            # Debug: Log the structure of content_list
+            logger.info(f"🔍 [PROCESS] Content list structure:")
+            for i, item in enumerate(content_list):
+                logger.info(f"🔍 [PROCESS] Item {i}: type={type(item)}, content={str(item)[:100]}...")
+            
             # Step 2: Convert table items to text items
             modified_content_list = []
             table_count = 0
