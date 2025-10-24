@@ -19,8 +19,10 @@ import logging
 from functools import lru_cache
 from flask import Flask, request, jsonify
 from raganything import RAGAnything, RAGAnythingConfig
+from lightrag import LightRAG
 from lightrag.llm.openai import openai_complete_if_cache, openai_embed
 from lightrag.utils import EmbeddingFunc
+from lightrag.kg.shared_storage import initialize_pipeline_status
 from docling.document_converter import DocumentConverter
 
 # Configure logging
@@ -387,7 +389,7 @@ You are an expert document parser. Your task is to analyze markdown content and 
 # ============================================================================
 
 def get_rag_instance():
-    """Get or create singleton RAG instance with proper thread safety"""
+    """Get or create singleton RAG instance with proper thread safety and existing data loading"""
     global _rag_instance
     start_time = time.time()
     logger.info("🚀 [RAG_INIT] Getting RAG instance...")
@@ -407,12 +409,41 @@ def get_rag_instance():
                 vision_func = get_vision_model_func(llm_func)
                 embedding_func = get_embedding_func()
                 
-                _rag_instance = RAGAnything(
-                    config=config,
-                    llm_model_func=llm_func,
-                    vision_model_func=vision_func,
-                    embedding_func=embedding_func,
-                )
+                # Check if existing LightRAG data exists
+                lightrag_working_dir = config.working_dir
+                logger.info(f"🚀 [RAG_INIT] Checking for existing LightRAG data in: {lightrag_working_dir}")
+                
+                # Check if directory exists and has files
+                if os.path.exists(lightrag_working_dir) and os.listdir(lightrag_working_dir):
+                    logger.info("🚀 [RAG_INIT] Found existing LightRAG data, loading...")
+                    
+                    # Create LightRAG instance and initialize storages
+                    lightrag = LightRAG(
+                        working_dir=lightrag_working_dir,
+                        llm_model_func=llm_func,
+                        vision_model_func=vision_func,
+                        embedding_func=embedding_func,
+                    )
+                    
+                    # Initialize storages to load existing data
+                    run_async(lightrag.initialize_storages())
+                    run_async(initialize_pipeline_status())
+                    
+                    logger.info("🚀 [RAG_INIT] Existing LightRAG data loaded successfully")
+                    
+                    # Create RAGAnything with existing LightRAG instance
+                    _rag_instance = RAGAnything(lightrag=lightrag)
+                    
+                else:
+                    logger.info("🚀 [RAG_INIT] No existing data found, creating fresh RAG-Anything instance")
+                    
+                    # Create fresh RAGAnything instance
+                    _rag_instance = RAGAnything(
+                        config=config,
+                        llm_model_func=llm_func,
+                        vision_model_func=vision_func,
+                        embedding_func=embedding_func,
+                    )
                 
                 init_time = time.time() - init_start
                 logger.info(f"🚀 [RAG_INIT] Initialized in {init_time:.3f}s")
