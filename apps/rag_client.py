@@ -70,7 +70,9 @@ def run_async(coro):
     try:
         loop = get_event_loop()
         future = asyncio.run_coroutine_threadsafe(coro, loop)
-        result = future.result(timeout=300)  # 5 minute timeout
+        # Make timeout configurable
+        timeout = int(os.environ.get('ASYNC_TIMEOUT', '300'))
+        result = future.result(timeout=timeout)
         
         exec_time = time.time() - start_time
         logger.info(f"🔄 [ASYNC] Async coroutine completed in {exec_time:.3f}s")
@@ -83,9 +85,13 @@ def run_async(coro):
 def cleanup_event_loop():
     """Cleanup event loop on shutdown"""
     global _event_loop
-    if _event_loop and not _event_loop.is_closed():
-        _event_loop.call_soon_threadsafe(_event_loop.stop)
-        _event_loop.close()
+    try:
+        if _event_loop and not _event_loop.is_closed():
+            _event_loop.call_soon_threadsafe(_event_loop.stop)
+            _event_loop.close()
+            logger.info("✅ [EVENT_LOOP] Event loop cleaned up successfully")
+    except Exception as e:
+        logger.error(f"❌ [EVENT_LOOP] Error cleaning up event loop: {e}")
 
 atexit.register(cleanup_event_loop)
 
@@ -244,7 +250,7 @@ def get_embedding_func():
     - Cost: $0.0001 per 1K tokens (most cost-effective)
     - Neo4j Support: Full compatibility with vector indexes
     
-    IMPORTANT: This function must handle the actual API call format correctly
+    FIXED: Properly handles input validation and returns coroutine
     """
     start_time = time.time()
     config = get_api_config()
@@ -258,7 +264,7 @@ def get_embedding_func():
             # Ensure texts is in the correct format
             if isinstance(texts, str):
                 # Single text - convert to list
-                input_texts = [texts]
+                input_texts = [texts.strip()]
             elif isinstance(texts, list):
                 # Multiple texts - ensure all are strings and not empty
                 input_texts = []
@@ -268,15 +274,20 @@ def get_embedding_func():
                         if text_str:
                             input_texts.append(text_str)
                 
+                # Fail fast if no valid texts
                 if not input_texts:
-                    logger.warning("⚠️ [EMBEDDING] Empty text list, using placeholder")
-                    input_texts = ["placeholder text for embedding"]
+                    raise ValueError("No valid text inputs provided for embedding")
             else:
                 logger.warning(f"⚠️ [EMBEDDING] Unexpected input type: {type(texts)}, converting to string")
-                input_texts = [str(texts)]
+                input_texts = [str(texts).strip()]
+            
+            # Validate we have content
+            if not input_texts or not any(input_texts):
+                raise ValueError(f"Empty or invalid text input for embedding: {texts}")
             
             # Log for debugging
             logger.info(f"📊 [EMBEDDING] Processing {len(input_texts)} text(s)")
+            logger.debug(f"📊 [EMBEDDING] First text preview: {input_texts[0][:100]}...")
             
             # Call the OpenAI embedding API
             result = await openai_embed(
@@ -287,7 +298,12 @@ def get_embedding_func():
             )
             
             embed_time = time.time() - embed_start
-            logger.info(f"✅ [EMBEDDING] Successfully generated {len(input_texts)} embedding(s) in {embed_time:.3f}s")
+            logger.info(f"✅ [EMBEDDING] Successfully generated {len(result)} embedding(s) in {embed_time:.3f}s")
+            
+            # Validate output
+            if not result or not isinstance(result, list):
+                raise ValueError(f"Invalid embedding result: {type(result)}")
+            
             return result
             
         except Exception as e:
@@ -318,37 +334,42 @@ def get_embedding_func():
 # ============================================================================
 
 def get_rag_instance():
-    """Get or create singleton RAG instance"""
+    """Get or create singleton RAG instance with proper thread safety"""
     global _rag_instance
     start_time = time.time()
     logger.info("🚀 [RAG_INIT] Getting RAG instance...")
     
-    if _rag_instance is None:
-        with _rag_lock:
-            if _rag_instance is None:
-                logger.info("🚀 [RAG_INIT] Creating new RAG-Anything singleton...")
+    # Quick check without lock (optimization)
+    if _rag_instance is not None:
+        logger.info(f"🚀 [RAG_INIT] Using cached RAG instance in {time.time() - start_time:.3f}s")
+        return _rag_instance
+    
+    # Double-check with lock
+    with _rag_lock:
+        if _rag_instance is None:
+            logger.info("🚀 [RAG_INIT] Creating new RAG-Anything singleton...")
+            
+            init_start = time.time()
+            try:
+                config = get_rag_config()
+                llm_func = get_llm_model_func()
+                vision_func = get_vision_model_func(llm_func)
+                embedding_func = get_embedding_func()
                 
-                init_start = time.time()
-                try:
-                    config = get_rag_config()
-                    llm_func = get_llm_model_func()
-                    vision_func = get_vision_model_func(llm_func)
-                    embedding_func = get_embedding_func()
-                    
-                    _rag_instance = RAGAnything(
-                        config=config,
-                        llm_model_func=llm_func,
-                        vision_model_func=vision_func,
-                        embedding_func=embedding_func,
-                    )
-                    
-                    init_time = time.time() - init_start
-                    logger.info(f"🚀 [RAG_INIT] Initialized in {init_time:.3f}s")
-                    
-                except Exception as e:
-                    init_time = time.time() - init_start
-                    logger.error(f"🚀 [RAG_INIT] Failed after {init_time:.3f}s: {str(e)}")
-                    raise
+                _rag_instance = RAGAnything(
+                    config=config,
+                    llm_model_func=llm_func,
+                    vision_model_func=vision_func,
+                    embedding_func=embedding_func,
+                )
+                
+                init_time = time.time() - init_start
+                logger.info(f"🚀 [RAG_INIT] Initialized in {init_time:.3f}s")
+                
+            except Exception as e:
+                init_time = time.time() - init_start
+                logger.error(f"🚀 [RAG_INIT] Failed after {init_time:.3f}s: {str(e)}")
+                raise
     
     exec_time = time.time() - start_time
     logger.info(f"🚀 [RAG_INIT] RAG instance ready in {exec_time:.3f}s")
@@ -463,6 +484,7 @@ def process_document():
             })
         
         logger.info(f"🔍 [PROCESS] Processing with {parser} ({parse_method})")
+        logger.info(f"🔍 [PROCESS] Using standard RAG-Anything chunking (built-in)")
         
         try:
             result = run_async(rag.process_document_complete(**process_kwargs))
@@ -483,9 +505,6 @@ def process_document():
         process_duration = time.time() - process_start
         timing["process_duration"] = round(process_duration, 3)
         logger.info(f"🔍 [PROCESS] Document processed in {process_duration:.3f}s")
-        
-        # Using standard RAG-Anything chunking (no custom LLM chunking)
-        logger.info("✅ [PROCESS] Using standard RAG-Anything chunking approach")
         
         # Cleanup
         cleanup_start = time.time()
@@ -508,12 +527,9 @@ def process_document():
                 "size_mb": round(file_size, 2)
             },
             "parser": {"type": parser, "method": parse_method},
+            "chunking": "standard_raganything",
             "timing": timing
         }
-        
-        if llm_chunk_result:
-            response["llm_chunking"] = llm_chunk_result
-            response["timing"]["llm_chunking"] = llm_chunk_timing
         
         return jsonify(response)
         
@@ -897,7 +913,7 @@ def test_embedding():
         timing["get_func"] = round(func_time, 3)
         logger.info(f"📊 [TEST_EMBED] Embedding func retrieved in {func_time:.3f}s")
         
-        # Test the embedding
+        # Test the embedding - func returns a coroutine
         embed_start = time.time()
         result = run_async(embedding_func.func(test_texts))
         embed_time = time.time() - embed_start
@@ -1025,6 +1041,7 @@ def start_server():
     logger.info(f"🔌 [SERVER] Port: {port}")
     logger.info(f"📂 [SERVER] Working Dir: {os.environ.get('OUTPUT_DIR', '/rag-output/')}")
     logger.info(f"🔧 [SERVER] Parser: {os.environ.get('PARSER', 'docling')}")
+    logger.info(f"⏱️ [SERVER] Async Timeout: {os.environ.get('ASYNC_TIMEOUT', '300')}s")
     
     app.run(
         host='0.0.0.0',
