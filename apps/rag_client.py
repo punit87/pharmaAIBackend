@@ -421,7 +421,6 @@ def get_rag_instance():
                     lightrag = LightRAG(
                         working_dir=lightrag_working_dir,
                         llm_model_func=llm_func,
-                        vision_model_func=vision_func,
                         embedding_func=embedding_func,
                     )
                     
