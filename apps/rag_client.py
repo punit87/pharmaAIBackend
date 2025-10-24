@@ -467,25 +467,53 @@ def get_rag_instance():
                         # Check if RAGAnything instance has lightrag attribute
                         if not hasattr(_rag_instance, 'lightrag'):
                             logger.warning("🚀 [RAG_INIT] RAGAnything instance has no 'lightrag' attribute")
-                            logger.info("🚀 [RAG_INIT] Skipping data loading - using fresh instance")
+                            logger.info("🚀 [RAG_INIT] Creating LightRAG instance...")
+                            
+                            # Create LightRAG instance manually
+                            from lightrag import LightRAG
+                            
+                            lightrag_instance = LightRAG(
+                                working_dir=lightrag_working_dir,
+                                llm_model_func=llm_func,
+                                embedding_func=embedding_func
+                            )
+                            
+                            # Set the LightRAG instance on the RAG-Anything instance
+                            _rag_instance.lightrag = lightrag_instance
+                            logger.info("🚀 [RAG_INIT] LightRAG instance created successfully")
+                            
                         elif _rag_instance.lightrag is None:
                             logger.warning("🚀 [RAG_INIT] LightRAG instance is None")
+                            logger.info("🚀 [RAG_INIT] Creating LightRAG instance...")
+                            
+                            # Create LightRAG instance manually
+                            from lightrag import LightRAG
+                            
+                            lightrag_instance = LightRAG(
+                                working_dir=lightrag_working_dir,
+                                llm_model_func=llm_func,
+                                embedding_func=embedding_func
+                            )
+                            
+                            # Set the LightRAG instance on the RAG-Anything instance
+                            _rag_instance.lightrag = lightrag_instance
+                            logger.info("🚀 [RAG_INIT] LightRAG instance created successfully")
+                        
+                        # Now try to load existing data
+                        logger.info("🚀 [RAG_INIT] LightRAG instance ready, attempting to load existing data...")
+                        
+                        # Check if initialize_storages method exists
+                        if not hasattr(_rag_instance.lightrag, 'initialize_storages'):
+                            logger.warning("🚀 [RAG_INIT] LightRAG instance has no 'initialize_storages' method")
                             logger.info("🚀 [RAG_INIT] Skipping data loading - using fresh instance")
                         else:
-                            logger.info("🚀 [RAG_INIT] LightRAG instance found, attempting to load existing data...")
+                            logger.info("🚀 [RAG_INIT] Calling initialize_storages()...")
+                            run_async(_rag_instance.lightrag.initialize_storages())
                             
-                            # Check if initialize_storages method exists
-                            if not hasattr(_rag_instance.lightrag, 'initialize_storages'):
-                                logger.warning("🚀 [RAG_INIT] LightRAG instance has no 'initialize_storages' method")
-                                logger.info("🚀 [RAG_INIT] Skipping data loading - using fresh instance")
-                            else:
-                                logger.info("🚀 [RAG_INIT] Calling initialize_storages()...")
-                                run_async(_rag_instance.lightrag.initialize_storages())
-                                
-                                logger.info("🚀 [RAG_INIT] Calling initialize_pipeline_status()...")
-                                run_async(initialize_pipeline_status())
-                                
-                                logger.info("🚀 [RAG_INIT] Existing LightRAG data loaded successfully")
+                            logger.info("🚀 [RAG_INIT] Calling initialize_pipeline_status()...")
+                            run_async(initialize_pipeline_status())
+                            
+                            logger.info("🚀 [RAG_INIT] Existing LightRAG data loaded successfully")
                     except Exception as e:
                         logger.warning(f"🚀 [RAG_INIT] Failed to load existing data: {str(e)}")
                         logger.info("🚀 [RAG_INIT] Continuing with fresh instance")
