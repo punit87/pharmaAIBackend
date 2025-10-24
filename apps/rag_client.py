@@ -16,6 +16,8 @@ import asyncio
 import threading
 import atexit
 import logging
+import pandas as pd
+import io
 from functools import lru_cache
 from flask import Flask, request, jsonify
 from raganything import RAGAnything, RAGAnythingConfig
@@ -462,33 +464,95 @@ def process_document():
         timing["rag_init_duration"] = round(rag_init_duration, 3)
         logger.info(f"🚀 [PROCESS] RAG initialized in {rag_init_duration:.3f}s")
         
-        # Process document
+        # Process document with custom table chunking
         process_start = time.time()
         parser = os.environ.get('PARSER', 'docling')
         parse_method = os.environ.get('PARSE_METHOD', 'ocr')
         
-        process_kwargs = {
-            'file_path': temp_file_path,
-            'output_dir': os.environ.get('OUTPUT_DIR', '/rag-output/'),
-            'doc_id': s3_key,
-            'display_stats': True,
-            'parse_method': parse_method,
-        }
-        
-        if parser == 'mineru':
-            process_kwargs.update({
-                'lang': os.environ.get('LANG', 'en'),
-                'device': 'cpu',
-                'formula': True,
-                'table': True,
-            })
-        
         logger.info(f"🔍 [PROCESS] Processing with {parser} ({parse_method})")
-        logger.info(f"🔍 [PROCESS] Using standard RAG-Anything chunking (built-in)")
+        logger.info(f"🔍 [PROCESS] Using custom table chunking approach")
         
         try:
-            result = run_async(rag.process_document_complete(**process_kwargs))
+            # Step 1: Parse document to get content_list
+            logger.info("📋 [PROCESS] Parsing document to get content list...")
+            content_list = run_async(rag.parse_document(temp_file_path, parse_method=parse_method))
+            logger.info(f"📋 [PROCESS] Parsed {len(content_list)} content items")
+            
+            # Step 2: Convert table items to text items
+            modified_content_list = []
+            table_count = 0
+            
+            for item in content_list:
+                if item.get('type') == 'table':
+                    table_count += 1
+                    logger.info(f"📊 [PROCESS] Processing table {table_count}: {item.get('title', 'Untitled')}")
+                    
+                    # Extract table body (markdown format)
+                    table_body = item.get('body', '')
+                    if not table_body:
+                        logger.warning(f"⚠️ [PROCESS] Table {table_count} has no body content")
+                        continue
+                    
+                    try:
+                        # Parse markdown table with pandas
+                        df = pd.read_csv(io.StringIO(table_body), sep='|', skipinitialspace=True)
+                        
+                        # Clean up the dataframe (remove empty columns and rows)
+                        df = df.dropna(how='all').dropna(axis=1, how='all')
+                        
+                        # Remove extra whitespace from column names
+                        df.columns = df.columns.str.strip()
+                        
+                        logger.info(f"📊 [PROCESS] Table {table_count}: {len(df)} rows, {len(df.columns)} columns")
+                        
+                        # Convert each row to a text chunk
+                        for idx, row in df.iterrows():
+                            # Create a readable Q&A format
+                            if len(df.columns) >= 2:
+                                # Assume first column is question, second is answer
+                                question = str(row.iloc[0]).strip()
+                                answer = str(row.iloc[1]).strip()
+                                
+                                if question and answer and question != 'nan' and answer != 'nan':
+                                    # Create text chunk in Q&A format
+                                    qa_text = f"Question: {question}\nAnswer: {answer}"
+                                    
+                                    text_item = {
+                                        'type': 'text',
+                                        'title': f"Q&A Row {idx + 1}",
+                                        'body': qa_text,
+                                        'source': item.get('source', ''),
+                                        'page': item.get('page', 1)
+                                    }
+                                    modified_content_list.append(text_item)
+                                    
+                                    logger.info(f"📝 [PROCESS] Created Q&A chunk: {question[:50]}...")
+                        
+                        logger.info(f"✅ [PROCESS] Converted table {table_count} to {len(df)} Q&A chunks")
+                        
+                    except Exception as table_error:
+                        logger.error(f"❌ [PROCESS] Failed to process table {table_count}: {str(table_error)}")
+                        # Fallback: add original table as text
+                        text_item = {
+                            'type': 'text',
+                            'title': item.get('title', 'Table'),
+                            'body': table_body,
+                            'source': item.get('source', ''),
+                            'page': item.get('page', 1)
+                        }
+                        modified_content_list.append(text_item)
+                else:
+                    # Keep non-table items as-is
+                    modified_content_list.append(item)
+            
+            logger.info(f"📊 [PROCESS] Processed {table_count} tables, created {len(modified_content_list)} total chunks")
+            
+            # Step 3: Insert modified content list
+            logger.info("💾 [PROCESS] Inserting modified content list...")
+            result = run_async(rag.insert_content_list(modified_content_list, doc_id=s3_key))
+            
             logger.info("✅ [PROCESS] Document processing completed successfully")
+            
         except Exception as proc_error:
             process_duration = time.time() - process_start
             timing["process_duration"] = round(process_duration, 3)
@@ -527,7 +591,7 @@ def process_document():
                 "size_mb": round(file_size, 2)
             },
             "parser": {"type": parser, "method": parse_method},
-            "chunking": "standard_raganything",
+            "chunking": "custom_table_chunking",
             "timing": timing
         }
         
