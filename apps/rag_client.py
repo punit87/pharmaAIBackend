@@ -522,7 +522,21 @@ def process_document():
         
         # Use RAG-Anything's parser to get markdown
         parse_result = run_async(rag.parse_document(temp_file_path, parse_method=parse_method))
-        markdown_content = parse_result.get('markdown', '')
+        
+        # Handle different return types from parse_document
+        if isinstance(parse_result, tuple):
+            # If it's a tuple, extract the first element (usually the document object)
+            doc_obj = parse_result[0]
+            if hasattr(doc_obj, 'to_markdown'):
+                markdown_content = doc_obj.to_markdown()
+            elif hasattr(doc_obj, 'markdown'):
+                markdown_content = doc_obj.markdown
+            else:
+                markdown_content = str(doc_obj)
+        elif isinstance(parse_result, dict):
+            markdown_content = parse_result.get('markdown', '')
+        else:
+            markdown_content = str(parse_result)
         parse_duration = time.time() - parse_start
         timing["parse_duration"] = round(parse_duration, 3)
         logger.info(f"🔍 [PROCESS] Document parsed to markdown in {parse_duration:.3f}s")
