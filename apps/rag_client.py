@@ -137,6 +137,34 @@ def get_rag_config():
     working_dir = os.environ.get('OUTPUT_DIR', '/mnt/efs/rag_output')
     working_dir = os.path.normpath(working_dir)  # Remove trailing slashes and normalize path
     
+    # Validate and log path consistency
+    efs_mount_path = os.environ.get('EFS_MOUNT_PATH', '/mnt/efs')
+    rag_output_dir_env = os.environ.get('RAG_OUTPUT_DIR', '/mnt/efs/rag_output')
+    rag_output_dir_env = os.path.normpath(rag_output_dir_env)
+    
+    logger.info(f"⚙️ [CONFIG] Path validation:")
+    logger.info(f"⚙️ [CONFIG]   EFS_MOUNT_PATH: {efs_mount_path}")
+    logger.info(f"⚙️ [CONFIG]   RAG_OUTPUT_DIR: {rag_output_dir_env}")
+    logger.info(f"⚙️ [CONFIG]   OUTPUT_DIR (working_dir): {working_dir}")
+    
+    # Check for path consistency
+    if working_dir != rag_output_dir_env:
+        logger.warning(f"⚠️ [CONFIG] PATH MISMATCH DETECTED!")
+        logger.warning(f"⚠️ [CONFIG]   working_dir: {working_dir}")
+        logger.warning(f"⚠️ [CONFIG]   RAG_OUTPUT_DIR: {rag_output_dir_env}")
+        logger.warning(f"⚠️ [CONFIG] This may cause issues with finding existing chunks!")
+    
+    # Check if paths exist and are accessible
+    if os.path.exists(working_dir):
+        logger.info(f"✅ [CONFIG] Working directory exists: {working_dir}")
+        try:
+            files_count = len(os.listdir(working_dir))
+            logger.info(f"📁 [CONFIG] Working directory contains {files_count} items")
+        except Exception as e:
+            logger.warning(f"⚠️ [CONFIG] Cannot list working directory contents: {str(e)}")
+    else:
+        logger.warning(f"⚠️ [CONFIG] Working directory does not exist: {working_dir}")
+    
     config = RAGAnythingConfig(
         working_dir=working_dir,  # Normalized path without trailing slash
         parser=os.environ.get('PARSER', 'docling'),  # Using Docling parser
@@ -924,6 +952,23 @@ def get_chunks():
         config_start = time.time()
         rag_output_dir = os.environ.get('RAG_OUTPUT_DIR', '/mnt/efs/rag_output')
         rag_output_dir = os.path.normpath(rag_output_dir)  # Normalize path to match working_dir
+        
+        # Get working directory from RAG config for comparison
+        try:
+            rag_config = get_rag_config()
+            working_dir = rag_config.working_dir
+            logger.info(f"⚙️ [CHUNKS] Path comparison:")
+            logger.info(f"⚙️ [CHUNKS]   get_chunks using: {rag_output_dir}")
+            logger.info(f"⚙️ [CHUNKS]   RAG working_dir: {working_dir}")
+            
+            if rag_output_dir != working_dir:
+                logger.warning(f"⚠️ [CHUNKS] PATH MISMATCH DETECTED!")
+                logger.warning(f"⚠️ [CHUNKS]   get_chunks path: {rag_output_dir}")
+                logger.warning(f"⚠️ [CHUNKS]   RAG working_dir: {working_dir}")
+                logger.warning(f"⚠️ [CHUNKS] This may cause chunks not to be found!")
+        except Exception as e:
+            logger.warning(f"⚠️ [CHUNKS] Could not compare paths: {str(e)}")
+        
         config_time = time.time() - config_start
         timing["config_load"] = round(config_time, 3)
         logger.info(f"⚙️ [CHUNKS] Config loaded in {config_time:.3f}s")
@@ -957,6 +1002,18 @@ def get_chunks():
         # If no legacy files found, look for document-specific chunks and LightRAG files
         if not legacy_found and os.path.exists(rag_output_dir):
             logger.info(f"🔍 [CHUNKS] No legacy files found, searching for document-specific chunks and LightRAG files...")
+            
+            # First, scan the directory structure to understand what's actually there
+            logger.info(f"🔍 [CHUNKS] Scanning directory structure in: {rag_output_dir}")
+            try:
+                for root, dirs, files in os.walk(rag_output_dir):
+                    logger.info(f"📁 [CHUNKS] Directory: {root}")
+                    logger.info(f"📁 [CHUNKS]   Subdirectories: {dirs}")
+                    logger.info(f"📁 [CHUNKS]   Files: {files}")
+                    if files:  # Only show first few files to avoid log spam
+                        logger.info(f"📁 [CHUNKS]   Sample files: {files[:5]}")
+            except Exception as e:
+                logger.warning(f"⚠️ [CHUNKS] Failed to scan directory structure: {str(e)}")
             
             # Look for LightRAG-specific files in root directory
             lightrag_files = [
