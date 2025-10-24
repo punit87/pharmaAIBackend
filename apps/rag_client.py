@@ -931,14 +931,32 @@ def get_chunks():
                         chunks_data['total_chunks'] += len(chunks_data[key])
                 legacy_found = True
         
-        # If no legacy files found, look for document-specific chunks
+        # If no legacy files found, look for document-specific chunks and LightRAG files
         if not legacy_found and os.path.exists(rag_output_dir):
-            logger.info(f"🔍 [CHUNKS] No legacy files found, searching for document-specific chunks...")
+            logger.info(f"🔍 [CHUNKS] No legacy files found, searching for document-specific chunks and LightRAG files...")
+            
+            # Look for LightRAG-specific files in root directory
+            lightrag_files = [
+                'graph.json', 'graph.db', 'vector_store.json', 'doc_status.json',
+                'kv_store_text_chunks.json', 'kv_store_entity_chunks.json', 
+                'kv_store_relation_chunks.json', 'vdb_chunks.json'
+            ]
+            
+            for lightrag_file in lightrag_files:
+                file_path = os.path.join(rag_output_dir, lightrag_file)
+                if os.path.exists(file_path):
+                    try:
+                        with open(file_path, 'r', encoding='utf-8') as f:
+                            content = json.load(f)
+                            chunks_data[f'lightrag_{lightrag_file.replace(".json", "").replace(".db", "")}'] = content
+                            logger.info(f"📄 [CHUNKS] Found LightRAG file: {lightrag_file}")
+                    except Exception as e:
+                        logger.warning(f"⚠️ [CHUNKS] Failed to read LightRAG file {file_path}: {str(e)}")
             
             # Walk through all document directories
             for root, dirs, files in os.walk(rag_output_dir):
                 for file in files:
-                    if file.endswith('.json') and 'chunks' in file.lower():
+                    if file.endswith('.json'):
                         file_path = os.path.join(root, file)
                         try:
                             with open(file_path, 'r', encoding='utf-8') as f:
