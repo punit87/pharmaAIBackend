@@ -3,7 +3,7 @@
 # Python 3.12 slim with all dependencies
 # Based on https://github.com/HKUDS/RAG-Anything
 # ============================================
-FROM python:3.12-slim
+FROM --platform=linux/amd64 python:3.12-slim
 
 # Set environment variables
 ENV PYTHONUNBUFFERED=1 \
@@ -13,7 +13,8 @@ ENV PYTHONUNBUFFERED=1 \
     GIT_SSH_COMMAND="ssh -o StrictHostKeyChecking=no" \
     HF_HOME=/opt/models/ \
     TORCH_HOME=/opt/models/ \
-    OMP_NUM_THREADS=4
+    OMP_NUM_THREADS=4 \
+    DEBIAN_FRONTEND=noninteractive
 
 # Install system dependencies
 RUN apt-get update && \
@@ -37,6 +38,9 @@ RUN apt-get update && \
         libgcc-s1 \
         libx11-6 \
         libgl1-mesa-dri \
+        ca-certificates \
+        gnupg \
+        lsb-release \
     && apt-get clean \
     && rm -rf /var/lib/apt/lists/*
 
