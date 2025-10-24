@@ -483,6 +483,12 @@ def process_document():
             table_count = 0
             
             for item in content_list:
+                # Check if item is a dictionary and has the expected structure
+                if not isinstance(item, dict):
+                    logger.warning(f"⚠️ [PROCESS] Skipping non-dict item: {type(item)}")
+                    modified_content_list.append(item)
+                    continue
+                    
                 if item.get('type') == 'table':
                     table_count += 1
                     logger.info(f"📊 [PROCESS] Processing table {table_count}: {item.get('title', 'Untitled')}")
