@@ -71,10 +71,12 @@ def run_async(coro):
         future = asyncio.run_coroutine_threadsafe(coro, loop)
         result = future.result(timeout=300)  # 5 minute timeout
         
-        logger.info(f"🔄 [ASYNC] Async coroutine completed in {time.time() - start_time:.3f}s")
+        exec_time = time.time() - start_time
+        logger.info(f"🔄 [ASYNC] Async coroutine completed in {exec_time:.3f}s")
         return result
     except Exception as e:
-        logger.error(f"❌ [ASYNC] Async coroutine failed after {time.time() - start_time:.3f}s: {str(e)}")
+        exec_time = time.time() - start_time
+        logger.error(f"❌ [ASYNC] Async coroutine failed after {exec_time:.3f}s: {str(e)}")
         raise e
 
 def cleanup_event_loop():
@@ -101,6 +103,7 @@ def update_activity():
 @lru_cache(maxsize=1)
 def get_api_config():
     """Cache API configuration"""
+    start_time = time.time()
     api_key = os.environ.get('OPENAI_API_KEY')
     base_url = os.environ.get('OPENAI_BASE_URL')
     
@@ -109,6 +112,8 @@ def get_api_config():
     if not base_url:
         raise ValueError("OPENAI_BASE_URL environment variable is required")
     
+    exec_time = time.time() - start_time
+    logger.info(f"⚙️ [CONFIG] API config loaded in {exec_time:.3f}s")
     return {
         'api_key': api_key,
         'base_url': base_url,
@@ -129,7 +134,8 @@ def get_rag_config():
         enable_equation_processing=True
     )
     
-    logger.info(f"⚙️ [CONFIG] RAG configuration loaded in {time.time() - start_time:.3f}s")
+    exec_time = time.time() - start_time
+    logger.info(f"⚙️ [CONFIG] RAG configuration loaded in {exec_time:.3f}s")
     logger.info(f"⚙️ [CONFIG] Working dir: {config.working_dir}")
     logger.info(f"⚙️ [CONFIG] Parser: {config.parser}")
     logger.info(f"⚙️ [CONFIG] Parse method: {config.parse_method}")
@@ -172,7 +178,8 @@ def get_llm_model_func():
             **kwargs,
         )
     
-    logger.info(f"🤖 [LLM] LLM model function created in {time.time() - start_time:.3f}s")
+    exec_time = time.time() - start_time
+    logger.info(f"🤖 [LLM] LLM model function created in {exec_time:.3f}s")
     return llm_func
 
 def get_vision_model_func(llm_func):
@@ -180,6 +187,7 @@ def get_vision_model_func(llm_func):
     Create vision model function - SYNCHRONOUS wrapper that returns coroutine
     This matches the RAG-Anything reference implementation
     """
+    start_time = time.time()
     config = get_api_config()
     
     def vision_func(prompt, system_prompt=None, history_messages=[], 
@@ -222,6 +230,8 @@ def get_vision_model_func(llm_func):
         else:
             return llm_func(prompt, system_prompt, history_messages, **kwargs)
     
+    exec_time = time.time() - start_time
+    logger.info(f"🤖 [VISION] Vision model function created in {exec_time:.3f}s")
     return vision_func
 
 def get_embedding_func():
@@ -235,12 +245,14 @@ def get_embedding_func():
     
     IMPORTANT: This function must handle the actual API call format correctly
     """
+    start_time = time.time()
     config = get_api_config()
     
     async def safe_embed_async(texts):
         """
         Async embedding function that properly formats input for OpenAI API
         """
+        embed_start = time.time()
         try:
             # Ensure texts is in the correct format
             if isinstance(texts, str):
@@ -273,11 +285,13 @@ def get_embedding_func():
                 base_url=config['base_url'],
             )
             
-            logger.info(f"✅ [EMBEDDING] Successfully generated {len(input_texts)} embedding(s)")
+            embed_time = time.time() - embed_start
+            logger.info(f"✅ [EMBEDDING] Successfully generated {len(input_texts)} embedding(s) in {embed_time:.3f}s")
             return result
             
         except Exception as e:
-            logger.error(f"❌ [EMBEDDING] Error during embedding: {e}")
+            embed_time = time.time() - embed_start
+            logger.error(f"❌ [EMBEDDING] Error during embedding after {embed_time:.3f}s: {e}")
             logger.error(f"❌ [EMBEDDING] Input type: {type(texts)}")
             if isinstance(texts, (list, str)):
                 logger.error(f"❌ [EMBEDDING] Input preview: {str(texts)[:300]}")
@@ -290,6 +304,8 @@ def get_embedding_func():
         """
         return safe_embed_async(texts)
     
+    exec_time = time.time() - start_time
+    logger.info(f"📊 [EMBEDDING] Embedding function created in {exec_time:.3f}s")
     return EmbeddingFunc(
         embedding_dim=1536,
         max_token_size=8191,
@@ -311,6 +327,7 @@ def get_rag_instance():
             if _rag_instance is None:
                 logger.info("🚀 [RAG_INIT] Creating new RAG-Anything singleton...")
                 
+                init_start = time.time()
                 try:
                     config = get_rag_config()
                     llm_func = get_llm_model_func()
@@ -324,13 +341,103 @@ def get_rag_instance():
                         embedding_func=embedding_func,
                     )
                     
-                    logger.info(f"🚀 [RAG_INIT] Initialized in {time.time()-start_time:.3f}s")
+                    init_time = time.time() - init_start
+                    logger.info(f"🚀 [RAG_INIT] Initialized in {init_time:.3f}s")
                     
                 except Exception as e:
-                    logger.error(f"🚀 [RAG_INIT] Failed: {str(e)}")
+                    init_time = time.time() - init_start
+                    logger.error(f"🚀 [RAG_INIT] Failed after {init_time:.3f}s: {str(e)}")
                     raise
     
+    exec_time = time.time() - start_time
+    logger.info(f"🚀 [RAG_INIT] RAG instance ready in {exec_time:.3f}s")
     return _rag_instance
+
+# ============================================================================
+# LLM CHUNKING FOR MARKDOWN CONTENT
+# ============================================================================
+
+def llm_chunk_and_embed(rag, full_md, doc_id, output_dir):
+    start_time = time.time()
+    logger.info("🧠 [LLM_CHUNK] Starting LLM chunking and embedding...")
+    
+    # Prompt LLM for semantic chunking (generic for any markdown content)
+    chunk_prompt = f"""
+    You are a RAG chunking expert. Take this markdown content from a document.
+    Split it into 5-10 semantic chunks, grouping by logical sections, topics, or categories if possible.
+    Each chunk should be a self-contained portion of the markdown, preserving structure like tables, headers, and lists.
+    Output as JSON: {{"chunks": ["chunk1_md", "chunk2_md", ...]}}
+    Content (truncated for prompt): {full_md[:3000]}... (use the full content for splitting)
+    """
+    llm_start = time.time()
+    llm_coroutine = rag.llm_model_func(
+        prompt=chunk_prompt,
+        system_prompt="Focus on meaningful groups for better retrieval. Keep chunks under 2000 characters each."
+    )
+    llm_response = run_async(llm_coroutine)
+    llm_time = time.time() - llm_start
+    logger.info(f"🧠 [LLM_CHUNK] LLM chunking completed in {llm_time:.3f}s")
+    
+    # Parse LLM output
+    parse_start = time.time()
+    try:
+        chunks_data = json.loads(llm_response)
+        chunks = chunks_data['chunks']
+        parse_time = time.time() - parse_start
+        logger.info(f"✅ [LLM_CHUNK] Parsed {len(chunks)} chunks in {parse_time:.3f}s")
+    except Exception as e:
+        parse_time = time.time() - parse_start
+        logger.error(f"❌ [LLM_CHUNK] Failed to parse LLM response after {parse_time:.3f}s: {str(e)}")
+        raise ValueError("LLM chunking failed; invalid JSON output")
+
+    # Embed each chunk
+    embed_start = time.time()
+    embedding_func = get_embedding_func()
+    embed_coroutine = embedding_func.func(chunks)
+    embeddings = run_async(embed_coroutine)
+    embed_time = time.time() - embed_start
+    logger.info(f"📊 [LLM_CHUNK] Embeddings generated in {embed_time:.3f}s")
+
+    # Build content_list with chunks (use 'text' type for generic content)
+    build_start = time.time()
+    content_list = []
+    for idx, chunk_md in enumerate(chunks):
+        caption = f"Document Chunk {idx+1}"
+        content_list.append({
+            "type": "text",
+            "text": chunk_md,
+            "page_idx": 1  # Adjust as needed
+        })
+    build_time = time.time() - build_start
+    logger.info(f"🛠️ [LLM_CHUNK] Content list built in {build_time:.3f}s")
+    
+    # Insert into RAG
+    insert_start = time.time()
+    insert_coroutine = rag.insert_content_list(
+        content_list=content_list,
+        file_path=os.path.join(output_dir, doc_id),
+        doc_id=doc_id,
+        display_stats=True
+    )
+    run_async(insert_coroutine)
+    insert_time = time.time() - insert_start
+    logger.info(f"📥 [LLM_CHUNK] Content inserted in {insert_time:.3f}s")
+    
+    total_time = time.time() - start_time
+    logger.info(f"✅ [LLM_CHUNK] Completed in {total_time:.3f}s")
+    
+    return {
+        "chunks_created": len(chunks), 
+        "embeddings_generated": len(embeddings),
+        "timing": {
+            "llm_chunking": round(llm_time, 3),
+            "parsing": round(parse_time, 3),
+            "embedding": round(embed_time, 3),
+            "building_list": round(build_time, 3),
+            "insertion": round(insert_time, 3),
+            "total": round(total_time, 3)
+        }
+    }
 
 # ============================================================================
 # HEALTH CHECK
@@ -339,17 +446,29 @@ def get_rag_instance():
 @app.route('/health', methods=['GET'])
 def health():
     """Health check endpoint"""
+    start_time = time.time()
+    logger.info("🩺 [HEALTH] Health check started...")
     try:
         rag_instance = get_rag_instance()
+        total_time = time.time() - start_time
+        logger.info(f"✅ [HEALTH] Health check completed in {total_time:.3f}s")
         return jsonify({
             "status": "healthy",
             "service": "raganything",
-            "rag_initialized": rag_instance is not None
+            "rag_initialized": rag_instance is not None,
+            "timing": {
+                "total_duration": round(total_time, 3)
+            }
         })
     except Exception as e:
+        total_time = time.time() - start_time
+        logger.error(f"❌ [HEALTH] Health check failed after {total_time:.3f}s: {str(e)}")
         return jsonify({
             "status": "unhealthy",
-            "error": str(e)
+            "error": str(e),
+            "timing": {
+                "total_duration": round(total_time, 3)
+            }
         }), 500
 
 # ============================================================================
@@ -362,21 +481,31 @@ def process_document():
     start_time = time.time()
     logger.info("📄 [PROCESS] Document processing started...")
     temp_file_path = None
+    timing = {}
     
     try:
         # Validate API configuration first
+        config_start = time.time()
         try:
             get_api_config()
         except ValueError as e:
-            logger.error(f"❌ [PROCESS] Configuration error: {str(e)}")
-            return jsonify({"error": f"Configuration error: {str(e)}"}), 500
+            config_time = time.time() - config_start
+            logger.error(f"❌ [PROCESS] Configuration error after {config_time:.3f}s: {str(e)}")
+            timing["config_validation"] = round(config_time, 3)
+            return jsonify({"error": f"Configuration error: {str(e)}", "timing": timing}), 500
+        
+        config_time = time.time() - config_start
+        timing["config_validation"] = round(config_time, 3)
+        logger.info(f"⚙️ [PROCESS] Config validated in {config_time:.3f}s")
         
         data = request.get_json()
         s3_bucket = data.get('bucket')
         s3_key = data.get('key')
         
         if not s3_bucket or not s3_key:
-            return jsonify({"error": "Missing bucket or key"}), 400
+            total_time = time.time() - start_time
+            timing["total_duration"] = round(total_time, 3)
+            return jsonify({"error": "Missing bucket or key", "timing": timing}), 400
         
         logger.info(f"📦 [PROCESS] s3://{s3_bucket}/{s3_key}")
         
@@ -386,13 +515,16 @@ def process_document():
         temp_file_path = f"/tmp/{os.path.basename(s3_key)}"
         s3_client.download_file(s3_bucket, s3_key, temp_file_path)
         download_duration = time.time() - download_start
+        timing["download_duration"] = round(download_duration, 3)
         file_size = os.path.getsize(temp_file_path) / (1024 * 1024)
         logger.info(f"📥 [PROCESS] Downloaded {file_size:.2f}MB in {download_duration:.3f}s")
         
         # Get RAG instance
-        init_start = time.time()
+        rag_init_start = time.time()
         rag = get_rag_instance()
-        init_duration = time.time() - init_start
+        rag_init_duration = time.time() - rag_init_start
+        timing["rag_init_duration"] = round(rag_init_duration, 3)
+        logger.info(f"🚀 [PROCESS] RAG initialized in {rag_init_duration:.3f}s")
         
         # Process document
         process_start = time.time()
@@ -421,7 +553,9 @@ def process_document():
             result = run_async(rag.process_document_complete(**process_kwargs))
             logger.info("✅ [PROCESS] Document processing completed successfully")
         except Exception as proc_error:
-            logger.error(f"❌ [PROCESS] Processing error: {str(proc_error)}")
+            process_duration = time.time() - process_start
+            timing["process_duration"] = round(process_duration, 3)
+            logger.error(f"❌ [PROCESS] Processing error after {process_duration:.3f}s: {str(proc_error)}")
             
             # Check if it's an embedding error
             if "400" in str(proc_error) and "input" in str(proc_error).lower():
@@ -432,15 +566,50 @@ def process_document():
                 raise proc_error
         
         process_duration = time.time() - process_start
+        timing["process_duration"] = round(process_duration, 3)
+        logger.info(f"🔍 [PROCESS] Document processed in {process_duration:.3f}s")
+        
+        # LLM Chunking for Markdown Content (generic)
+        llm_chunk_result = None
+        llm_chunk_timing = {}
+        try:
+            # Assume parsed MD is in output_dir/basename/markdown/1.md
+            basename = os.path.basename(s3_key)
+            md_dir = os.path.join(process_kwargs['output_dir'], basename, 'markdown')
+            md_path = os.path.join(md_dir, '1.md')
+            
+            if os.path.exists(md_path):
+                load_md_start = time.time()
+                with open(md_path, 'r', encoding='utf-8') as f:
+                    full_md = f.read().strip()
+                load_md_time = time.time() - load_md_start
+                llm_chunk_timing["load_md"] = round(load_md_time, 3)
+                logger.info(f"📄 [LLM_CHUNK] Markdown loaded in {load_md_time:.3f}s")
+                
+                if len(full_md) > 2000:  # Apply to substantial content
+                    logger.info("🧠 [LLM_CHUNK] Detected substantial markdown content; starting LLM chunking...")
+                    llm_chunk_result = llm_chunk_and_embed(rag, full_md, s3_key, process_kwargs['output_dir'])
+                    llm_chunk_timing = llm_chunk_result.pop("timing", {})
+                    logger.info(f"✅ [LLM_CHUNK] LLM chunking completed: {llm_chunk_result}")
+            else:
+                logger.warning(f"⚠️ [LLM_CHUNK] No markdown file found at {md_path}; skipping LLM chunking")
+        except Exception as chunk_error:
+            logger.error(f"❌ [LLM_CHUNK] LLM chunking failed: {str(chunk_error)}")
+            # Continue without failing the whole process
         
         # Cleanup
+        cleanup_start = time.time()
         if temp_file_path and os.path.exists(temp_file_path):
             os.remove(temp_file_path)
+        cleanup_time = time.time() - cleanup_start
+        timing["cleanup_duration"] = round(cleanup_time, 3)
+        logger.info(f"🧹 [PROCESS] Cleanup completed in {cleanup_time:.3f}s")
         
         total_duration = time.time() - start_time
+        timing["total_duration"] = round(total_duration, 3)
         logger.info(f"✅ [PROCESS] Completed in {total_duration:.3f}s")
         
-        return jsonify({
+        response = {
             "status": "success",
             "result": result,
             "document": {
@@ -449,16 +618,19 @@ def process_document():
                 "size_mb": round(file_size, 2)
             },
             "parser": {"type": parser, "method": parse_method},
-            "timing": {
-                "total_duration": round(total_duration, 3),
-                "download_duration": round(download_duration, 3),
-                "rag_init_duration": round(init_duration, 3),
-                "process_duration": round(process_duration, 3)
-            }
-        })
+            "timing": timing
+        }
+        
+        if llm_chunk_result:
+            response["llm_chunking"] = llm_chunk_result
+            response["timing"]["llm_chunking"] = llm_chunk_timing
+        
+        return jsonify(response)
         
     except Exception as e:
-        logger.error(f"❌ [PROCESS] Failed: {str(e)}")
+        total_duration = time.time() - start_time
+        timing["total_duration"] = round(total_duration, 3)
+        logger.error(f"❌ [PROCESS] Failed after {total_duration:.3f}s: {str(e)}")
         import traceback
         traceback.print_exc()
         
@@ -468,7 +640,7 @@ def process_document():
             except:
                 pass
         
-        return jsonify({"error": str(e)}), 500
+        return jsonify({"error": str(e), "timing": timing}), 500
 
 # ============================================================================
 # QUERY
@@ -479,6 +651,7 @@ def process_query():
     """Process RAG query"""
     start_time = time.time()
     logger.info("🔍 [QUERY] Query started...")
+    timing = {}
     
     try:
         data = request.get_json()
@@ -487,25 +660,32 @@ def process_query():
         vlm_enhanced = data.get('vlm_enhanced', False)
         
         if not query:
-            return jsonify({"error": "Missing query"}), 400
+            total_time = time.time() - start_time
+            timing["total_duration"] = round(total_time, 3)
+            return jsonify({"error": "Missing query", "timing": timing}), 400
         
         logger.info(f"❓ [QUERY] '{query[:80]}...'")
         
         # Get RAG instance
-        init_start = time.time()
+        rag_init_start = time.time()
         rag = get_rag_instance()
-        init_duration = time.time() - init_start
+        rag_init_duration = time.time() - rag_init_start
+        timing["init_duration"] = round(rag_init_duration, 3)
+        logger.info(f"🚀 [QUERY] RAG initialized in {rag_init_duration:.3f}s")
         
         # Process query
-        query_start = time.time()
+        query_proc_start = time.time()
         query_kwargs = {'mode': mode}
         if vlm_enhanced is not None:
             query_kwargs['vlm_enhanced'] = vlm_enhanced
         
         result = run_async(rag.aquery(query, **query_kwargs))
-        query_duration = time.time() - query_start
+        query_duration = time.time() - query_proc_start
+        timing["query_duration"] = round(query_duration, 3)
+        logger.info(f"🔍 [QUERY] Query processed in {query_duration:.3f}s")
         
         # Parse result
+        parse_start = time.time()
         if isinstance(result, dict):
             answer = result.get('answer', str(result))
             sources = result.get('sources', [])
@@ -514,8 +694,12 @@ def process_query():
             answer = str(result)
             sources = []
             confidence = 0.0
+        parse_time = time.time() - parse_start
+        timing["parse_duration"] = round(parse_time, 3)
+        logger.info(f"📝 [QUERY] Result parsed in {parse_time:.3f}s")
         
         total_duration = time.time() - start_time
+        timing["total_duration"] = round(total_duration, 3)
         logger.info(f"✅ [QUERY] Completed in {total_duration:.3f}s")
         
         return jsonify({
@@ -526,21 +710,20 @@ def process_query():
             "mode": mode,
             "vlm_enhanced": vlm_enhanced,
             "status": "completed",
-            "timing": {
-                "total_duration": round(total_duration, 3),
-                "init_duration": round(init_duration, 3),
-                "query_duration": round(query_duration, 3)
-            }
+            "timing": timing
         })
         
     except Exception as e:
-        logger.error(f"❌ [QUERY] Failed: {str(e)}")
+        total_duration = time.time() - start_time
+        timing["total_duration"] = round(total_duration, 3)
+        logger.error(f"❌ [QUERY] Failed after {total_duration:.3f}s: {str(e)}")
         import traceback
         traceback.print_exc()
         
         return jsonify({
             "error": str(e),
-            "status": "error"
+            "status": "error",
+            "timing": timing
         }), 500
 
 # ============================================================================
@@ -552,6 +735,7 @@ def process_multimodal_query():
     """Process multimodal RAG query"""
     start_time = time.time()
     logger.info("🎨 [MULTIMODAL] Starting...")
+    timing = {}
     
     try:
         data = request.get_json()
@@ -560,25 +744,32 @@ def process_multimodal_query():
         mode = data.get('mode', 'hybrid')
         
         if not query:
-            return jsonify({"error": "Missing query"}), 400
+            total_time = time.time() - start_time
+            timing["total_duration"] = round(total_time, 3)
+            return jsonify({"error": "Missing query", "timing": timing}), 400
         
         logger.info(f"❓ [MULTIMODAL] Query with {len(multimodal_content)} items")
         
         # Get RAG instance
-        init_start = time.time()
+        rag_init_start = time.time()
         rag = get_rag_instance()
-        init_duration = time.time() - init_start
+        rag_init_duration = time.time() - rag_init_start
+        timing["init_duration"] = round(rag_init_duration, 3)
+        logger.info(f"🚀 [MULTIMODAL] RAG initialized in {rag_init_duration:.3f}s")
         
         # Process query
-        query_start = time.time()
+        query_proc_start = time.time()
         result = run_async(rag.aquery_with_multimodal(
             query,
             multimodal_content=multimodal_content,
             mode=mode
         ))
-        query_duration = time.time() - query_start
+        query_duration = time.time() - query_proc_start
+        timing["query_duration"] = round(query_duration, 3)
+        logger.info(f"🔍 [MULTIMODAL] Query processed in {query_duration:.3f}s")
         
         # Parse result
+        parse_start = time.time()
         if isinstance(result, dict):
             answer = result.get('answer', str(result))
             sources = result.get('sources', [])
@@ -587,8 +778,12 @@ def process_multimodal_query():
             answer = str(result)
             sources = []
             confidence = 0.0
+        parse_time = time.time() - parse_start
+        timing["parse_duration"] = round(parse_time, 3)
+        logger.info(f"📝 [MULTIMODAL] Result parsed in {parse_time:.3f}s")
         
         total_duration = time.time() - start_time
+        timing["total_duration"] = round(total_duration, 3)
         logger.info(f"✅ [MULTIMODAL] Completed in {total_duration:.3f}s")
         
         return jsonify({
@@ -599,21 +794,20 @@ def process_multimodal_query():
             "mode": mode,
             "multimodal_items": len(multimodal_content),
             "status": "completed",
-            "timing": {
-                "total_duration": round(total_duration, 3),
-                "init_duration": round(init_duration, 3),
-                "query_duration": round(query_duration, 3)
-            }
+            "timing": timing
         })
         
     except Exception as e:
-        logger.error(f"❌ [MULTIMODAL] Failed: {str(e)}")
+        total_duration = time.time() - start_time
+        timing["total_duration"] = round(total_duration, 3)
+        logger.error(f"❌ [MULTIMODAL] Failed after {total_duration:.3f}s: {str(e)}")
         import traceback
         traceback.print_exc()
         
         return jsonify({
             "error": str(e),
-            "status": "error"
+            "status": "error",
+            "timing": timing
         }), 500
 
 # ============================================================================
@@ -625,10 +819,15 @@ def analyze_efs():
     """Analyze EFS contents"""
     start_time = time.time()
     logger.info("📊 [EFS_ANALYSIS] Starting...")
+    timing = {}
     
     try:
+        config_start = time.time()
         efs_path = os.environ.get('EFS_MOUNT_PATH', '/mnt/efs')
         rag_output_dir = os.environ.get('RAG_OUTPUT_DIR', '/mnt/efs/rag_output')
+        config_time = time.time() - config_start
+        timing["config_load"] = round(config_time, 3)
+        logger.info(f"⚙️ [EFS_ANALYSIS] Config loaded in {config_time:.3f}s")
         
         analysis = {
             'efs_path': efs_path,
@@ -645,12 +844,16 @@ def analyze_efs():
         }
         
         if not os.path.exists(efs_path):
+            total_time = time.time() - start_time
+            timing["total_duration"] = round(total_time, 3)
             return jsonify({
                 'error': f'EFS path {efs_path} not found',
-                'analysis': analysis
+                'analysis': analysis,
+                "timing": timing
             }), 404
         
         # Walk through EFS
+        walk_start = time.time()
         for root, dirs, files in os.walk(efs_path):
             for file in files:
                 file_path = os.path.join(root, file)
@@ -684,7 +887,12 @@ def analyze_efs():
                 except Exception as e:
                     logger.warning(f"Error processing {file_path}: {e}")
         
+        walk_time = time.time() - walk_start
+        timing["efs_walk"] = round(walk_time, 3)
+        logger.info(f"🚶 [EFS_ANALYSIS] EFS walked in {walk_time:.3f}s")
+        
         # Sample chunks
+        sample_start = time.time()
         sample_chunks = []
         for chunk_file in analysis['chunks'][:5]:
             try:
@@ -701,24 +909,39 @@ def analyze_efs():
                 })
         
         analysis['sample_chunks'] = sample_chunks
+        sample_time = time.time() - sample_start
+        timing["sample_chunks"] = round(sample_time, 3)
+        logger.info(f"🔍 [EFS_ANALYSIS] Chunks sampled in {sample_time:.3f}s")
         
         total_duration = time.time() - start_time
+        timing["total_duration"] = round(total_duration, 3)
         logger.info(f"✅ [EFS_ANALYSIS] Completed in {total_duration:.3f}s")
         
         return jsonify({
             'status': 'success',
-            'analysis': analysis
+            'analysis': analysis,
+            "timing": timing
         })
         
     except Exception as e:
-        logger.error(f"❌ [EFS_ANALYSIS] Failed: {str(e)}")
-        return jsonify({'error': str(e)}), 500
+        total_duration = time.time() - start_time
+        timing["total_duration"] = round(total_duration, 3)
+        logger.error(f"❌ [EFS_ANALYSIS] Failed after {total_duration:.3f}s: {str(e)}")
+        return jsonify({'error': str(e), "timing": timing}), 500
 
 @app.route('/get_chunks', methods=['GET'])
 def get_chunks():
     """Get full content of all chunks"""
+    start_time = time.time()
+    logger.info("📂 [CHUNKS] Get chunks started...")
+    timing = {}
+    
     try:
+        config_start = time.time()
         rag_output_dir = os.environ.get('RAG_OUTPUT_DIR', '/mnt/efs/rag_output')
+        config_time = time.time() - config_start
+        timing["config_load"] = round(config_time, 3)
+        logger.info(f"⚙️ [CHUNKS] Config loaded in {config_time:.3f}s")
         
         chunks_data = {
             'text_chunks': {},
@@ -729,6 +952,7 @@ def get_chunks():
         }
         
         # Read various chunk files
+        read_start = time.time()
         chunk_files = {
             'text_chunks': f"{rag_output_dir}/kv_store_text_chunks.json",
             'entity_chunks': f"{rag_output_dir}/kv_store_entity_chunks.json",
@@ -743,18 +967,33 @@ def get_chunks():
                     if key == 'text_chunks':
                         chunks_data['total_chunks'] += len(chunks_data[key])
         
+        read_time = time.time() - read_start
+        timing["file_reading"] = round(read_time, 3)
+        logger.info(f"📖 [CHUNKS] Files read in {read_time:.3f}s")
+        
+        total_duration = time.time() - start_time
+        timing["total_duration"] = round(total_duration, 3)
+        logger.info(f"✅ [CHUNKS] Completed in {total_duration:.3f}s")
+        
         return jsonify({
             'status': 'success',
-            'chunks': chunks_data
+            'chunks': chunks_data,
+            "timing": timing
         })
         
     except Exception as e:
-        logger.error(f"❌ [CHUNKS] Failed: {str(e)}")
-        return jsonify({'error': str(e)}), 500
+        total_duration = time.time() - start_time
+        timing["total_duration"] = round(total_duration, 3)
+        logger.error(f"❌ [CHUNKS] Failed after {total_duration:.3f}s: {str(e)}")
+        return jsonify({'error': str(e), "timing": timing}), 500
 
 @app.route('/test_embedding', methods=['POST'])
 def test_embedding():
     """Test the embedding function directly for debugging"""
+    start_time = time.time()
+    logger.info("🧪 [TEST_EMBED] Test embedding started...")
+    timing = {}
+    
     try:
         data = request.get_json()
         test_texts = data.get('texts', ['This is a test sentence.'])
@@ -762,50 +1001,85 @@ def test_embedding():
         logger.info(f"🧪 [TEST_EMBED] Testing embedding with {len(test_texts)} text(s)")
         
         # Get embedding function
+        func_start = time.time()
         embedding_func = get_embedding_func()
+        func_time = time.time() - func_start
+        timing["get_func"] = round(func_time, 3)
+        logger.info(f"📊 [TEST_EMBED] Embedding func retrieved in {func_time:.3f}s")
         
         # Test the embedding
+        embed_start = time.time()
         result = run_async(embedding_func.func(test_texts))
+        embed_time = time.time() - embed_start
+        timing["embedding"] = round(embed_time, 3)
+        logger.info(f"✅ [TEST_EMBED] Embedding tested in {embed_time:.3f}s")
+        
+        total_duration = time.time() - start_time
+        timing["total_duration"] = round(total_duration, 3)
+        logger.info(f"✅ [TEST_EMBED] Completed in {total_duration:.3f}s")
         
         return jsonify({
             'status': 'success',
             'input_texts': test_texts,
             'embedding_dim': len(result[0]) if result and len(result) > 0 else 0,
             'num_embeddings': len(result) if result else 0,
-            'message': 'Embedding function working correctly'
+            'message': 'Embedding function working correctly',
+            "timing": timing
         })
         
     except Exception as e:
-        logger.error(f"❌ [TEST_EMBED] Failed: {str(e)}")
+        total_duration = time.time() - start_time
+        timing["total_duration"] = round(total_duration, 3)
+        logger.error(f"❌ [TEST_EMBED] Failed after {total_duration:.3f}s: {str(e)}")
         import traceback
         return jsonify({
             'error': str(e),
-            'traceback': traceback.format_exc()
+            'traceback': traceback.format_exc(),
+            "timing": timing
         }), 500
 
 @app.route('/analyze_efs_content', methods=['GET'])
 def analyze_efs_content():
     """Download and return content of specific EFS file"""
+    start_time = time.time()
+    logger.info("📊 [EFS_CONTENT] Analyze EFS content started...")
+    timing = {}
+    
     try:
         filename = request.args.get('filename')
         if not filename:
+            total_time = time.time() - start_time
+            timing["total_duration"] = round(total_time, 3)
             return jsonify({
-                'error': 'filename parameter required'
+                'error': 'filename parameter required',
+                "timing": timing
             }), 400
         
+        config_start = time.time()
         efs_path = os.environ.get('EFS_MOUNT_PATH', '/mnt/efs')
+        config_time = time.time() - config_start
+        timing["config_load"] = round(config_time, 3)
+        logger.info(f"⚙️ [EFS_CONTENT] Config loaded in {config_time:.3f}s")
         
         # Search for file
+        search_start = time.time()
         file_path = None
         for root, dirs, files in os.walk(efs_path):
             if filename in files:
                 file_path = os.path.join(root, filename)
                 break
         
+        search_time = time.time() - search_start
+        timing["file_search"] = round(search_time, 3)
+        logger.info(f"🔍 [EFS_CONTENT] File searched in {search_time:.3f}s")
+        
         if not file_path:
-            return jsonify({'error': f'File not found: {filename}'}), 404
+            total_time = time.time() - start_time
+            timing["total_duration"] = round(total_time, 3)
+            return jsonify({'error': f'File not found: {filename}', "timing": timing}), 404
         
         # Read file
+        read_start = time.time()
         file_ext = os.path.splitext(filename)[1].lower()
         
         if file_ext in ['.json', '.txt', '.log', '.md']:
@@ -826,16 +1100,27 @@ def analyze_efs_content():
                     'size': len(binary_content)
                 }
         
+        read_time = time.time() - read_start
+        timing["file_reading"] = round(read_time, 3)
+        logger.info(f"📖 [EFS_CONTENT] File read in {read_time:.3f}s")
+        
+        total_duration = time.time() - start_time
+        timing["total_duration"] = round(total_duration, 3)
+        logger.info(f"✅ [EFS_CONTENT] Completed in {total_duration:.3f}s")
+        
         return jsonify({
             'status': 'success',
             'filename': filename,
             'path': file_path,
-            'content': file_content
+            'content': file_content,
+            "timing": timing
         })
         
     except Exception as e:
-        logger.error(f"❌ [EFS_CONTENT] Failed: {str(e)}")
-        return jsonify({'error': str(e)}), 500
+        total_duration = time.time() - start_time
+        timing["total_duration"] = round(total_duration, 3)
+        logger.error(f"❌ [EFS_CONTENT] Failed after {total_duration:.3f}s: {str(e)}")
+        return jsonify({'error': str(e), "timing": timing}), 500
 
 # ============================================================================
 # SERVER STARTUP
@@ -843,6 +1128,7 @@ def analyze_efs_content():
 
 def start_server():
     """Start Flask server"""
+    start_time = time.time()
     port = int(os.environ.get('PORT', 8000))
     
     logger.info("🚀 [SERVER] Starting RAG-Anything Server...")
@@ -857,6 +1143,8 @@ def start_server():
         threaded=True,
         use_reloader=False
     )
+    total_time = time.time() - start_time
+    logger.info(f"🚀 [SERVER] Server started in {total_time:.3f}s")
 
 if __name__ == '__main__':
     start_server()
