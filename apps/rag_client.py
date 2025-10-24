@@ -483,6 +483,13 @@ def process_document():
             for i, item in enumerate(content_list):
                 logger.info(f"🔍 [PROCESS] Item {i}: type={type(item)}, content={str(item)[:100]}...")
             
+            # Additional debugging: Check if content_list is what we expect
+            logger.info(f"🔍 [PROCESS] Content list type: {type(content_list)}")
+            if hasattr(content_list, '__iter__'):
+                logger.info(f"🔍 [PROCESS] Content list is iterable with {len(content_list)} items")
+            else:
+                logger.warning(f"⚠️ [PROCESS] Content list is not iterable: {type(content_list)}")
+            
             # Step 2: Convert table items to text items
             modified_content_list = []
             table_count = 0
