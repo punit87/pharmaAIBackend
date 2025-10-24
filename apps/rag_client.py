@@ -169,9 +169,9 @@ def get_rag_config():
         working_dir=working_dir,  # Normalized path without trailing slash
         parser=os.environ.get('PARSER', 'docling'),  # Using Docling parser
         parse_method=os.environ.get('PARSE_METHOD', 'ocr'),  # Using OCR for document parsing
-        enable_image_processing=True,
+        enable_image_processing=False,  # Disable VLM processing to avoid NoneType error
         enable_table_processing=False,  # Disable built-in table chunking
-        enable_equation_processing=True
+        enable_equation_processing=False  # Disable equation processing to avoid VLM issues
     )
     
     # Ensure working directory exists
@@ -197,6 +197,16 @@ def get_llm_model_func():
     
     def llm_func(prompt, system_prompt=None, history_messages=[], **kwargs):
         """Synchronous function that returns a coroutine"""
+        # Safeguard: Ensure prompt is never None
+        if prompt is None:
+            prompt = ""
+            logger.warning("⚠️ [LLM] Prompt was None, converted to empty string")
+        
+        # Additional safeguard: Ensure prompt is a string
+        if not isinstance(prompt, str):
+            prompt = str(prompt) if prompt is not None else ""
+            logger.warning(f"⚠️ [LLM] Prompt was {type(prompt)}, converted to string")
+        
         llm_start_time = time.time()
         logger.info(f"🤖 [LLM] Starting LLM completion...")
         logger.info(f"🤖 [LLM] Prompt length: {len(prompt)} characters")
@@ -226,6 +236,16 @@ def get_vision_model_func(llm_func):
     def vision_func(prompt, system_prompt=None, history_messages=[], 
                    image_data=None, messages=None, **kwargs):
         """Synchronous function that returns a coroutine"""
+        # Safeguard: Ensure prompt is never None
+        if prompt is None:
+            prompt = ""
+            logger.warning("⚠️ [VISION] Prompt was None, converted to empty string")
+        
+        # Additional safeguard: Ensure prompt is a string
+        if not isinstance(prompt, str):
+            prompt = str(prompt) if prompt is not None else ""
+            logger.warning(f"⚠️ [VISION] Prompt was {type(prompt)}, converted to string")
+        
         if messages:
             return openai_complete_if_cache(
                 "gpt-4o", "", system_prompt=None, history_messages=[],
@@ -739,7 +759,7 @@ def query():
     try:
         data = request.get_json()
         query = data.get('query')
-        mode = data.get('mode', 'hybrid')
+        mode = data.get('mode', 'hybrid')  # Default to hybrid mode for full RAG functionality
         
         if not query:
             total_duration = time.time() - start_time
@@ -749,7 +769,21 @@ def query():
         rag = get_rag_instance()
         
         query_proc_start = time.time()
-        result = run_async(rag.aquery(query, mode=mode))
+        try:
+            result = run_async(rag.aquery(query, mode=mode))
+        except Exception as e:
+            logger.error(f"❌ [QUERY] Query processing failed: {str(e)}")
+            # If VLM processing fails, try with a simpler mode
+            if "expected string or bytes-like object, got 'NoneType'" in str(e):
+                logger.info("🔄 [QUERY] Retrying with text-only mode...")
+                try:
+                    result = run_async(rag.aquery(query, mode="text"))
+                except Exception as retry_e:
+                    logger.error(f"❌ [QUERY] Retry also failed: {str(retry_e)}")
+                    result = None
+            else:
+                result = None
+        
         query_duration = time.time() - query_proc_start
         timing["query_duration"] = round(query_duration, 3)
         logger.info(f"🔍 [QUERY] Query processed in {query_duration:.3f}s")

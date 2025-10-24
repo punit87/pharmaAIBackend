@@ -56,3 +56,6 @@ logs/
 *.temp
 10.000vragen.pdf
 *.pdf
+
+# Deployment artifacts
+lambda-packages/
