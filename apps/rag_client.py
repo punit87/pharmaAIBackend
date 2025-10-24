@@ -140,6 +140,9 @@ def get_rag_config():
         enable_equation_processing=True
     )
     
+    # Ensure working directory exists
+    os.makedirs(config.working_dir, exist_ok=True)
+    
     exec_time = time.time() - start_time
     logger.info(f"⚙️ [CONFIG] RAG configuration loaded in {exec_time:.3f}s")
     logger.info(f"⚙️ [CONFIG] Working dir: {config.working_dir}")
@@ -347,8 +350,17 @@ You are an expert document parser. Your task is to analyze markdown content and 
                 result = json.loads(response_text)
                 chunks = result.get('chunks', [])
                 
-                # Add page_idx and doc_id to metadata
+                # Validate and process chunks
                 for chunk in chunks:
+                    if not isinstance(chunk, dict):
+                        logger.warning(f"⚠️ [CHUNKING] Skipping invalid chunk: {type(chunk)}")
+                        continue
+                    
+                    # Ensure required fields exist
+                    if 'content' not in chunk:
+                        logger.warning(f"⚠️ [CHUNKING] Skipping chunk without content")
+                        continue
+                    
                     # Ensure metadata exists
                     if 'metadata' not in chunk:
                         chunk['metadata'] = {}
@@ -486,7 +498,9 @@ def process_document():
         # Download from S3
         download_start = time.time()
         s3_client = boto3.client('s3')
-        temp_file_path = f"/tmp/{os.path.basename(s3_key)}"
+        # Create safe temp file path
+        safe_filename = os.path.basename(s3_key).replace('/', '_').replace('\\', '_')
+        temp_file_path = f"/tmp/{safe_filename}"
         s3_client.download_file(s3_bucket, s3_key, temp_file_path)
         download_duration = time.time() - download_start
         timing["download_duration"] = round(download_duration, 3)
