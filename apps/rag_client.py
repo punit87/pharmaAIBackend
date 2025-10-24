@@ -573,12 +573,22 @@ def process_document():
         llm_chunk_result = None
         llm_chunk_timing = {}
         try:
-            # Assume parsed MD is in output_dir/basename/markdown/1.md
+            # Check for markdown file in the output directory
             basename = os.path.basename(s3_key)
-            md_dir = os.path.join(process_kwargs['output_dir'], basename, 'markdown')
-            md_path = os.path.join(md_dir, '1.md')
+            # Try multiple possible locations for the markdown file
+            possible_paths = [
+                os.path.join(process_kwargs['output_dir'], f"{basename}.md"),  # Direct in output dir
+                os.path.join(process_kwargs['output_dir'], basename, 'markdown', '1.md'),  # Nested structure
+                os.path.join(process_kwargs['output_dir'], '1.md'),  # Generic 1.md
+            ]
             
-            if os.path.exists(md_path):
+            md_path = None
+            for path in possible_paths:
+                if os.path.exists(path):
+                    md_path = path
+                    break
+            
+            if md_path and os.path.exists(md_path):
                 load_md_start = time.time()
                 with open(md_path, 'r', encoding='utf-8') as f:
                     full_md = f.read().strip()
@@ -592,7 +602,7 @@ def process_document():
                     llm_chunk_timing = llm_chunk_result.pop("timing", {})
                     logger.info(f"✅ [LLM_CHUNK] LLM chunking completed: {llm_chunk_result}")
             else:
-                logger.warning(f"⚠️ [LLM_CHUNK] No markdown file found at {md_path}; skipping LLM chunking")
+                logger.warning(f"⚠️ [LLM_CHUNK] No markdown file found in any of these locations: {possible_paths}; skipping LLM chunking")
         except Exception as chunk_error:
             logger.error(f"❌ [LLM_CHUNK] LLM chunking failed: {str(chunk_error)}")
             # Continue without failing the whole process
