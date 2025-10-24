@@ -523,6 +523,10 @@ def process_document():
         # Use RAG-Anything's parser to get markdown
         parse_result = run_async(rag.parse_document(temp_file_path, parse_method=parse_method))
         
+        # Debug: Log the type and content of parse_result
+        logger.info(f"🔍 [PROCESS] parse_result type: {type(parse_result)}")
+        logger.info(f"🔍 [PROCESS] parse_result content: {str(parse_result)[:200]}...")
+        
         # Handle different return types from parse_document
         if isinstance(parse_result, tuple):
             # If it's a tuple, extract the first element (usually the document object)
