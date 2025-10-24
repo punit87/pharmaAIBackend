@@ -101,9 +101,17 @@ def update_activity():
 @lru_cache(maxsize=1)
 def get_api_config():
     """Cache API configuration"""
+    api_key = os.environ.get('OPENAI_API_KEY')
+    base_url = os.environ.get('OPENAI_BASE_URL')
+    
+    if not api_key:
+        raise ValueError("OPENAI_API_KEY environment variable is required")
+    if not base_url:
+        raise ValueError("OPENAI_BASE_URL environment variable is required")
+    
     return {
-        'api_key': os.environ.get('OPENAI_API_KEY'),
-        'base_url': os.environ.get('OPENAI_BASE_URL'),
+        'api_key': api_key,
+        'base_url': base_url,
     }
 
 @lru_cache(maxsize=1)
@@ -189,21 +197,25 @@ def get_vision_model_func(llm_func):
             )
         # Single image format
         elif image_data:
+            # Build messages list without None values
+            vision_messages = []
+            if system_prompt:
+                vision_messages.append({"role": "system", "content": system_prompt})
+            
+            vision_messages.append({
+                "role": "user",
+                "content": [
+                    {"type": "text", "text": prompt},
+                    {
+                        "type": "image_url",
+                        "image_url": {"url": f"data:image/jpeg;base64,{image_data}"}
+                    }
+                ]
+            })
+            
             return openai_complete_if_cache(
                 "gpt-4o", "", system_prompt=None, history_messages=[],
-                messages=[
-                    {"role": "system", "content": system_prompt} if system_prompt else None,
-                    {
-                        "role": "user",
-                        "content": [
-                            {"type": "text", "text": prompt},
-                            {
-                                "type": "image_url",
-                                "image_url": {"url": f"data:image/jpeg;base64,{image_data}"}
-                            }
-                        ],
-                    } if image_data else {"role": "user", "content": prompt}
-                ],
+                messages=vision_messages,
                 api_key=config['api_key'], base_url=config['base_url'], **kwargs
             )
         # Pure text fallback
@@ -214,37 +226,74 @@ def get_vision_model_func(llm_func):
 
 def get_embedding_func():
     """
-    Create embedding function - SYNCHRONOUS wrapper that returns coroutine
-    This matches the RAG-Anything reference implementation
+    Create embedding function - handles both sync and async contexts
     
     Using text-embedding-ada-002 for Neo4j compatibility:
     - Dimensions: 1536 (Neo4j standard)
     - Cost: $0.0001 per 1K tokens (most cost-effective)
     - Neo4j Support: Full compatibility with vector indexes
+    
+    IMPORTANT: This function must handle the actual API call format correctly
     """
     config = get_api_config()
     
-    def safe_embed(texts):
+    async def safe_embed_async(texts):
         """
-        Synchronous function that returns a coroutine
-        RAG-Anything will handle the async execution internally
+        Async embedding function that properly formats input for OpenAI API
         """
         try:
-            # Return the coroutine directly - RAG-Anything handles await
-            return openai_embed(
-                texts,
+            # Ensure texts is in the correct format
+            if isinstance(texts, str):
+                # Single text - convert to list
+                input_texts = [texts]
+            elif isinstance(texts, list):
+                # Multiple texts - ensure all are strings and not empty
+                input_texts = []
+                for t in texts:
+                    if t is not None:
+                        text_str = str(t).strip()
+                        if text_str:
+                            input_texts.append(text_str)
+                
+                if not input_texts:
+                    logger.warning("⚠️ [EMBEDDING] Empty text list, using placeholder")
+                    input_texts = ["placeholder text for embedding"]
+            else:
+                logger.warning(f"⚠️ [EMBEDDING] Unexpected input type: {type(texts)}, converting to string")
+                input_texts = [str(texts)]
+            
+            # Log for debugging
+            logger.info(f"📊 [EMBEDDING] Processing {len(input_texts)} text(s)")
+            
+            # Call the OpenAI embedding API
+            result = await openai_embed(
+                texts=input_texts,
                 model="text-embedding-ada-002",
                 api_key=config['api_key'],
                 base_url=config['base_url'],
             )
+            
+            logger.info(f"✅ [EMBEDDING] Successfully generated {len(input_texts)} embedding(s)")
+            return result
+            
         except Exception as e:
-            logger.error(f"⚠️ [EMBEDDING] Error: {e}")
+            logger.error(f"❌ [EMBEDDING] Error during embedding: {e}")
+            logger.error(f"❌ [EMBEDDING] Input type: {type(texts)}")
+            if isinstance(texts, (list, str)):
+                logger.error(f"❌ [EMBEDDING] Input preview: {str(texts)[:300]}")
             raise e
     
+    def safe_embed_sync(texts):
+        """
+        Synchronous wrapper that returns the coroutine
+        RAG-Anything will await it in its own async context
+        """
+        return safe_embed_async(texts)
+    
     return EmbeddingFunc(
-        embedding_dim=1536,  # Neo4j-compatible dimensions
-        max_token_size=8191,  # ada-002 token limit
-        func=safe_embed,
+        embedding_dim=1536,
+        max_token_size=8191,
+        func=safe_embed_sync,
     )
 
 # ============================================================================
@@ -315,6 +364,13 @@ def process_document():
     temp_file_path = None
     
     try:
+        # Validate API configuration first
+        try:
+            get_api_config()
+        except ValueError as e:
+            logger.error(f"❌ [PROCESS] Configuration error: {str(e)}")
+            return jsonify({"error": f"Configuration error: {str(e)}"}), 500
+        
         data = request.get_json()
         s3_bucket = data.get('bucket')
         s3_key = data.get('key')
@@ -360,7 +416,21 @@ def process_document():
             })
         
         logger.info(f"🔍 [PROCESS] Processing with {parser} ({parse_method})")
-        result = run_async(rag.process_document_complete(**process_kwargs))
+        
+        try:
+            result = run_async(rag.process_document_complete(**process_kwargs))
+            logger.info("✅ [PROCESS] Document processing completed successfully")
+        except Exception as proc_error:
+            logger.error(f"❌ [PROCESS] Processing error: {str(proc_error)}")
+            
+            # Check if it's an embedding error
+            if "400" in str(proc_error) and "input" in str(proc_error).lower():
+                logger.error("❌ [PROCESS] OpenAI embedding API error - likely malformed input")
+                logger.error("❌ [PROCESS] This suggests the embedding function received invalid data")
+                raise Exception(f"Embedding API error: {str(proc_error)}. Check that text chunks are properly formatted.")
+            else:
+                raise proc_error
+        
         process_duration = time.time() - process_start
         
         # Cleanup
@@ -681,6 +751,37 @@ def get_chunks():
     except Exception as e:
         logger.error(f"❌ [CHUNKS] Failed: {str(e)}")
         return jsonify({'error': str(e)}), 500
+
+@app.route('/test_embedding', methods=['POST'])
+def test_embedding():
+    """Test the embedding function directly for debugging"""
+    try:
+        data = request.get_json()
+        test_texts = data.get('texts', ['This is a test sentence.'])
+        
+        logger.info(f"🧪 [TEST_EMBED] Testing embedding with {len(test_texts)} text(s)")
+        
+        # Get embedding function
+        embedding_func = get_embedding_func()
+        
+        # Test the embedding
+        result = run_async(embedding_func.func(test_texts))
+        
+        return jsonify({
+            'status': 'success',
+            'input_texts': test_texts,
+            'embedding_dim': len(result[0]) if result and len(result) > 0 else 0,
+            'num_embeddings': len(result) if result else 0,
+            'message': 'Embedding function working correctly'
+        })
+        
+    except Exception as e:
+        logger.error(f"❌ [TEST_EMBED] Failed: {str(e)}")
+        import traceback
+        return jsonify({
+            'error': str(e),
+            'traceback': traceback.format_exc()
+        }), 500
 
 @app.route('/analyze_efs_content', methods=['GET'])
 def analyze_efs_content():
