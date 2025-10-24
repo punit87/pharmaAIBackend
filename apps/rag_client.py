@@ -6,7 +6,7 @@ RAG-Anything Server - Optimized for ECS Tasks
 - Proper resource cleanup
 - Memory-efficient caching
 - Fixed async handling matching RAG-Anything reference implementation
-- Using LLM-based table chunking for generic table support (enable_table_processing=True)
+- Custom LLM-based chunking using gpt-4o-mini for tables, lists, bullets, paragraphs, sections, and regular text
 """
 import os
 import time
@@ -21,6 +21,7 @@ from flask import Flask, request, jsonify
 from raganything import RAGAnything, RAGAnythingConfig
 from lightrag.llm.openai import openai_complete_if_cache, openai_embed
 from lightrag.utils import EmbeddingFunc
+from docling.document_converter import DocumentConverter
 
 # Configure logging
 logging.basicConfig(
@@ -41,7 +42,7 @@ _rag_instance = None
 _rag_lock = threading.Lock()
 
 # ============================================================================
-# EVENT LOOP MANAGEMENT (Persistent loop for all async operations)
+# EVENT LOOP MANAGEMENT
 # ============================================================================
 
 def get_event_loop():
@@ -53,7 +54,6 @@ def get_event_loop():
     if _event_loop is None or _event_loop.is_closed():
         logger.info("🔄 [EVENT_LOOP] Creating new event loop...")
         _event_loop = asyncio.new_event_loop()
-        # Run loop in background thread
         loop_thread = threading.Thread(target=_event_loop.run_forever, daemon=True)
         loop_thread.start()
         logger.info(f"🔄 [EVENT_LOOP] Event loop created and started in {time.time() - start_time:.3f}s")
@@ -70,7 +70,6 @@ def run_async(coro):
     try:
         loop = get_event_loop()
         future = asyncio.run_coroutine_threadsafe(coro, loop)
-        # Make timeout configurable
         timeout = int(os.environ.get('ASYNC_TIMEOUT', '300'))
         result = future.result(timeout=timeout)
         
@@ -96,15 +95,15 @@ def cleanup_event_loop():
 atexit.register(cleanup_event_loop)
 
 # ============================================================================
-# ACTIVITY TRACKING (Simplified)
+# ACTIVITY TRACKING
 # ============================================================================
 
 def update_activity():
     """Update activity timestamp for monitoring"""
-    pass  # Simplified - no auto-stop logic
+    pass
 
 # ============================================================================
-# RAG CONFIGURATION (Cached for reuse)
+# RAG CONFIGURATION
 # ============================================================================
 
 @lru_cache(maxsize=1)
@@ -137,7 +136,7 @@ def get_rag_config():
         parser=os.environ.get('PARSER', 'docling'),
         parse_method=os.environ.get('PARSE_METHOD', 'ocr'),
         enable_image_processing=True,
-        enable_table_processing=True,  # Enable LLM-based table chunking for generic table support
+        enable_table_processing=False,  # Disable built-in table chunking
         enable_equation_processing=True
     )
     
@@ -153,27 +152,20 @@ def get_rag_config():
     return config
 
 def get_llm_model_func():
-    """
-    Create LLM model function - SYNCHRONOUS wrapper that returns coroutine
-    This matches the RAG-Anything reference implementation
-    """
+    """Create LLM model function - SYNCHRONOUS wrapper that returns coroutine"""
     start_time = time.time()
     logger.info("🤖 [LLM] Creating LLM model function...")
     
     config = get_api_config()
     
     def llm_func(prompt, system_prompt=None, history_messages=[], **kwargs):
-        """
-        Synchronous function that returns a coroutine
-        RAG-Anything will handle the async execution internally
-        """
+        """Synchronous function that returns a coroutine"""
         llm_start_time = time.time()
         logger.info(f"🤖 [LLM] Starting LLM completion...")
         logger.info(f"🤖 [LLM] Prompt length: {len(prompt)} characters")
         
         max_tokens = int(os.environ.get('MAX_TOKENS', '4000'))
         
-        # Return the coroutine directly - RAG-Anything handles await
         return openai_complete_if_cache(
             "gpt-4o-mini",
             prompt,
@@ -190,29 +182,20 @@ def get_llm_model_func():
     return llm_func
 
 def get_vision_model_func(llm_func):
-    """
-    Create vision model function - SYNCHRONOUS wrapper that returns coroutine
-    This matches the RAG-Anything reference implementation
-    """
+    """Create vision model function - SYNCHRONOUS wrapper that returns coroutine"""
     start_time = time.time()
     config = get_api_config()
     
     def vision_func(prompt, system_prompt=None, history_messages=[], 
                    image_data=None, messages=None, **kwargs):
-        """
-        Synchronous function that returns a coroutine
-        RAG-Anything will handle the async execution internally
-        """
-        # Multimodal VLM enhanced query format
+        """Synchronous function that returns a coroutine"""
         if messages:
             return openai_complete_if_cache(
                 "gpt-4o", "", system_prompt=None, history_messages=[],
                 messages=messages, api_key=config['api_key'], 
                 base_url=config['base_url'], **kwargs
             )
-        # Single image format
         elif image_data:
-            # Build messages list without None values
             vision_messages = []
             if system_prompt:
                 vision_messages.append({"role": "system", "content": system_prompt})
@@ -233,7 +216,6 @@ def get_vision_model_func(llm_func):
                 messages=vision_messages,
                 api_key=config['api_key'], base_url=config['base_url'], **kwargs
             )
-        # Pure text fallback
         else:
             return llm_func(prompt, system_prompt, history_messages, **kwargs)
     
@@ -242,54 +224,30 @@ def get_vision_model_func(llm_func):
     return vision_func
 
 def get_embedding_func():
-    """
-    Create embedding function - handles both sync and async contexts
-    
-    Using text-embedding-ada-002 for Neo4j compatibility:
-    - Dimensions: 1536 (Neo4j standard)
-    - Cost: $0.0001 per 1K tokens (most cost-effective)
-    - Neo4j Support: Full compatibility with vector indexes
-    
-    FIXED: Properly handles input validation and returns coroutine
-    """
+    """Create embedding function - handles both sync and async contexts"""
     start_time = time.time()
     config = get_api_config()
     
     async def safe_embed_async(texts):
-        """
-        Async embedding function that properly formats input for OpenAI API
-        """
+        """Async embedding function that properly formats input for OpenAI API"""
         embed_start = time.time()
         try:
-            # Ensure texts is in the correct format
             if isinstance(texts, str):
-                # Single text - convert to list
                 input_texts = [texts.strip()]
             elif isinstance(texts, list):
-                # Multiple texts - ensure all are strings and not empty
-                input_texts = []
-                for t in texts:
-                    if t is not None:
-                        text_str = str(t).strip()
-                        if text_str:
-                            input_texts.append(text_str)
-                
-                # Fail fast if no valid texts
+                input_texts = [str(t).strip() for t in texts if t is not None and str(t).strip()]
                 if not input_texts:
                     raise ValueError("No valid text inputs provided for embedding")
             else:
                 logger.warning(f"⚠️ [EMBEDDING] Unexpected input type: {type(texts)}, converting to string")
                 input_texts = [str(texts).strip()]
             
-            # Validate we have content
             if not input_texts or not any(input_texts):
                 raise ValueError(f"Empty or invalid text input for embedding: {texts}")
             
-            # Log for debugging
             logger.info(f"📊 [EMBEDDING] Processing {len(input_texts)} text(s)")
             logger.debug(f"📊 [EMBEDDING] First text preview: {input_texts[0][:100]}...")
             
-            # Call the OpenAI embedding API
             result = await openai_embed(
                 texts=input_texts,
                 model="text-embedding-ada-002",
@@ -300,7 +258,6 @@ def get_embedding_func():
             embed_time = time.time() - embed_start
             logger.info(f"✅ [EMBEDDING] Successfully generated {len(result)} embedding(s) in {embed_time:.3f}s")
             
-            # Validate output
             if not result or not isinstance(result, list):
                 raise ValueError(f"Invalid embedding result: {type(result)}")
             
@@ -315,10 +272,7 @@ def get_embedding_func():
             raise e
     
     def safe_embed_sync(texts):
-        """
-        Synchronous wrapper that returns the coroutine
-        RAG-Anything will await it in its own async context
-        """
+        """Synchronous wrapper that returns the coroutine"""
         return safe_embed_async(texts)
     
     exec_time = time.time() - start_time
@@ -330,6 +284,78 @@ def get_embedding_func():
     )
 
 # ============================================================================
+# CUSTOM LLM CHUNKING
+# ============================================================================
+
+async def custom_llm_chunking(markdown_content, doc_id, llm_func):
+    """Custom LLM-based chunking for markdown content using gpt-4o-mini"""
+    start_time = time.time()
+    logger.info("🔪 [CHUNKING] Starting custom LLM chunking...")
+    
+    try:
+        # System prompt to guide LLM in chunking
+        system_prompt = """
+You are an expert document parser. Your task is to analyze markdown content and chunk it into meaningful segments, including tables, lists, bullets, paragraphs, sections, and regular text. For tables, break them down to individual cells with metadata (row, column, table_id). Ensure each chunk is searchable and preserves context. Return a JSON list of chunks with the following structure:
+{
+  "chunks": [
+    {
+      "type": "table_cell" | "list" | "bullet" | "paragraph" | "section" | "text",
+      "content": "string content of the chunk",
+      "metadata": {
+        "doc_id": "string",
+        "chunk_id": "string (unique within doc)",
+        "page_idx": int,
+        "table_id": "string (for table cells)",
+        "row_idx": int (for table cells),
+        "col_idx": int (for table cells),
+        "section_title": "string (if applicable)",
+        "list_index": int (for list items, if applicable)
+      }
+    }
+  ]
+}
+"""
+        # Split markdown into manageable chunks to avoid token limits
+        max_chunk_size = 3000
+        markdown_chunks = [markdown_content[i:i+max_chunk_size] for i in range(0, len(markdown_content), max_chunk_size)]
+        all_chunks = []
+        
+        for chunk_idx, markdown_part in enumerate(markdown_chunks):
+            prompt = f"Analyze the following markdown content and chunk it according to the instructions:\n\n{markdown_part}"
+            logger.info(f"🔪 [CHUNKING] Processing markdown chunk {chunk_idx+1}/{len(markdown_chunks)}")
+            
+            # Call LLM
+            response = await llm_func(
+                prompt=prompt,
+                system_prompt=system_prompt,
+                response_format={"type": "json_object"}
+            )
+            
+            # Parse response
+            try:
+                result = json.loads(response['response'])
+                chunks = result.get('chunks', [])
+                
+                # Add page_idx and doc_id to metadata
+                for chunk in chunks:
+                    chunk['metadata']['doc_id'] = doc_id
+                    chunk['metadata']['page_idx'] = chunk_idx  # Approximate page index
+                    chunk['metadata']['chunk_id'] = f"{doc_id}_{chunk_idx}_{len(all_chunks)}"
+                    all_chunks.append(chunk)
+            except Exception as e:
+                logger.error(f"❌ [CHUNKING] Failed to parse LLM response: {str(e)}")
+                continue
+        
+        exec_time = time.time() - start_time
+        logger.info(f"✅ [CHUNKING] Custom chunking completed in {exec_time:.3f}s with {len(all_chunks)} chunks")
+        return all_chunks
+    
+    except Exception as e:
+        exec_time = time.time() - start_time
+        logger.error(f"❌ [CHUNKING] Custom chunking failed after {exec_time:.3f}s: {str(e)}")
+        raise e
+
+# ============================================================================
 # LAZY RAG INITIALIZATION
 # ============================================================================
 
@@ -339,12 +365,10 @@ def get_rag_instance():
     start_time = time.time()
     logger.info("🚀 [RAG_INIT] Getting RAG instance...")
     
-    # Quick check without lock (optimization)
     if _rag_instance is not None:
         logger.info(f"🚀 [RAG_INIT] Using cached RAG instance in {time.time() - start_time:.3f}s")
         return _rag_instance
     
-    # Double-check with lock
     with _rag_lock:
         if _rag_instance is None:
             logger.info("🚀 [RAG_INIT] Creating new RAG-Anything singleton...")
@@ -413,14 +437,13 @@ def health():
 
 @app.route('/process', methods=['POST'])
 def process_document():
-    """Process document from S3"""
+    """Process document from S3 with custom LLM chunking"""
     start_time = time.time()
     logger.info("📄 [PROCESS] Document processing started...")
     temp_file_path = None
     timing = {}
     
     try:
-        # Validate API configuration first
         config_start = time.time()
         try:
             get_api_config()
@@ -462,65 +485,54 @@ def process_document():
         timing["rag_init_duration"] = round(rag_init_duration, 3)
         logger.info(f"🚀 [PROCESS] RAG initialized in {rag_init_duration:.3f}s")
         
-        # Process document with LLM-based table chunking
-        process_start = time.time()
+        # Parse document to markdown
+        parse_start = time.time()
         parser = os.environ.get('PARSER', 'docling')
         parse_method = os.environ.get('PARSE_METHOD', 'ocr')
+        logger.info(f"🔍 [PROCESS] Parsing with {parser} ({parse_method})")
         
-        logger.info(f"🔍 [PROCESS] Processing with {parser} ({parse_method})")
-        logger.info(f"🔍 [PROCESS] Using LLM-based table chunking for generic table support")
+        # Use RAG-Anything's parser to get markdown
+        parse_result = run_async(rag.parse_document(temp_file_path, parse_method=parse_method))
+        markdown_content = parse_result.get('markdown', '')
+        parse_duration = time.time() - parse_start
+        timing["parse_duration"] = round(parse_duration, 3)
+        logger.info(f"🔍 [PROCESS] Document parsed to markdown in {parse_duration:.3f}s")
         
-        try:
-            # Use RAG-Anything's built-in LLM-based table processing
-            logger.info("🔍 [PROCESS] Processing document with LLM-based table chunking...")
-            result = run_async(rag.process_document_complete(temp_file_path, doc_id=s3_key, parse_method=parse_method))
-            
-            logger.info("✅ [PROCESS] Document processing completed successfully with LLM-based table chunking")
-            
-        except Exception as proc_error:
-            process_duration = time.time() - process_start
-            timing["process_duration"] = round(process_duration, 3)
-            logger.error(f"❌ [PROCESS] Processing error after {process_duration:.3f}s: {str(proc_error)}")
-            
-            # Check if it's an embedding error
-            if "400" in str(proc_error) and "input" in str(proc_error).lower():
-                logger.error("❌ [PROCESS] OpenAI embedding API error - likely malformed input")
-                logger.error("❌ [PROCESS] This suggests the embedding function received invalid data")
-                raise Exception(f"Embedding API error: {str(proc_error)}. Check that text chunks are properly formatted.")
-            else:
-                raise proc_error
+        # Custom LLM chunking
+        chunk_start = time.time()
+        logger.info("🔪 [PROCESS] Starting custom LLM chunking...")
+        llm_func = get_llm_model_func()
+        chunks = run_async(custom_llm_chunking(markdown_content, s3_key, llm_func))
+        chunk_duration = time.time() - chunk_start
+        timing["chunk_duration"] = round(chunk_duration, 3)
+        logger.info(f"🔪 [PROCESS] Custom chunking produced {len(chunks)} chunks in {chunk_duration:.3f}s")
         
-        process_duration = time.time() - process_start
-        timing["process_duration"] = round(process_duration, 3)
-        logger.info(f"🔍 [PROCESS] Document processed in {process_duration:.3f}s")
-        
-        # Cleanup
-        cleanup_start = time.time()
-        if temp_file_path and os.path.exists(temp_file_path):
-            os.remove(temp_file_path)
-        cleanup_time = time.time() - cleanup_start
-        timing["cleanup_duration"] = round(cleanup_time, 3)
-        logger.info(f"🧹 [PROCESS] Cleanup completed in {cleanup_time:.3f}s")
+        # Insert chunks into RAG-Anything
+        insert_start = time.time()
+        content_list = [
+            {
+                'content': chunk['content'],
+                'metadata': chunk['metadata'],
+                'type': chunk['type']
+            } for chunk in chunks
+        ]
+        run_async(rag.insert_content_list(content_list, doc_id=s3_key))
+        insert_duration = time.time() - insert_start
+        timing["insert_duration"] = round(insert_duration, 3)
+        logger.info(f"📥 [PROCESS] Inserted {len(content_list)} chunks in {insert_duration:.3f}s")
         
         total_duration = time.time() - start_time
         timing["total_duration"] = round(total_duration, 3)
         logger.info(f"✅ [PROCESS] Completed in {total_duration:.3f}s")
         
-        response = {
+        return jsonify({
             "status": "success",
-            "result": result,
-            "document": {
-                "bucket": s3_bucket,
-                "key": s3_key,
-                "size_mb": round(file_size, 2)
-            },
-            "parser": {"type": parser, "method": parse_method},
-            "chunking": "llm_based_table_chunking",
+            "bucket": s3_bucket,
+            "key": s3_key,
+            "message": f"Document processed with {len(chunks)} custom chunks",
             "timing": timing
-        }
-        
-        return jsonify(response)
-        
+        })
+    
     except Exception as e:
         total_duration = time.time() - start_time
         timing["total_duration"] = round(total_duration, 3)
@@ -528,57 +540,48 @@ def process_document():
         import traceback
         traceback.print_exc()
         
+        return jsonify({
+            "error": str(e),
+            "timing": timing
+        }), 500
+    
+    finally:
         if temp_file_path and os.path.exists(temp_file_path):
             try:
                 os.remove(temp_file_path)
-            except:
-                pass
-        
-        return jsonify({"error": str(e), "timing": timing}), 500
+                logger.info(f"🗑️ [PROCESS] Cleaned up temp file: {temp_file_path}")
+            except Exception as e:
+                logger.warning(f"⚠️ [PROCESS] Failed to clean up temp file: {str(e)}")
 
 # ============================================================================
-# QUERY
+# QUERY ENDPOINT
 # ============================================================================
 
 @app.route('/query', methods=['POST'])
-def process_query():
-    """Process RAG query"""
+def query():
+    """Query the RAG knowledge base"""
     start_time = time.time()
     logger.info("🔍 [QUERY] Query started...")
     timing = {}
     
     try:
         data = request.get_json()
-        query = data.get('query', '')
-        mode = data.get('mode', 'local')
-        vlm_enhanced = data.get('vlm_enhanced', False)
+        query = data.get('query')
+        mode = data.get('mode', 'hybrid')
         
         if not query:
-            total_time = time.time() - start_time
-            timing["total_duration"] = round(total_time, 3)
+            total_duration = time.time() - start_time
+            timing["total_duration"] = round(total_duration, 3)
             return jsonify({"error": "Missing query", "timing": timing}), 400
         
-        logger.info(f"❓ [QUERY] '{query[:80]}...'")
-        
-        # Get RAG instance
-        rag_init_start = time.time()
         rag = get_rag_instance()
-        rag_init_duration = time.time() - rag_init_start
-        timing["init_duration"] = round(rag_init_duration, 3)
-        logger.info(f"🚀 [QUERY] RAG initialized in {rag_init_duration:.3f}s")
         
-        # Process query
         query_proc_start = time.time()
-        query_kwargs = {'mode': mode}
-        if vlm_enhanced is not None:
-            query_kwargs['vlm_enhanced'] = vlm_enhanced
-        
-        result = run_async(rag.aquery(query, **query_kwargs))
+        result = run_async(rag.aquery(query, mode=mode))
         query_duration = time.time() - query_proc_start
         timing["query_duration"] = round(query_duration, 3)
         logger.info(f"🔍 [QUERY] Query processed in {query_duration:.3f}s")
         
-        # Parse result
         parse_start = time.time()
         if isinstance(result, dict):
             answer = result.get('answer', str(result))
@@ -602,7 +605,6 @@ def process_query():
             "sources": sources,
             "confidence": confidence,
             "mode": mode,
-            "vlm_enhanced": vlm_enhanced,
             "status": "completed",
             "timing": timing
         })
@@ -621,37 +623,29 @@ def process_query():
         }), 500
 
 # ============================================================================
-# MULTIMODAL QUERY
+# MULTIMODAL QUERY ENDPOINT
 # ============================================================================
 
 @app.route('/query_multimodal', methods=['POST'])
-def process_multimodal_query():
-    """Process multimodal RAG query"""
+def query_multimodal():
+    """Query the RAG knowledge base with multimodal content"""
     start_time = time.time()
-    logger.info("🎨 [MULTIMODAL] Starting...")
+    logger.info("🔍 [MULTIMODAL] Multimodal query started...")
     timing = {}
     
     try:
         data = request.get_json()
-        query = data.get('query', '')
+        query = data.get('query')
         multimodal_content = data.get('multimodal_content', [])
         mode = data.get('mode', 'hybrid')
         
         if not query:
-            total_time = time.time() - start_time
-            timing["total_duration"] = round(total_time, 3)
+            total_duration = time.time() - start_time
+            timing["total_duration"] = round(total_duration, 3)
             return jsonify({"error": "Missing query", "timing": timing}), 400
         
-        logger.info(f"❓ [MULTIMODAL] Query with {len(multimodal_content)} items")
-        
-        # Get RAG instance
-        rag_init_start = time.time()
         rag = get_rag_instance()
-        rag_init_duration = time.time() - rag_init_start
-        timing["init_duration"] = round(rag_init_duration, 3)
-        logger.info(f"🚀 [MULTIMODAL] RAG initialized in {rag_init_duration:.3f}s")
         
-        # Process query
         query_proc_start = time.time()
         result = run_async(rag.aquery_with_multimodal(
             query,
@@ -662,7 +656,6 @@ def process_multimodal_query():
         timing["query_duration"] = round(query_duration, 3)
         logger.info(f"🔍 [MULTIMODAL] Query processed in {query_duration:.3f}s")
         
-        # Parse result
         parse_start = time.time()
         if isinstance(result, dict):
             answer = result.get('answer', str(result))
@@ -746,7 +739,6 @@ def analyze_efs():
                 "timing": timing
             }), 404
         
-        # Walk through EFS
         walk_start = time.time()
         for root, dirs, files in os.walk(efs_path):
             for file in files:
@@ -767,7 +759,6 @@ def analyze_efs():
                     analysis['total_files'] += 1
                     analysis['total_size_bytes'] += file_size
                     
-                    # Categorize files
                     if file.endswith('.json'):
                         if 'chunk' in file.lower():
                             analysis['chunks'].append(file_info)
@@ -785,7 +776,6 @@ def analyze_efs():
         timing["efs_walk"] = round(walk_time, 3)
         logger.info(f"🚶 [EFS_ANALYSIS] EFS walked in {walk_time:.3f}s")
         
-        # Sample chunks
         sample_start = time.time()
         sample_chunks = []
         for chunk_file in analysis['chunks'][:5]:
@@ -845,8 +835,6 @@ def get_chunks():
             'total_chunks': 0
         }
         
-        # Read various chunk files
-        read_start = time.time()
         chunk_files = {
             'text_chunks': f"{rag_output_dir}/kv_store_text_chunks.json",
             'entity_chunks': f"{rag_output_dir}/kv_store_entity_chunks.json",
@@ -854,6 +842,7 @@ def get_chunks():
             'vdb_chunks': f"{rag_output_dir}/vdb_chunks.json"
         }
         
+        read_start = time.time()
         for key, path in chunk_files.items():
             if os.path.exists(path):
                 with open(path, 'r', encoding='utf-8') as f:
@@ -894,14 +883,12 @@ def test_embedding():
         
         logger.info(f"🧪 [TEST_EMBED] Testing embedding with {len(test_texts)} text(s)")
         
-        # Get embedding function
         func_start = time.time()
         embedding_func = get_embedding_func()
         func_time = time.time() - func_start
         timing["get_func"] = round(func_time, 3)
         logger.info(f"📊 [TEST_EMBED] Embedding func retrieved in {func_time:.3f}s")
         
-        # Test the embedding - func returns a coroutine
         embed_start = time.time()
         result = run_async(embedding_func.func(test_texts))
         embed_time = time.time() - embed_start
@@ -955,7 +942,6 @@ def analyze_efs_content():
         timing["config_load"] = round(config_time, 3)
         logger.info(f"⚙️ [EFS_CONTENT] Config loaded in {config_time:.3f}s")
         
-        # Search for file
         search_start = time.time()
         file_path = None
         for root, dirs, files in os.walk(efs_path):
@@ -972,7 +958,6 @@ def analyze_efs_content():
             timing["total_duration"] = round(total_time, 3)
             return jsonify({'error': f'File not found: {filename}', "timing": timing}), 404
         
-        # Read file
         read_start = time.time()
         file_ext = os.path.splitext(filename)[1].lower()
         
@@ -1018,7 +1003,7 @@ def analyze_efs_content():
 
 @app.route('/delete_all_data', methods=['POST'])
 def delete_all_data():
-    """Delete all generated data files from EFS (logs, md, chunk jsons, graphs, embeddings, etc.)"""
+    """Delete all generated data files from EFS"""
     start_time = time.time()
     logger.info("🗑️ [DELETE] Starting cleanup of all EFS data...")
     timing = {}
@@ -1042,9 +1027,7 @@ def delete_all_data():
         deleted_files = 0
         deleted_directories = 0
         
-        # Walk through all files and directories in EFS
         for root, dirs, files in os.walk(efs_path, topdown=False):
-            # Delete all files
             for file in files:
                 file_path = os.path.join(root, file)
                 try:
@@ -1054,7 +1037,6 @@ def delete_all_data():
                 except Exception as e:
                     logger.error(f"❌ [DELETE] Failed to delete file {file_path}: {str(e)}")
             
-            # Delete empty directories (except root)
             for dir_name in dirs:
                 dir_path = os.path.join(root, dir_name)
                 try:
@@ -1065,7 +1047,6 @@ def delete_all_data():
                 except Exception as e:
                     logger.error(f"❌ [DELETE] Failed to delete directory {dir_path}: {str(e)}")
         
-        # Clear any cached RAG instance to force reinitialization
         global _rag_instance
         _rag_instance = None
         logger.info("🔄 [DELETE] Cleared cached RAG instance")
