@@ -486,7 +486,36 @@ def process_document():
                 # Check if item is a dictionary and has the expected structure
                 if not isinstance(item, dict):
                     logger.warning(f"⚠️ [PROCESS] Skipping non-dict item: {type(item)}")
-                    modified_content_list.append(item)
+                    # Convert non-dict items to dict format for RAG-Anything compatibility
+                    if isinstance(item, str):
+                        text_item = {
+                            'type': 'text',
+                            'title': 'Text Content',
+                            'body': item,
+                            'source': '',
+                            'page': 1
+                        }
+                        modified_content_list.append(text_item)
+                    elif isinstance(item, list):
+                        # Convert list to text representation
+                        text_item = {
+                            'type': 'text',
+                            'title': 'List Content',
+                            'body': str(item),
+                            'source': '',
+                            'page': 1
+                        }
+                        modified_content_list.append(text_item)
+                    else:
+                        # Convert other types to text representation
+                        text_item = {
+                            'type': 'text',
+                            'title': 'Content',
+                            'body': str(item),
+                            'source': '',
+                            'page': 1
+                        }
+                        modified_content_list.append(text_item)
                     continue
                     
                 if item.get('type') == 'table':
