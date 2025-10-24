@@ -137,7 +137,7 @@ def get_rag_config():
         parser=os.environ.get('PARSER', 'docling'),
         parse_method=os.environ.get('PARSE_METHOD', 'ocr'),
         enable_image_processing=True,
-        enable_table_processing=True,
+        enable_table_processing=False,
         enable_equation_processing=True
     )
     
