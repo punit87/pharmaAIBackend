@@ -956,11 +956,14 @@ def get_chunks():
             # Walk through all document directories
             for root, dirs, files in os.walk(rag_output_dir):
                 for file in files:
-                    if file.endswith('.json'):
+                    if file.endswith('.json') or file.endswith('.md'):
                         file_path = os.path.join(root, file)
                         try:
                             with open(file_path, 'r', encoding='utf-8') as f:
-                                content = json.load(f)
+                                if file.endswith('.json'):
+                                    content = json.load(f)
+                                else:  # .md files
+                                    content = f.read()
                                 
                                 # Extract document ID from path
                                 rel_path = os.path.relpath(file_path, rag_output_dir)
@@ -975,16 +978,24 @@ def get_chunks():
                                 chunks_data['documents'][doc_id]['files'][file] = {
                                     'path': file_path,
                                     'size': len(str(content)),
-                                    'content': content
+                                    'content': content,
+                                    'type': 'json' if file.endswith('.json') else 'markdown'
                                 }
                                 
                                 # Count chunks if it's a structured chunk file
-                                if isinstance(content, list):
-                                    chunks_data['documents'][doc_id]['total_chunks'] += len(content)
-                                    chunks_data['total_chunks'] += len(content)
-                                elif isinstance(content, dict) and 'chunks' in content:
-                                    chunks_data['documents'][doc_id]['total_chunks'] += len(content['chunks'])
-                                    chunks_data['total_chunks'] += len(content['chunks'])
+                                if file.endswith('.json'):
+                                    if isinstance(content, list):
+                                        chunks_data['documents'][doc_id]['total_chunks'] += len(content)
+                                        chunks_data['total_chunks'] += len(content)
+                                    elif isinstance(content, dict) and 'chunks' in content:
+                                        chunks_data['documents'][doc_id]['total_chunks'] += len(content['chunks'])
+                                        chunks_data['total_chunks'] += len(content['chunks'])
+                                else:  # .md files
+                                    # For markdown files, count lines as a rough chunk estimate
+                                    lines = content.split('\n')
+                                    non_empty_lines = [line for line in lines if line.strip()]
+                                    chunks_data['documents'][doc_id]['total_chunks'] += len(non_empty_lines)
+                                    chunks_data['total_chunks'] += len(non_empty_lines)
                                     
                         except Exception as e:
                             logger.warning(f"⚠️ [CHUNKS] Failed to read {file_path}: {str(e)}")
