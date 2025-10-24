@@ -197,7 +197,7 @@ def get_llm_model_func():
     
     def llm_func(prompt, system_prompt=None, history_messages=[], **kwargs):
         """Synchronous function that returns a coroutine"""
-        # Safeguard: Ensure prompt is never None
+        # Safeguard: Ensure prompt is never None - trigger build
         if prompt is None:
             prompt = ""
             logger.warning("⚠️ [LLM] Prompt was None, converted to empty string")
