@@ -333,11 +333,26 @@ You are an expert document parser. Your task is to analyze markdown content and 
             
             # Parse response
             try:
-                result = json.loads(response['response'])
+                # Handle different response formats
+                if isinstance(response, dict):
+                    if 'response' in response:
+                        response_text = response['response']
+                    elif 'choices' in response:
+                        response_text = response['choices'][0]['message']['content']
+                    else:
+                        response_text = str(response)
+                else:
+                    response_text = str(response)
+                
+                result = json.loads(response_text)
                 chunks = result.get('chunks', [])
                 
                 # Add page_idx and doc_id to metadata
                 for chunk in chunks:
+                    # Ensure metadata exists
+                    if 'metadata' not in chunk:
+                        chunk['metadata'] = {}
+                    
                     chunk['metadata']['doc_id'] = doc_id
                     chunk['metadata']['page_idx'] = chunk_idx  # Approximate page index
                     chunk['metadata']['chunk_id'] = f"{doc_id}_{chunk_idx}_{len(all_chunks)}"
@@ -458,8 +473,8 @@ def process_document():
         logger.info(f"⚙️ [PROCESS] Config validated in {config_time:.3f}s")
         
         data = request.get_json()
-        s3_bucket = data.get('bucket')
-        s3_key = data.get('key')
+        s3_bucket = data.get('bucket') or data.get('s3_bucket')
+        s3_key = data.get('key') or data.get('s3_key')
         
         if not s3_bucket or not s3_key:
             total_time = time.time() - start_time
