@@ -6,7 +6,7 @@ RAG-Anything Server - Optimized for ECS Tasks
 - Proper resource cleanup
 - Memory-efficient caching
 - Fixed async handling matching RAG-Anything reference implementation
-- Using standard RAG-Anything chunking approach (no custom LLM chunking)
+- Using LLM-based table chunking for generic table support (enable_table_processing=True)
 """
 import os
 import time
@@ -16,8 +16,6 @@ import asyncio
 import threading
 import atexit
 import logging
-import pandas as pd
-import io
 from functools import lru_cache
 from flask import Flask, request, jsonify
 from raganything import RAGAnything, RAGAnythingConfig
@@ -139,7 +137,7 @@ def get_rag_config():
         parser=os.environ.get('PARSER', 'docling'),
         parse_method=os.environ.get('PARSE_METHOD', 'ocr'),
         enable_image_processing=True,
-        enable_table_processing=False,
+        enable_table_processing=True,  # Enable LLM-based table chunking for generic table support
         enable_equation_processing=True
     )
     
@@ -464,153 +462,20 @@ def process_document():
         timing["rag_init_duration"] = round(rag_init_duration, 3)
         logger.info(f"🚀 [PROCESS] RAG initialized in {rag_init_duration:.3f}s")
         
-        # Process document with custom table chunking
+        # Process document with LLM-based table chunking
         process_start = time.time()
         parser = os.environ.get('PARSER', 'docling')
         parse_method = os.environ.get('PARSE_METHOD', 'ocr')
         
         logger.info(f"🔍 [PROCESS] Processing with {parser} ({parse_method})")
-        logger.info(f"🔍 [PROCESS] Using custom table chunking approach")
+        logger.info(f"🔍 [PROCESS] Using LLM-based table chunking for generic table support")
         
         try:
-            # Step 1: Parse document to get content_list
-            logger.info("📋 [PROCESS] Parsing document to get content list...")
-            content_list = run_async(rag.parse_document(temp_file_path, parse_method=parse_method))
-            logger.info(f"📋 [PROCESS] Parsed {len(content_list)} content items")
+            # Use RAG-Anything's built-in LLM-based table processing
+            logger.info("🔍 [PROCESS] Processing document with LLM-based table chunking...")
+            result = run_async(rag.process_document_complete(temp_file_path, doc_id=s3_key, parse_method=parse_method))
             
-            # Debug: Log the structure of content_list
-            logger.info(f"🔍 [PROCESS] Content list structure:")
-            for i, item in enumerate(content_list):
-                logger.info(f"🔍 [PROCESS] Item {i}: type={type(item)}, content={str(item)[:100]}...")
-            
-            # Additional debugging: Check if content_list is what we expect
-            logger.info(f"🔍 [PROCESS] Content list type: {type(content_list)}")
-            if hasattr(content_list, '__iter__'):
-                logger.info(f"🔍 [PROCESS] Content list is iterable with {len(content_list)} items")
-            else:
-                logger.warning(f"⚠️ [PROCESS] Content list is not iterable: {type(content_list)}")
-            
-            # FIXED: Handle the actual structure returned by rag.parse_document()
-            # The actual content blocks are nested inside the first item (which is a list)
-            actual_content_blocks = []
-            if len(content_list) > 0 and isinstance(content_list[0], list):
-                # The first item contains the actual content blocks
-                actual_content_blocks = content_list[0]
-                logger.info(f"🔍 [PROCESS] Found {len(actual_content_blocks)} actual content blocks in nested structure")
-            else:
-                # Fallback: use content_list as-is
-                actual_content_blocks = content_list
-                logger.info(f"🔍 [PROCESS] Using content_list directly as content blocks")
-            
-            # Step 2: Convert table items to text items
-            modified_content_list = []
-            table_count = 0
-            
-            for item in actual_content_blocks:
-                # Check if item is a dictionary and has the expected structure
-                if not isinstance(item, dict):
-                    logger.warning(f"⚠️ [PROCESS] Skipping non-dict item: {type(item)}")
-                    # Convert non-dict items to dict format for RAG-Anything compatibility
-                    if isinstance(item, str):
-                        text_item = {
-                            'type': 'text',
-                            'title': 'Text Content',
-                            'body': item,
-                            'source': '',
-                            'page': 1
-                        }
-                        modified_content_list.append(text_item)
-                    elif isinstance(item, list):
-                        # Convert list to text representation
-                        text_item = {
-                            'type': 'text',
-                            'title': 'List Content',
-                            'body': str(item),
-                            'source': '',
-                            'page': 1
-                        }
-                        modified_content_list.append(text_item)
-                    else:
-                        # Convert other types to text representation
-                        text_item = {
-                            'type': 'text',
-                            'title': 'Content',
-                            'body': str(item),
-                            'source': '',
-                            'page': 1
-                        }
-                        modified_content_list.append(text_item)
-                    continue
-                    
-                if item.get('type') == 'table':
-                    table_count += 1
-                    logger.info(f"📊 [PROCESS] Processing table {table_count}: {item.get('title', 'Untitled')}")
-                    
-                    # Extract table body (markdown format)
-                    table_body = item.get('body', '')
-                    if not table_body:
-                        logger.warning(f"⚠️ [PROCESS] Table {table_count} has no body content")
-                        continue
-                    
-                    try:
-                        # Parse markdown table with pandas
-                        df = pd.read_csv(io.StringIO(table_body), sep='|', skipinitialspace=True)
-                        
-                        # Clean up the dataframe (remove empty columns and rows)
-                        df = df.dropna(how='all').dropna(axis=1, how='all')
-                        
-                        # Remove extra whitespace from column names
-                        df.columns = df.columns.str.strip()
-                        
-                        logger.info(f"📊 [PROCESS] Table {table_count}: {len(df)} rows, {len(df.columns)} columns")
-                        
-                        # Convert each row to a text chunk
-                        for idx, row in df.iterrows():
-                            # Create a readable Q&A format
-                            if len(df.columns) >= 2:
-                                # Assume first column is question, second is answer
-                                question = str(row.iloc[0]).strip()
-                                answer = str(row.iloc[1]).strip()
-                                
-                                if question and answer and question != 'nan' and answer != 'nan':
-                                    # Create text chunk in Q&A format
-                                    qa_text = f"Question: {question}\nAnswer: {answer}"
-                                    
-                                    text_item = {
-                                        'type': 'text',
-                                        'title': f"Q&A Row {idx + 1}",
-                                        'body': qa_text,
-                                        'source': item.get('source', ''),
-                                        'page': item.get('page', 1)
-                                    }
-                                    modified_content_list.append(text_item)
-                                    
-                                    logger.info(f"📝 [PROCESS] Created Q&A chunk: {question[:50]}...")
-                        
-                        logger.info(f"✅ [PROCESS] Converted table {table_count} to {len(df)} Q&A chunks")
-                        
-                    except Exception as table_error:
-                        logger.error(f"❌ [PROCESS] Failed to process table {table_count}: {str(table_error)}")
-                        # Fallback: add original table as text
-                        text_item = {
-                            'type': 'text',
-                            'title': item.get('title', 'Table'),
-                            'body': table_body,
-                            'source': item.get('source', ''),
-                            'page': item.get('page', 1)
-                        }
-                        modified_content_list.append(text_item)
-                else:
-                    # Keep non-table items as-is
-                    modified_content_list.append(item)
-            
-            logger.info(f"📊 [PROCESS] Processed {table_count} tables, created {len(modified_content_list)} total chunks")
-            
-            # Step 3: Insert modified content list
-            logger.info("💾 [PROCESS] Inserting modified content list...")
-            result = run_async(rag.insert_content_list(modified_content_list, doc_id=s3_key))
-            
-            logger.info("✅ [PROCESS] Document processing completed successfully")
+            logger.info("✅ [PROCESS] Document processing completed successfully with LLM-based table chunking")
             
         except Exception as proc_error:
             process_duration = time.time() - process_start
@@ -650,7 +515,7 @@ def process_document():
                 "size_mb": round(file_size, 2)
             },
             "parser": {"type": parser, "method": parse_method},
-            "chunking": "custom_table_chunking",
+            "chunking": "llm_based_table_chunking",
             "timing": timing
         }
         

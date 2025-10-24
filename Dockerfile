@@ -42,7 +42,7 @@ RUN apt-get update && \
 
 # Install Python dependencies
 # Install RAG-Anything with all extensions (includes most dependencies)
-RUN pip install --no-cache-dir 'raganything[all]' boto3 flask pandas
+RUN pip install --no-cache-dir 'raganything[all]' boto3 flask
 
 # Install Docling with CPU-only PyTorch and pytesseract
 RUN pip install --no-cache-dir docling pytesseract --extra-index-url https://download.pytorch.org/whl/cpu
@@ -57,7 +57,6 @@ RUN python3 -c "import raganything; print('RAG-Anything installed successfully')
     python3 -c "import pytesseract; print('pytesseract installed successfully')" && \
     python3 -c "import flask; print('Flask installed successfully')" && \
     python3 -c "import boto3; print('Boto3 installed successfully')" && \
-    python3 -c "import pandas; print('Pandas installed successfully')" && \
     echo "📦 [DOCKER] Models downloaded to:" && \
     ls -la /opt/models/ && \
     echo "📦 [DOCKER] Model files count: $(find /opt/models/ -type f | wc -l)"
