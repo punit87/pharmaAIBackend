@@ -319,9 +319,14 @@ def get_embedding_func():
             # Check if any text is non-empty (avoid numpy array comparison issues)
             has_valid_text = False
             for text in input_texts:
-                if text and str(text).strip():
-                    has_valid_text = True
-                    break
+                try:
+                    text_str = str(text).strip()
+                    if text_str:  # Use string comparison to avoid numpy array issues
+                        has_valid_text = True
+                        break
+                except Exception:
+                    # Skip problematic entries
+                    continue
             
             if not has_valid_text:
                 raise ValueError(f"No valid non-empty text input for embedding: {texts}")
