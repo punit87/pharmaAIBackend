@@ -289,12 +289,26 @@ def get_embedding_func():
         """Async embedding function that properly formats input for OpenAI API"""
         embed_start = time.time()
         try:
+            # Handle different input types more robustly
             if isinstance(texts, str):
                 input_texts = [texts.strip()]
             elif isinstance(texts, list):
-                input_texts = [str(t).strip() for t in texts if t is not None and str(t).strip()]
+                # Convert all elements to strings and filter out empty ones
+                input_texts = []
+                for t in texts:
+                    if t is not None:
+                        text_str = str(t).strip()
+                        if text_str:  # Only add non-empty strings
+                            input_texts.append(text_str)
                 if not input_texts:
                     raise ValueError("No valid text inputs provided for embedding")
+            elif hasattr(texts, '__iter__') and not isinstance(texts, str):
+                # Handle numpy arrays, tuples, etc.
+                try:
+                    input_texts = [str(t).strip() for t in texts if t is not None and str(t).strip()]
+                except Exception as e:
+                    logger.warning(f"⚠️ [EMBEDDING] Failed to iterate over {type(texts)}: {e}")
+                    input_texts = [str(texts).strip()]
             else:
                 logger.warning(f"⚠️ [EMBEDDING] Unexpected input type: {type(texts)}, converting to string")
                 input_texts = [str(texts).strip()]
@@ -783,11 +797,11 @@ def query():
             result = run_async(rag.aquery(query, mode=mode))
         except Exception as e:
             logger.error(f"❌ [QUERY] Query processing failed: {str(e)}")
-            # If VLM processing fails, try with a simpler mode
+            # If VLM processing fails, try with hybrid mode again (embedding fix should resolve the issue)
             if "expected string or bytes-like object, got 'NoneType'" in str(e):
-                logger.info("🔄 [QUERY] Retrying with local mode...")
+                logger.info("🔄 [QUERY] Retrying with hybrid mode (embedding fix)...")
                 try:
-                    result = run_async(rag.aquery(query, mode="local"))
+                    result = run_async(rag.aquery(query, mode="hybrid"))
                 except Exception as retry_e:
                     logger.error(f"❌ [QUERY] Retry also failed: {str(retry_e)}")
                     result = None
