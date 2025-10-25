@@ -299,8 +299,18 @@ def get_embedding_func():
                 logger.warning(f"⚠️ [EMBEDDING] Unexpected input type: {type(texts)}, converting to string")
                 input_texts = [str(texts).strip()]
             
-            if not input_texts or not any(input_texts):
-                raise ValueError(f"Empty or invalid text input for embedding: {texts}")
+            if not input_texts:
+                raise ValueError(f"Empty text input for embedding: {texts}")
+            
+            # Check if any text is non-empty (avoid numpy array comparison issues)
+            has_valid_text = False
+            for text in input_texts:
+                if text and str(text).strip():
+                    has_valid_text = True
+                    break
+            
+            if not has_valid_text:
+                raise ValueError(f"No valid non-empty text input for embedding: {texts}")
             
             logger.info(f"📊 [EMBEDDING] Processing {len(input_texts)} text(s)")
             logger.debug(f"📊 [EMBEDDING] First text preview: {input_texts[0][:100]}...")
@@ -775,9 +785,9 @@ def query():
             logger.error(f"❌ [QUERY] Query processing failed: {str(e)}")
             # If VLM processing fails, try with a simpler mode
             if "expected string or bytes-like object, got 'NoneType'" in str(e):
-                logger.info("🔄 [QUERY] Retrying with text-only mode...")
+                logger.info("🔄 [QUERY] Retrying with local mode...")
                 try:
-                    result = run_async(rag.aquery(query, mode="text"))
+                    result = run_async(rag.aquery(query, mode="local"))
                 except Exception as retry_e:
                     logger.error(f"❌ [QUERY] Retry also failed: {str(retry_e)}")
                     result = None
