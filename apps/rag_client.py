@@ -944,7 +944,7 @@ def query():
         logger.info("🔍 [QUERY] Step 1: Parsing request...")
         data = request.get_json()
         query = data.get('query')
-        mode = data.get('mode', 'naive')  # Default to naive mode to avoid VLM issues (can use 'hybrid' or 'local' too)
+        mode = data.get('mode', 'hybrid')  # Default to hybrid mode for full RAG functionality
         
         # Safeguard: Ensure query is never None or empty
         if query is None:
@@ -997,14 +997,15 @@ def query():
             import traceback
             logger.error(f"❌ [QUERY] Traceback: {traceback.format_exc()}")
             
-            # If VLM processing fails, try with hybrid mode again (embedding fix should resolve the issue)
-            if "expected string or bytes-like object, got 'NoneType'" in str(e):
-                logger.info("🔄 [QUERY] Retrying with hybrid mode (embedding fix)...")
+            # If VLM processing fails, retry with naive mode (no VLM) as fallback
+            if "expected string or bytes-like object, got 'NoneType'" in str(e) or "VLM" in str(e):
+                logger.warning(f"⚠️ [QUERY] VLM processing failed with hybrid mode, retrying with naive mode (no VLM)...")
                 try:
-                    result = run_async(rag.aquery(query, mode="hybrid"))
-                    logger.info(f"🔄 [QUERY] Retry SUCCESS")
+                    logger.info(f"🔄 [QUERY] Retrying with naive mode to avoid VLM issues...")
+                    result = run_async(rag.aquery(query, mode="naive"))
+                    logger.info(f"✅ [QUERY] Retry SUCCESS: Used naive mode instead")
                 except Exception as retry_e:
-                    logger.error(f"❌ [QUERY] Retry FAILED: {str(retry_e)}")
+                    logger.error(f"❌ [QUERY] Retry also FAILED: {str(retry_e)}")
                     result = None
             else:
                 result = None
