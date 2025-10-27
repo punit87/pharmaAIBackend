@@ -18,6 +18,7 @@ import atexit
 import logging
 from functools import lru_cache
 from flask import Flask, request, jsonify
+from flask_cors import CORS
 from raganything import RAGAnything, RAGAnythingConfig
 from lightrag import LightRAG
 from lightrag.llm.openai import openai_complete_if_cache, openai_embed
@@ -38,6 +39,15 @@ logging.basicConfig(
 logger = logging.getLogger(__name__)
 
 app = Flask(__name__)
+
+# Enable CORS for all routes
+CORS(app, resources={
+    r"/*": {
+        "origins": "*",  # Allow all origins for now
+        "methods": ["GET", "POST", "OPTIONS"],
+        "allow_headers": ["Content-Type", "Authorization"]
+    }
+})
 
 # Global state management
 _event_loop = None

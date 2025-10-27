@@ -46,7 +46,7 @@ RUN apt-get update && \
 
 # Install Python dependencies
 # Install RAG-Anything with all extensions (includes most dependencies)
-RUN pip install --no-cache-dir 'raganything[all]' boto3 flask
+RUN pip install --no-cache-dir 'raganything[all]' boto3 flask flask-cors
 
 # Install Docling with CPU-only PyTorch and pytesseract
 RUN pip install --no-cache-dir docling pytesseract --extra-index-url https://download.pytorch.org/whl/cpu
