@@ -361,6 +361,18 @@ def get_embedding_func():
             # Check validity of result (avoid numpy array boolean comparison issues)
             if result is None:
                 raise ValueError("Embedding result is None")
+            
+            # Convert numpy arrays to Python lists
+            try:
+                import numpy as np
+                if isinstance(result, np.ndarray):
+                    result = result.tolist()
+                    logger.debug("📊 [EMBEDDING] Converted numpy array to list")
+                elif not isinstance(result, list):
+                    raise ValueError(f"Invalid embedding result type: {type(result)}")
+            except ImportError:
+                pass  # numpy not available, skip conversion
+            
             if not isinstance(result, list):
                 raise ValueError(f"Invalid embedding result type: {type(result)}")
             if len(result) == 0:
