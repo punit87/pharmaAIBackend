@@ -296,16 +296,29 @@ def get_embedding_func():
                 # Convert all elements to strings and filter out empty ones
                 input_texts = []
                 for t in texts:
-                    if t is not None:
-                        text_str = str(t).strip()
-                        if text_str:  # Only add non-empty strings
-                            input_texts.append(text_str)
+                    try:
+                        if t is not None:
+                            text_str = str(t).strip()
+                            # Use len() to check if string is non-empty to avoid numpy array comparison issues
+                            if len(text_str) > 0:
+                                input_texts.append(text_str)
+                    except Exception:
+                        # Skip problematic entries
+                        continue
                 if not input_texts:
                     raise ValueError("No valid text inputs provided for embedding")
             elif hasattr(texts, '__iter__') and not isinstance(texts, str):
                 # Handle numpy arrays, tuples, etc.
                 try:
-                    input_texts = [str(t).strip() for t in texts if t is not None and str(t).strip()]
+                    input_texts = []
+                    for t in texts:
+                        try:
+                            if t is not None:
+                                text_str = str(t).strip()
+                                if len(text_str) > 0:  # Use len() to avoid numpy array comparison
+                                    input_texts.append(text_str)
+                        except Exception:
+                            continue
                 except Exception as e:
                     logger.warning(f"⚠️ [EMBEDDING] Failed to iterate over {type(texts)}: {e}")
                     input_texts = [str(texts).strip()]
@@ -321,7 +334,7 @@ def get_embedding_func():
             for text in input_texts:
                 try:
                     text_str = str(text).strip()
-                    if text_str:  # Use string comparison to avoid numpy array issues
+                    if len(text_str) > 0:  # Use len() to avoid numpy array comparison issues
                         has_valid_text = True
                         break
                 except Exception:
