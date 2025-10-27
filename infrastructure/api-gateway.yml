@@ -87,16 +87,17 @@ Resources:
       HttpMethod: OPTIONS
       AuthorizationType: NONE
       Integration:
-        Type: AWS
-        IntegrationHttpMethod: POST
-        Uri: !Sub 'arn:aws:apigateway:${AWS::Region}:lambda:path/2015-03-31/functions/${RagQueryFunction}/invocations'
-        PassthroughBehavior: WHEN_NO_MATCH
+        Type: MOCK
+        RequestTemplates:
+          application/json: '{"statusCode": 200}'
         IntegrationResponses:
           - StatusCode: 200
             ResponseParameters:
               method.response.header.Access-Control-Allow-Origin: "'*'"
               method.response.header.Access-Control-Allow-Methods: "'OPTIONS,POST'"
-              method.response.header.Access-Control-Allow-Headers: "'Content-Type'"
+              method.response.header.Access-Control-Allow-Headers: "'Content-Type,Authorization'"
+            ResponseTemplates:
+              application/json: ''
       MethodResponses:
         - StatusCode: 200
           ResponseParameters:
