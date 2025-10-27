@@ -47,42 +47,38 @@ Implemented **asynchronous document processing** to eliminate timeout issues and
 3. API returns immediately: "accepted"
 4. Background thread:
    - Downloads PDF
-   - Parses with Docling
-   - Simple text chunking (instant) OR LLM chunking (if enabled)
-   - Inserts into LightRAG
+   - Calls rag.insert_document()
+   - RAG-Anything handles:
+     - Parse with Docling
+     - Chunk with Docling's native chunking
+     - Insert into LightRAG
    - Logs completion
 ```
 
-## Chunking Methods
+## How It Works
 
-### Default: RAG-Anything Native Chunks (Recommended)
-Uses structured chunks directly from RAG-Anything/Docling parsing:
+### RAG-Anything's Built-in Processing
+The code now uses `rag.insert_document()` which handles everything internally:
+
 ```python
-# Extract native chunks from parse_result
-for element in structured_data:
-    chunks.append({
-        'type': 'text',
-        'content': element.get('text', ''),
-        'metadata': {
-            'doc_id': s3_key,
-            'page_idx': element.get('page_idx', 0),
-            'element_type': element.get('type')
-        }
-    })
-```
-**Benefits**: Preserves document structure, page numbers, element types
-
-### Optional: LLM Chunking (Intelligent)
-Uses GPT to intelligently chunk content - slower but more semantic:
-```python
-# Enable by setting environment variable
-USE_LLM_CHUNKING=true
+run_async(rag.insert_document(temp_file_path, doc_id=s3_key))
 ```
 
-To use LLM chunking, set the environment variable when starting the container:
-```bash
-docker run -e USE_LLM_CHUNKING=true ...
-```
+**What RAG-Anything Does**:
+1. ✅ Parses document with Docling (OCR, tables, text extraction)
+2. ✅ Creates chunks from Docling's structured output
+3. ✅ Inserts chunks into LightRAG's vector store
+4. ✅ Handles all metadata (page numbers, element types, etc.)
+
+**No manual chunking needed!** RAG-Anything/Docling does it all.
+
+### Legacy Code (Kept for Reference)
+
+The code still contains:
+- `custom_llm_chunking()` - available if needed later
+- `simple_chunking()` - fallback chunking method
+
+These are kept for future use but not currently invoked.
 
 ## Testing
 
