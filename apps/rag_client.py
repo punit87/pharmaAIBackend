@@ -686,10 +686,20 @@ def process_document_background(bucket, key, s3_key):
         
         logger.info(f"🔍 [BG_PROCESS] Parsed to markdown")
         
-        # Use simple chunking instead of LLM-based (to avoid timeout)
-        logger.info("🔪 [BG_PROCESS] Starting simple chunking...")
-        chunks = simple_chunking(markdown_content, s3_key)
-        logger.info(f"🔪 [BG_PROCESS] Created {len(chunks)} chunks")
+        # Choose chunking method based on environment variable
+        use_llm_chunking = os.environ.get('USE_LLM_CHUNKING', 'false').lower() == 'true'
+        
+        if use_llm_chunking:
+            # Use LLM-based chunking (slower but more intelligent)
+            logger.info("🔪 [BG_PROCESS] Starting LLM-based chunking...")
+            llm_func = get_llm_model_func()
+            chunks = run_async(custom_llm_chunking(markdown_content, s3_key, llm_func))
+            logger.info(f"🔪 [BG_PROCESS] LLM chunking created {len(chunks)} chunks")
+        else:
+            # Use simple text-based chunking (fast and reliable)
+            logger.info("🔪 [BG_PROCESS] Starting simple chunking...")
+            chunks = simple_chunking(markdown_content, s3_key)
+            logger.info(f"🔪 [BG_PROCESS] Simple chunking created {len(chunks)} chunks")
         
         # Insert chunks into LightRAG
         content_list = []
