@@ -157,12 +157,8 @@ Resources:
         S3Bucket: !Sub '${S3Bucket}'
         S3Key: !Sub 'lambda-packages/rag_query.zip'
       Role: !GetAtt LambdaExecutionRole.Arn
-      VpcConfig:
-        SecurityGroupIds:
-          - !Ref LambdaSecurityGroup
-        SubnetIds:
-          - !Ref PublicSubnet1
-          - !Ref PublicSubnet2
+      # No VPC config - Lambda only needs internet access to reach internet-facing ALB
+      # This avoids the need for NAT Gateway (~$32/month)
       Layers:
         - !Ref RequestsLayer
       Timeout: 300
