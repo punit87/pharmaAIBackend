@@ -5,6 +5,19 @@ import requests
 import time
 
 def lambda_handler(event, context):
+    # Handle CORS preflight OPTIONS request
+    if event.get('httpMethod') == 'OPTIONS':
+        return {
+            'statusCode': 200,
+            'headers': {
+                'Access-Control-Allow-Origin': '*',
+                'Access-Control-Allow-Methods': 'OPTIONS, POST',
+                'Access-Control-Allow-Headers': 'Content-Type',
+                'Access-Control-Max-Age': '86400'
+            },
+            'body': ''
+        }
+    
     try:
         # Parse the query from the event
         if 'body' in event:
