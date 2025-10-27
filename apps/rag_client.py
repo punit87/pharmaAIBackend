@@ -946,14 +946,25 @@ def query():
         query = data.get('query')
         mode = data.get('mode', 'hybrid')  # Default to hybrid mode for full RAG functionality
         
-        logger.info(f"🔍 [QUERY] Query: {query}")
-        logger.info(f"🔍 [QUERY] Mode: {mode}")
+        # Safeguard: Ensure query is never None or empty
+        if query is None:
+            query = ""
+            logger.warning("⚠️ [QUERY] Query was None, converted to empty string")
+        elif not isinstance(query, str):
+            query = str(query)
+            logger.warning(f"⚠️ [QUERY] Query was {type(query)}, converted to string")
+        
+        # Trim whitespace
+        query = query.strip()
         
         if not query:
             total_duration = time.time() - start_time
             timing["total_duration"] = round(total_duration, 3)
-            logger.error(f"❌ [QUERY] Missing query parameter")
+            logger.error(f"❌ [QUERY] Query is empty after processing")
             return jsonify({"error": "Missing query", "timing": timing}), 400
+        
+        logger.info(f"🔍 [QUERY] Query: {query}")
+        logger.info(f"🔍 [QUERY] Mode: {mode}")
         
         logger.info("🔍 [QUERY] Step 2: Getting RAG instance...")
         try:
@@ -966,7 +977,17 @@ def query():
         logger.info("🔍 [QUERY] Step 3: Executing query...")
         query_proc_start = time.time()
         try:
+            # Final safeguard: ensure query is a non-empty string before calling rag.aquery
+            if query is None:
+                query = ""
+            if not isinstance(query, str):
+                query = str(query)
+            
             logger.info(f"🔍 [QUERY] Calling rag.aquery() with mode={mode}...")
+            logger.info(f"🔍 [QUERY] Query value: {query}")
+            logger.info(f"🔍 [QUERY] Query type: {type(query)}")
+            logger.info(f"🔍 [QUERY] Query length: {len(query) if query else 0}")
+            
             result = run_async(rag.aquery(query, mode=mode))
             logger.info(f"✅ [QUERY] Step 3 SUCCESS: Query executed")
             logger.info(f"🔍 [QUERY] Result type: {type(result)}")
