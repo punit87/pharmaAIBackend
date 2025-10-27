@@ -944,7 +944,7 @@ def query():
         logger.info("🔍 [QUERY] Step 1: Parsing request...")
         data = request.get_json()
         query = data.get('query')
-        mode = data.get('mode', 'hybrid')  # Default to hybrid mode for full RAG functionality
+        mode = data.get('mode', 'naive')  # Default to naive mode to avoid VLM issues (can use 'hybrid' or 'local' too)
         
         # Safeguard: Ensure query is never None or empty
         if query is None:
