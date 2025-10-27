@@ -647,13 +647,22 @@ def health():
 # BACKGROUND PROCESSING
 # ============================================================================
 
-def process_document_background(bucket, key, s3_key):
-    """Process document in background - download, parse, chunk, and insert"""
+def process_document_background(bucket, key, s3_key, use_llm_chunking=False):
+    """Process document in background - download, parse, chunk, and insert
+    
+    Args:
+        bucket: S3 bucket name
+        key: S3 object key
+        s3_key: Document ID
+        use_llm_chunking: If True, use LLM chunking (slower but semantic)
+                         If False, use native Docling chunks (faster, default)
+    """
     start_time = time.time()
     logger.info(f"📄 [BG_PROCESS] ===== DOCUMENT PROCESSING STARTED =====")
     logger.info(f"📄 [BG_PROCESS] Bucket: {bucket}")
     logger.info(f"📄 [BG_PROCESS] Key: {key}")
     logger.info(f"📄 [BG_PROCESS] Doc ID: {s3_key}")
+    logger.info(f"📄 [BG_PROCESS] Use LLM Chunking: {use_llm_chunking}")
     temp_file_path = None
     
     try:
@@ -702,8 +711,7 @@ def process_document_background(bucket, key, s3_key):
         
         # Extract chunks from RAG-Anything's parsed output
         logger.info(f"🔍 [BG_PROCESS] Step 4: Extracting chunks...")
-        use_llm_chunking = os.environ.get('USE_LLM_CHUNKING', 'false').lower() == 'true'
-        logger.info(f"🔍 [BG_PROCESS] USE_LLM_CHUNKING: {use_llm_chunking}")
+        logger.info(f"🔍 [BG_PROCESS] Use LLM chunking: {use_llm_chunking}")
         
         if isinstance(parse_result, tuple) and len(parse_result) > 0:
             logger.info(f"📦 [BG_PROCESS] Parse result is a tuple with {len(parse_result)} elements")
@@ -887,20 +895,27 @@ def process_document():
         data = request.get_json()
         s3_bucket = data.get('bucket') or data.get('s3_bucket')
         s3_key = data.get('key') or data.get('s3_key')
+        use_llm_chunking = data.get('use_llm_chunking', False)  # Get from request, default False
+        
+        # Convert to boolean if it's a string
+        if isinstance(use_llm_chunking, str):
+            use_llm_chunking = use_llm_chunking.lower() in ('true', '1', 'yes')
         
         if not s3_bucket or not s3_key:
             return jsonify({"error": "Missing bucket or key"}), 400
         
         logger.info(f"📦 [PROCESS] Starting background processing for s3://{s3_bucket}/{s3_key}")
+        logger.info(f"🔪 [PROCESS] use_llm_chunking: {use_llm_chunking}")
         
-        # Start background processing
-        future = _executor.submit(process_document_background, s3_bucket, s3_key, s3_key)
+        # Start background processing with use_llm_chunking parameter
+        future = _executor.submit(process_document_background, s3_bucket, s3_key, s3_key, use_llm_chunking)
         
         return jsonify({
             "status": "accepted",
             "message": "Document processing started in background",
             "bucket": s3_bucket,
-            "key": s3_key
+            "key": s3_key,
+            "use_llm_chunking": use_llm_chunking
         })
     
     except Exception as e:
