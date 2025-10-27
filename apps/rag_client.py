@@ -24,6 +24,7 @@ from lightrag.llm.openai import openai_complete_if_cache, openai_embed
 from lightrag.utils import EmbeddingFunc
 from lightrag.kg.shared_storage import initialize_pipeline_status
 from docling.document_converter import DocumentConverter
+from concurrent.futures import ThreadPoolExecutor
 
 # Configure logging
 logging.basicConfig(
@@ -643,77 +644,34 @@ def health():
         }), 500
 
 # ============================================================================
-# DOCUMENT PROCESSING
+# BACKGROUND PROCESSING
 # ============================================================================
 
-@app.route('/process', methods=['POST'])
-def process_document():
-    """Process document from S3 with custom LLM chunking"""
+def process_document_background(bucket, key, s3_key):
+    """Process document in background - download, parse, chunk, and insert"""
     start_time = time.time()
-    logger.info("📄 [PROCESS] Document processing started...")
+    logger.info(f"📄 [BG_PROCESS] Background processing started for s3://{bucket}/{key}")
     temp_file_path = None
-    timing = {}
     
     try:
-        config_start = time.time()
-        try:
-            get_api_config()
-        except ValueError as e:
-            config_time = time.time() - config_start
-            logger.error(f"❌ [PROCESS] Configuration error after {config_time:.3f}s: {str(e)}")
-            timing["config_validation"] = round(config_time, 3)
-            return jsonify({"error": f"Configuration error: {str(e)}", "timing": timing}), 500
-        
-        config_time = time.time() - config_start
-        timing["config_validation"] = round(config_time, 3)
-        logger.info(f"⚙️ [PROCESS] Config validated in {config_time:.3f}s")
-        
-        data = request.get_json()
-        s3_bucket = data.get('bucket') or data.get('s3_bucket')
-        s3_key = data.get('key') or data.get('s3_key')
-        
-        if not s3_bucket or not s3_key:
-            total_time = time.time() - start_time
-            timing["total_duration"] = round(total_time, 3)
-            return jsonify({"error": "Missing bucket or key", "timing": timing}), 400
-        
-        logger.info(f"📦 [PROCESS] s3://{s3_bucket}/{s3_key}")
-        
         # Download from S3
-        download_start = time.time()
         s3_client = boto3.client('s3')
-        # Create safe temp file path
         safe_filename = os.path.basename(s3_key).replace('/', '_').replace('\\', '_')
         temp_file_path = f"/tmp/{safe_filename}"
-        s3_client.download_file(s3_bucket, s3_key, temp_file_path)
-        download_duration = time.time() - download_start
-        timing["download_duration"] = round(download_duration, 3)
+        s3_client.download_file(bucket, key, temp_file_path)
         file_size = os.path.getsize(temp_file_path) / (1024 * 1024)
-        logger.info(f"📥 [PROCESS] Downloaded {file_size:.2f}MB in {download_duration:.3f}s")
+        logger.info(f"📥 [BG_PROCESS] Downloaded {file_size:.2f}MB")
         
         # Get RAG instance
-        rag_init_start = time.time()
         rag = get_rag_instance()
-        rag_init_duration = time.time() - rag_init_start
-        timing["rag_init_duration"] = round(rag_init_duration, 3)
-        logger.info(f"🚀 [PROCESS] RAG initialized in {rag_init_duration:.3f}s")
         
-        # Parse document to markdown
-        parse_start = time.time()
-        parser = os.environ.get('PARSER', 'docling')
+        # Parse document
         parse_method = os.environ.get('PARSE_METHOD', 'ocr')
-        logger.info(f"🔍 [PROCESS] Parsing with {parser} ({parse_method})")
-        
-        # Use RAG-Anything's parser to get markdown
+        logger.info(f"🔍 [BG_PROCESS] Parsing with Docling ({parse_method})...")
         parse_result = run_async(rag.parse_document(temp_file_path, parse_method=parse_method))
         
-        # Debug: Log the type and content of parse_result
-        logger.info(f"🔍 [PROCESS] parse_result type: {type(parse_result)}")
-        logger.info(f"🔍 [PROCESS] parse_result content: {str(parse_result)[:200]}...")
-        
-        # Handle different return types from parse_document
+        # Convert to markdown
         if isinstance(parse_result, tuple):
-            # If it's a tuple, extract the first element (usually the document object)
             doc_obj = parse_result[0]
             if hasattr(doc_obj, 'to_markdown'):
                 markdown_content = doc_obj.to_markdown()
@@ -725,67 +683,103 @@ def process_document():
             markdown_content = parse_result.get('markdown', '')
         else:
             markdown_content = str(parse_result)
-        parse_duration = time.time() - parse_start
-        timing["parse_duration"] = round(parse_duration, 3)
-        logger.info(f"🔍 [PROCESS] Document parsed to markdown in {parse_duration:.3f}s")
         
-        # Custom LLM chunking
-        chunk_start = time.time()
-        logger.info("🔪 [PROCESS] Starting custom LLM chunking...")
-        llm_func = get_llm_model_func()
-        chunks = run_async(custom_llm_chunking(markdown_content, s3_key, llm_func))
-        chunk_duration = time.time() - chunk_start
-        timing["chunk_duration"] = round(chunk_duration, 3)
-        logger.info(f"🔪 [PROCESS] Custom chunking produced {len(chunks)} chunks in {chunk_duration:.3f}s")
+        logger.info(f"🔍 [BG_PROCESS] Parsed to markdown")
         
-        # Insert chunks into RAG-Anything in LightRAG-compatible format
-        insert_start = time.time()
+        # Use simple chunking instead of LLM-based (to avoid timeout)
+        logger.info("🔪 [BG_PROCESS] Starting simple chunking...")
+        chunks = simple_chunking(markdown_content, s3_key)
+        logger.info(f"🔪 [BG_PROCESS] Created {len(chunks)} chunks")
+        
+        # Insert chunks into LightRAG
         content_list = []
         for chunk in chunks:
-            # Ensure LightRAG-compatible format
             content_item = {
                 'content': chunk['content'],
                 'metadata': chunk['metadata'],
-                'type': chunk.get('type', 'text')  # Default to 'text' if not specified
+                'type': chunk.get('type', 'text')
             }
             content_list.append(content_item)
         
+        logger.info(f"📥 [BG_PROCESS] Inserting {len(content_list)} chunks...")
         run_async(rag.insert_content_list(content_list, doc_id=s3_key))
-        insert_duration = time.time() - insert_start
-        timing["insert_duration"] = round(insert_duration, 3)
-        logger.info(f"📥 [PROCESS] Inserted {len(content_list)} LightRAG-compatible chunks in {insert_duration:.3f}s")
+        logger.info(f"✅ [BG_PROCESS] Completed in {time.time() - start_time:.3f}s")
         
-        total_duration = time.time() - start_time
-        timing["total_duration"] = round(total_duration, 3)
-        logger.info(f"✅ [PROCESS] Completed in {total_duration:.3f}s")
+        return True
         
-        return jsonify({
-            "status": "success",
-            "bucket": s3_bucket,
-            "key": s3_key,
-            "message": f"Document processed with {len(chunks)} custom chunks",
-            "timing": timing
-        })
-    
     except Exception as e:
-        total_duration = time.time() - start_time
-        timing["total_duration"] = round(total_duration, 3)
-        logger.error(f"❌ [PROCESS] Failed after {total_duration:.3f}s: {str(e)}")
+        logger.error(f"❌ [BG_PROCESS] Failed: {str(e)}")
         import traceback
         traceback.print_exc()
+        return False
         
-        return jsonify({
-            "error": str(e),
-            "timing": timing
-        }), 500
-    
     finally:
         if temp_file_path and os.path.exists(temp_file_path):
             try:
                 os.remove(temp_file_path)
-                logger.info(f"🗑️ [PROCESS] Cleaned up temp file: {temp_file_path}")
+                logger.info(f"🗑️ [BG_PROCESS] Cleaned up temp file")
             except Exception as e:
-                logger.warning(f"⚠️ [PROCESS] Failed to clean up temp file: {str(e)}")
+                logger.warning(f"⚠️ [BG_PROCESS] Failed to clean up: {str(e)}")
+
+def simple_chunking(markdown_content, doc_id):
+    """Fast text-based chunking without LLM"""
+    chunks = []
+    lines = markdown_content.split('\n')
+    
+    for idx, line in enumerate(lines):
+        line = line.strip()
+        if line and len(line) > 3:  # Skip empty lines and very short lines
+            chunks.append({
+                'type': 'text',
+                'content': line,
+                'metadata': {
+                    'doc_id': doc_id,
+                    'chunk_id': f"{doc_id}_{idx}",
+                    'page_idx': 0,
+                    'chunk_type': 'text'
+                }
+            })
+    
+    return chunks
+
+# Thread pool for background processing
+_executor = ThreadPoolExecutor(max_workers=2)
+
+# ============================================================================
+# DOCUMENT PROCESSING
+# ============================================================================
+
+@app.route('/process', methods=['POST'])
+def process_document():
+    """Process document from S3 asynchronously in the background"""
+    start_time = time.time()
+    logger.info("📄 [PROCESS] Document processing request received...")
+    
+    try:
+        data = request.get_json()
+        s3_bucket = data.get('bucket') or data.get('s3_bucket')
+        s3_key = data.get('key') or data.get('s3_key')
+        
+        if not s3_bucket or not s3_key:
+            return jsonify({"error": "Missing bucket or key"}), 400
+        
+        logger.info(f"📦 [PROCESS] Starting background processing for s3://{s3_bucket}/{s3_key}")
+        
+        # Start background processing
+        future = _executor.submit(process_document_background, s3_bucket, s3_key, s3_key)
+        
+        return jsonify({
+            "status": "accepted",
+            "message": "Document processing started in background",
+            "bucket": s3_bucket,
+            "key": s3_key
+        })
+    
+    except Exception as e:
+        logger.error(f"❌ [PROCESS] Failed to start processing: {str(e)}")
+        import traceback
+        traceback.print_exc()
+        return jsonify({"error": str(e)}), 500
 
 # ============================================================================
 # QUERY ENDPOINT
