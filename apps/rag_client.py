@@ -670,46 +670,76 @@ def process_document_background(bucket, key, s3_key):
         logger.info(f"🔍 [BG_PROCESS] Parsing with Docling ({parse_method})...")
         parse_result = run_async(rag.parse_document(temp_file_path, parse_method=parse_method))
         
-        # Convert to markdown
-        if isinstance(parse_result, tuple):
-            doc_obj = parse_result[0]
-            if hasattr(doc_obj, 'to_markdown'):
-                markdown_content = doc_obj.to_markdown()
-            elif hasattr(doc_obj, 'markdown'):
-                markdown_content = doc_obj.markdown
-            else:
-                markdown_content = str(doc_obj)
-        elif isinstance(parse_result, dict):
-            markdown_content = parse_result.get('markdown', '')
-        else:
-            markdown_content = str(parse_result)
-        
-        logger.info(f"🔍 [BG_PROCESS] Parsed to markdown")
+        logger.info(f"🔍 [BG_PROCESS] Document parsed")
         
         # Choose chunking method based on environment variable
         use_llm_chunking = os.environ.get('USE_LLM_CHUNKING', 'false').lower() == 'true'
         
-        if use_llm_chunking:
-            # Use LLM-based chunking (slower but more intelligent)
-            logger.info("🔪 [BG_PROCESS] Starting LLM-based chunking...")
-            llm_func = get_llm_model_func()
-            chunks = run_async(custom_llm_chunking(markdown_content, s3_key, llm_func))
-            logger.info(f"🔪 [BG_PROCESS] LLM chunking created {len(chunks)} chunks")
+        # Extract chunks from parse_result
+        if isinstance(parse_result, tuple) and len(parse_result) > 0:
+            # parse_result is likely (structured_chunks, ...) where structured_chunks is a list
+            structured_data = parse_result[0]
+            
+            # Check if it's already a list of chunks from RAG-Anything/Docling
+            if isinstance(structured_data, list):
+                logger.info(f"📦 [BG_PROCESS] Found {len(structured_data)} structured elements from parse")
+                
+                if use_llm_chunking:
+                    # Convert to markdown and use LLM chunking
+                    doc_obj = structured_data[0] if len(structured_data) > 0 else None
+                    if hasattr(doc_obj, 'to_markdown'):
+                        markdown_content = doc_obj.to_markdown()
+                    else:
+                        markdown_content = str(structured_data)
+                    
+                    logger.info("🔪 [BG_PROCESS] Starting LLM-based chunking...")
+                    llm_func = get_llm_model_func()
+                    chunks = run_async(custom_llm_chunking(markdown_content, s3_key, llm_func))
+                    logger.info(f"🔪 [BG_PROCESS] LLM chunking created {len(chunks)} chunks")
+                else:
+                    # Use RAG-Anything's native chunks directly
+                    logger.info(f"🔪 [BG_PROCESS] Using RAG-Anything native chunks...")
+                    chunks = []
+                    for idx, element in enumerate(structured_data):
+                        if isinstance(element, dict):
+                            # Extract text content
+                            text_content = element.get('text', element.get('content', str(element)))
+                            if text_content and text_content.strip():
+                                chunks.append({
+                                    'type': 'text',
+                                    'content': text_content.strip(),
+                                    'metadata': {
+                                        'doc_id': s3_key,
+                                        'chunk_id': f"{s3_key}_{idx}",
+                                        'page_idx': element.get('page_idx', 0),
+                                        'chunk_type': 'text',
+                                        'element_type': element.get('type', 'text')
+                                    }
+                                })
+                    logger.info(f"🔪 [BG_PROCESS] Created {len(chunks)} chunks from native structure")
+            else:
+                # Fallback: convert to markdown
+                logger.info("⚠️ [BG_PROCESS] Using fallback markdown conversion")
+                if hasattr(structured_data, 'to_markdown'):
+                    markdown_content = structured_data.to_markdown()
+                else:
+                    markdown_content = str(structured_data)
+                chunks = simple_chunking(markdown_content, s3_key)
         else:
-            # Use simple text-based chunking (fast and reliable)
-            logger.info("🔪 [BG_PROCESS] Starting simple chunking...")
-            chunks = simple_chunking(markdown_content, s3_key)
-            logger.info(f"🔪 [BG_PROCESS] Simple chunking created {len(chunks)} chunks")
+            # Fallback handling
+            logger.warning("⚠️ [BG_PROCESS] Unexpected parse_result format, using simple chunking")
+            chunks = simple_chunking(str(parse_result), s3_key)
         
         # Insert chunks into LightRAG
         content_list = []
         for chunk in chunks:
-            content_item = {
-                'content': chunk['content'],
-                'metadata': chunk['metadata'],
-                'type': chunk.get('type', 'text')
-            }
-            content_list.append(content_item)
+            if isinstance(chunk, dict) and 'content' in chunk:
+                content_item = {
+                    'content': chunk['content'],
+                    'metadata': chunk.get('metadata', {}),
+                    'type': chunk.get('type', 'text')
+                }
+                content_list.append(content_item)
         
         logger.info(f"📥 [BG_PROCESS] Inserting {len(content_list)} chunks...")
         run_async(rag.insert_content_list(content_list, doc_id=s3_key))
