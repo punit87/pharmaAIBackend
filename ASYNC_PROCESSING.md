@@ -48,9 +48,29 @@ Implemented **asynchronous document processing** to eliminate timeout issues and
 4. Background thread:
    - Downloads PDF
    - Parses with Docling
-   - Simple text chunking (instant)
+   - Simple text chunking (instant) OR LLM chunking (if enabled)
    - Inserts into LightRAG
    - Logs completion
+```
+
+## Chunking Methods
+
+### Default: Simple Chunking (Fast)
+Splits text by lines - instant, no timeouts:
+```python
+chunks = simple_chunking(markdown_content, doc_id)
+```
+
+### Optional: LLM Chunking (Intelligent)
+Uses GPT to intelligently chunk content - slower but more semantic:
+```python
+# Enable by setting environment variable
+USE_LLM_CHUNKING=true
+```
+
+To use LLM chunking, set the environment variable when starting the container:
+```bash
+docker run -e USE_LLM_CHUNKING=true ...
 ```
 
 ## Testing
