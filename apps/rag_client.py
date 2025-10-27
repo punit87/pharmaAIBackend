@@ -672,6 +672,8 @@ def process_document_background(bucket, key, s3_key):
         
         # Extract chunks from RAG-Anything's parsed output
         logger.info(f"🔍 [BG_PROCESS] Extracting chunks from parsed document...")
+        use_llm_chunking = os.environ.get('USE_LLM_CHUNKING', 'false').lower() == 'true'
+        
         if isinstance(parse_result, tuple) and len(parse_result) > 0:
             structured_data = parse_result[0]
             
@@ -680,24 +682,56 @@ def process_document_background(bucket, key, s3_key):
                 logger.info(f"📦 [BG_PROCESS] Found {len(structured_data)} structured elements from Docling")
                 content_list = []
                 
-                for idx, element in enumerate(structured_data):
-                    if isinstance(element, dict):
-                        # Extract text content
-                        text_content = element.get('text', element.get('content', str(element)))
-                        if text_content and text_content.strip():
-                            content_list.append({
-                                'type': 'text',
-                                'text': text_content.strip(),
-                                'metadata': {
-                                    'doc_id': s3_key,
-                                    'chunk_id': f"{s3_key}_{idx}",
-                                    'page_idx': element.get('page_idx', 0),
-                                    'chunk_type': 'text',
-                                    'element_type': element.get('type', 'text')
-                                }
-                            })
+                # Check if LLM chunking is enabled
+                if use_llm_chunking:
+                    logger.info("🔪 [BG_PROCESS] USE_LLM_CHUNKING enabled - converting to markdown for LLM chunking...")
+                    # Convert structured data to markdown
+                    doc_obj = structured_data[0] if len(structured_data) > 0 else None
+                    if doc_obj and hasattr(doc_obj, 'to_markdown'):
+                        markdown_content = doc_obj.to_markdown()
+                    else:
+                        # Fallback: combine all text elements
+                        markdown_content = '\n'.join([
+                            elem.get('text', elem.get('content', str(elem))) 
+                            for elem in structured_data 
+                            if isinstance(elem, dict)
+                        ])
+                    
+                    # Use LLM-based chunking
+                    llm_func = get_llm_model_func()
+                    content_list = run_async(custom_llm_chunking(markdown_content, s3_key, llm_func))
+                    logger.info(f"🔪 [BG_PROCESS] LLM chunking created {len(content_list)} chunks")
+                    
+                    # Convert to insert_content_list format
+                    content_list = [
+                        {
+                            'type': chunk.get('type', 'text'),
+                            'text': chunk.get('content', chunk.get('text', '')),
+                            'metadata': chunk.get('metadata', {})
+                        }
+                        for chunk in content_list
+                    ]
+                else:
+                    # Use native Docling chunks (default, fast)
+                    logger.info("📦 [BG_PROCESS] Using native Docling chunks...")
+                    for idx, element in enumerate(structured_data):
+                        if isinstance(element, dict):
+                            # Extract text content
+                            text_content = element.get('text', element.get('content', str(element)))
+                            if text_content and text_content.strip():
+                                content_list.append({
+                                    'type': 'text',
+                                    'text': text_content.strip(),
+                                    'metadata': {
+                                        'doc_id': s3_key,
+                                        'chunk_id': f"{s3_key}_{idx}",
+                                        'page_idx': element.get('page_idx', 0),
+                                        'chunk_type': 'text',
+                                        'element_type': element.get('type', 'text')
+                                    }
+                                })
                 
-                logger.info(f"✅ [BG_PROCESS] Created {len(content_list)} chunks from Docling output")
+                logger.info(f"✅ [BG_PROCESS] Created {len(content_list)} chunks")
             else:
                 logger.warning(f"⚠️ [BG_PROCESS] Unexpected structured_data format: {type(structured_data)}")
                 content_list = []
