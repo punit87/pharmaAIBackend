@@ -89,6 +89,19 @@ run_async(rag.insert_content_list(content_list, doc_id=s3_key))
 
 The chunking is handled natively by **Docling's structured output** - no need for manual chunking!
 
+### Chunking Options
+
+**Default: Native Docling Chunking (Fast)** ✅
+- Uses Docling's structured elements directly
+- Fast and preserves document structure
+- Page numbers and element types included
+
+**Optional: LLM Chunking (Slow but Semantic)**
+- Enable by setting `USE_LLM_CHUNKING=true`
+- Uses GPT-4o-mini to intelligently chunk content
+- More semantic but takes longer
+- Set environment variable in container/task definition
+
 ## Testing
 
 To test the new async processing:
