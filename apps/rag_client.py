@@ -358,8 +358,13 @@ def get_embedding_func():
             embed_time = time.time() - embed_start
             logger.info(f"✅ [EMBEDDING] Successfully generated {len(result)} embedding(s) in {embed_time:.3f}s")
             
-            if not result or not isinstance(result, list):
-                raise ValueError(f"Invalid embedding result: {type(result)}")
+            # Check validity of result (avoid numpy array boolean comparison issues)
+            if result is None:
+                raise ValueError("Embedding result is None")
+            if not isinstance(result, list):
+                raise ValueError(f"Invalid embedding result type: {type(result)}")
+            if len(result) == 0:
+                raise ValueError("Empty embedding result")
             
             return result
             
