@@ -650,88 +650,151 @@ def health():
 def process_document_background(bucket, key, s3_key):
     """Process document in background - download, parse, chunk, and insert"""
     start_time = time.time()
-    logger.info(f"📄 [BG_PROCESS] Background processing started for s3://{bucket}/{key}")
+    logger.info(f"📄 [BG_PROCESS] ===== DOCUMENT PROCESSING STARTED =====")
+    logger.info(f"📄 [BG_PROCESS] Bucket: {bucket}")
+    logger.info(f"📄 [BG_PROCESS] Key: {key}")
+    logger.info(f"📄 [BG_PROCESS] Doc ID: {s3_key}")
     temp_file_path = None
     
     try:
         # Download from S3
+        logger.info(f"📥 [BG_PROCESS] Step 1: Downloading from S3...")
+        logger.info(f"📥 [BG_PROCESS] S3 Path: s3://{bucket}/{key}")
         s3_client = boto3.client('s3')
         safe_filename = os.path.basename(s3_key).replace('/', '_').replace('\\', '_')
         temp_file_path = f"/tmp/{safe_filename}"
-        s3_client.download_file(bucket, key, temp_file_path)
-        file_size = os.path.getsize(temp_file_path) / (1024 * 1024)
-        logger.info(f"📥 [BG_PROCESS] Downloaded {file_size:.2f}MB")
+        logger.info(f"📥 [BG_PROCESS] Temp file path: {temp_file_path}")
+        
+        try:
+            s3_client.download_file(bucket, key, temp_file_path)
+            file_size = os.path.getsize(temp_file_path) / (1024 * 1024)
+            logger.info(f"✅ [BG_PROCESS] Step 1 SUCCESS: Downloaded {file_size:.2f}MB")
+        except Exception as e:
+            logger.error(f"❌ [BG_PROCESS] Step 1 FAILED: S3 download error: {str(e)}")
+            logger.error(f"❌ [BG_PROCESS] Bucket: {bucket}, Key: {key}")
+            raise
         
         # Get RAG instance
-        rag = get_rag_instance()
+        logger.info(f"🚀 [BG_PROCESS] Step 2: Getting RAG instance...")
+        try:
+            rag = get_rag_instance()
+            logger.info(f"✅ [BG_PROCESS] Step 2 SUCCESS: RAG instance retrieved")
+        except Exception as e:
+            logger.error(f"❌ [BG_PROCESS] Step 2 FAILED: RAG instance error: {str(e)}")
+            raise
         
         # Parse document with RAG-Anything/Docling
+        logger.info(f"🔍 [BG_PROCESS] Step 3: Parsing document...")
         parse_method = os.environ.get('PARSE_METHOD', 'ocr')
-        logger.info(f"🔍 [BG_PROCESS] Parsing document with RAG-Anything/Docling...")
-        parse_result = run_async(rag.parse_document(temp_file_path, parse_method=parse_method))
+        logger.info(f"🔍 [BG_PROCESS] Parse method: {parse_method}")
+        logger.info(f"🔍 [BG_PROCESS] File: {temp_file_path}")
+        logger.info(f"🔍 [BG_PROCESS] File exists: {os.path.exists(temp_file_path)}")
+        
+        try:
+            parse_result = run_async(rag.parse_document(temp_file_path, parse_method=parse_method))
+            logger.info(f"✅ [BG_PROCESS] Step 3 SUCCESS: Document parsed")
+            logger.info(f"🔍 [BG_PROCESS] Parse result type: {type(parse_result)}")
+        except Exception as e:
+            logger.error(f"❌ [BG_PROCESS] Step 3 FAILED: Parse error: {str(e)}")
+            import traceback
+            logger.error(f"❌ [BG_PROCESS] Traceback: {traceback.format_exc()}")
+            raise
         
         # Extract chunks from RAG-Anything's parsed output
-        logger.info(f"🔍 [BG_PROCESS] Extracting chunks from parsed document...")
+        logger.info(f"🔍 [BG_PROCESS] Step 4: Extracting chunks...")
         use_llm_chunking = os.environ.get('USE_LLM_CHUNKING', 'false').lower() == 'true'
+        logger.info(f"🔍 [BG_PROCESS] USE_LLM_CHUNKING: {use_llm_chunking}")
         
         if isinstance(parse_result, tuple) and len(parse_result) > 0:
+            logger.info(f"📦 [BG_PROCESS] Parse result is a tuple with {len(parse_result)} elements")
             structured_data = parse_result[0]
+            logger.info(f"📦 [BG_PROCESS] Structured data type: {type(structured_data)}")
             
             # RAG-Anything returns a list of structured elements (chunks)
             if isinstance(structured_data, list):
+                logger.info(f"✅ [BG_PROCESS] Structured data is a list with {len(structured_data)} elements")
                 logger.info(f"📦 [BG_PROCESS] Found {len(structured_data)} structured elements from Docling")
+                
+                if len(structured_data) == 0:
+                    logger.warning(f"⚠️ [BG_PROCESS] Empty structured_data list - no chunks to process")
+                
                 content_list = []
                 
                 # Check if LLM chunking is enabled
                 if use_llm_chunking:
-                    logger.info("🔪 [BG_PROCESS] USE_LLM_CHUNKING enabled - converting to markdown for LLM chunking...")
-                    # Convert structured data to markdown
-                    doc_obj = structured_data[0] if len(structured_data) > 0 else None
-                    if doc_obj and hasattr(doc_obj, 'to_markdown'):
-                        markdown_content = doc_obj.to_markdown()
-                    else:
-                        # Fallback: combine all text elements
-                        markdown_content = '\n'.join([
-                            elem.get('text', elem.get('content', str(elem))) 
-                            for elem in structured_data 
-                            if isinstance(elem, dict)
-                        ])
-                    
-                    # Use LLM-based chunking
-                    llm_func = get_llm_model_func()
-                    content_list = run_async(custom_llm_chunking(markdown_content, s3_key, llm_func))
-                    logger.info(f"🔪 [BG_PROCESS] LLM chunking created {len(content_list)} chunks")
-                    
-                    # Convert to insert_content_list format
-                    content_list = [
-                        {
-                            'type': chunk.get('type', 'text'),
-                            'text': chunk.get('content', chunk.get('text', '')),
-                            'metadata': chunk.get('metadata', {})
-                        }
-                        for chunk in content_list
-                    ]
+                    logger.info("🔪 [BG_PROCESS] USE_LLM_CHUNKING enabled - using LLM chunking...")
+                    try:
+                        # Convert structured data to markdown
+                        doc_obj = structured_data[0] if len(structured_data) > 0 else None
+                        logger.info(f"🔪 [BG_PROCESS] Doc object type: {type(doc_obj)}")
+                        if doc_obj and hasattr(doc_obj, 'to_markdown'):
+                            logger.info(f"🔪 [BG_PROCESS] Converting to markdown using to_markdown()...")
+                            markdown_content = doc_obj.to_markdown()
+                            logger.info(f"🔪 [BG_PROCESS] Markdown length: {len(markdown_content)} chars")
+                        else:
+                            # Fallback: combine all text elements
+                            logger.info(f"🔪 [BG_PROCESS] Fallback: Combining text elements...")
+                            markdown_content = '\n'.join([
+                                elem.get('text', elem.get('content', str(elem))) 
+                                for elem in structured_data 
+                                if isinstance(elem, dict)
+                            ])
+                            logger.info(f"🔪 [BG_PROCESS] Markdown length: {len(markdown_content)} chars")
+                        
+                        # Use LLM-based chunking
+                        llm_func = get_llm_model_func()
+                        logger.info(f"🔪 [BG_PROCESS] Calling custom_llm_chunking...")
+                        content_list = run_async(custom_llm_chunking(markdown_content, s3_key, llm_func))
+                        logger.info(f"✅ [BG_PROCESS] LLM chunking SUCCESS: Created {len(content_list)} chunks")
+                        
+                        # Convert to insert_content_list format
+                        logger.info(f"🔪 [BG_PROCESS] Converting chunks to insert_content_list format...")
+                        content_list = [
+                            {
+                                'type': chunk.get('type', 'text'),
+                                'text': chunk.get('content', chunk.get('text', '')),
+                                'metadata': chunk.get('metadata', {})
+                            }
+                            for chunk in content_list
+                        ]
+                        logger.info(f"✅ [BG_PROCESS] Format conversion complete: {len(content_list)} chunks")
+                    except Exception as e:
+                        logger.error(f"❌ [BG_PROCESS] LLM chunking FAILED: {str(e)}")
+                        import traceback
+                        logger.error(f"❌ [BG_PROCESS] Traceback: {traceback.format_exc()}")
+                        raise
                 else:
                     # Use native Docling chunks (default, fast)
-                    logger.info("📦 [BG_PROCESS] Using native Docling chunks...")
-                    for idx, element in enumerate(structured_data):
-                        if isinstance(element, dict):
-                            # Extract text content
-                            text_content = element.get('text', element.get('content', str(element)))
-                            if text_content and text_content.strip():
-                                content_list.append({
-                                    'type': 'text',
-                                    'text': text_content.strip(),
-                                    'metadata': {
-                                        'doc_id': s3_key,
-                                        'chunk_id': f"{s3_key}_{idx}",
-                                        'page_idx': element.get('page_idx', 0),
-                                        'chunk_type': 'text',
-                                        'element_type': element.get('type', 'text')
-                                    }
-                                })
+                    logger.info("📦 [BG_PROCESS] Using native Docling chunks (fast mode)...")
+                    logger.info(f"📦 [BG_PROCESS] Processing {len(structured_data)} elements...")
+                    try:
+                        for idx, element in enumerate(structured_data):
+                            if isinstance(element, dict):
+                                # Extract text content
+                                text_content = element.get('text', element.get('content', str(element)))
+                                if text_content and text_content.strip():
+                                    content_list.append({
+                                        'type': 'text',
+                                        'text': text_content.strip(),
+                                        'metadata': {
+                                            'doc_id': s3_key,
+                                            'chunk_id': f"{s3_key}_{idx}",
+                                            'page_idx': element.get('page_idx', 0),
+                                            'chunk_type': 'text',
+                                            'element_type': element.get('type', 'text')
+                                        }
+                                    })
+                        
+                        logger.info(f"✅ [BG_PROCESS] Native chunking SUCCESS: Created {len(content_list)} chunks")
+                        if len(content_list) == 0:
+                            logger.warning(f"⚠️ [BG_PROCESS] No valid chunks extracted from {len(structured_data)} elements")
+                    except Exception as e:
+                        logger.error(f"❌ [BG_PROCESS] Native chunking FAILED: {str(e)}")
+                        import traceback
+                        logger.error(f"❌ [BG_PROCESS] Traceback: {traceback.format_exc()}")
+                        raise
                 
-                logger.info(f"✅ [BG_PROCESS] Created {len(content_list)} chunks")
+                logger.info(f"✅ [BG_PROCESS] Step 4 SUCCESS: Created {len(content_list)} total chunks")
             else:
                 logger.warning(f"⚠️ [BG_PROCESS] Unexpected structured_data format: {type(structured_data)}")
                 content_list = []
@@ -740,21 +803,42 @@ def process_document_background(bucket, key, s3_key):
             content_list = []
         
         # Insert chunks into LightRAG via RAG-Anything
-        if content_list:
-            logger.info(f"📥 [BG_PROCESS] Inserting {len(content_list)} chunks into RAG-Anything...")
-            run_async(rag.insert_content_list(content_list, doc_id=s3_key))
-            logger.info(f"✅ [BG_PROCESS] Document processed by RAG-Anything")
-        else:
-            logger.warning(f"⚠️ [BG_PROCESS] No chunks to insert")
+        logger.info(f"📥 [BG_PROCESS] Step 5: Inserting chunks...")
+        logger.info(f"📥 [BG_PROCESS] Total chunks to insert: {len(content_list)}")
+        logger.info(f"📥 [BG_PROCESS] Doc ID: {s3_key}")
         
-        logger.info(f"✅ [BG_PROCESS] Completed in {time.time() - start_time:.3f}s")
+        if content_list:
+            try:
+                logger.info(f"📥 [BG_PROCESS] Calling rag.insert_content_list()...")
+                run_async(rag.insert_content_list(content_list, doc_id=s3_key))
+                logger.info(f"✅ [BG_PROCESS] Step 5 SUCCESS: Chunks inserted successfully")
+                logger.info(f"✅ [BG_PROCESS] Document processed by RAG-Anything")
+            except Exception as e:
+                logger.error(f"❌ [BG_PROCESS] Step 5 FAILED: Insert error: {str(e)}")
+                logger.error(f"❌ [BG_PROCESS] Attempting to insert {len(content_list)} chunks")
+                logger.error(f"❌ [BG_PROCESS] First chunk keys: {list(content_list[0].keys()) if content_list else 'N/A'}")
+                import traceback
+                logger.error(f"❌ [BG_PROCESS] Traceback: {traceback.format_exc()}")
+                raise
+        else:
+            logger.warning(f"⚠️ [BG_PROCESS] Step 5 SKIPPED: No chunks to insert")
+        
+        total_time = time.time() - start_time
+        logger.info(f"✅ [BG_PROCESS] ===== DOCUMENT PROCESSING COMPLETED =====")
+        logger.info(f"✅ [BG_PROCESS] Total time: {total_time:.3f}s")
+        logger.info(f"✅ [BG_PROCESS] Doc ID: {s3_key}")
+        logger.info(f"✅ [BG_PROCESS] Chunks inserted: {len(content_list)}")
         
         return True
         
     except Exception as e:
-        logger.error(f"❌ [BG_PROCESS] Failed: {str(e)}")
+        total_time = time.time() - start_time
+        logger.error(f"❌ [BG_PROCESS] ===== DOCUMENT PROCESSING FAILED =====")
+        logger.error(f"❌ [BG_PROCESS] Error: {str(e)}")
+        logger.error(f"❌ [BG_PROCESS] Total time before failure: {total_time:.3f}s")
+        logger.error(f"❌ [BG_PROCESS] Doc ID: {s3_key}")
         import traceback
-        traceback.print_exc()
+        logger.error(f"❌ [BG_PROCESS] Full traceback:\n{traceback.format_exc()}")
         return False
         
     finally:
@@ -833,62 +917,100 @@ def process_document():
 def query():
     """Query the RAG knowledge base"""
     start_time = time.time()
-    logger.info("🔍 [QUERY] Query started...")
+    logger.info("🔍 [QUERY] ===== QUERY STARTED =====")
     timing = {}
     
     try:
+        logger.info("🔍 [QUERY] Step 1: Parsing request...")
         data = request.get_json()
         query = data.get('query')
         mode = data.get('mode', 'hybrid')  # Default to hybrid mode for full RAG functionality
         
+        logger.info(f"🔍 [QUERY] Query: {query}")
+        logger.info(f"🔍 [QUERY] Mode: {mode}")
+        
         if not query:
             total_duration = time.time() - start_time
             timing["total_duration"] = round(total_duration, 3)
+            logger.error(f"❌ [QUERY] Missing query parameter")
             return jsonify({"error": "Missing query", "timing": timing}), 400
         
-        rag = get_rag_instance()
+        logger.info("🔍 [QUERY] Step 2: Getting RAG instance...")
+        try:
+            rag = get_rag_instance()
+            logger.info(f"✅ [QUERY] Step 2 SUCCESS: RAG instance retrieved")
+        except Exception as e:
+            logger.error(f"❌ [QUERY] Step 2 FAILED: RAG instance error: {str(e)}")
+            raise
         
+        logger.info("🔍 [QUERY] Step 3: Executing query...")
         query_proc_start = time.time()
         try:
+            logger.info(f"🔍 [QUERY] Calling rag.aquery() with mode={mode}...")
             result = run_async(rag.aquery(query, mode=mode))
+            logger.info(f"✅ [QUERY] Step 3 SUCCESS: Query executed")
+            logger.info(f"🔍 [QUERY] Result type: {type(result)}")
         except Exception as e:
-            logger.error(f"❌ [QUERY] Query processing failed: {str(e)}")
+            logger.error(f"❌ [QUERY] Step 3 FAILED: Query processing failed: {str(e)}")
+            logger.error(f"❌ [QUERY] Error type: {type(e).__name__}")
+            import traceback
+            logger.error(f"❌ [QUERY] Traceback: {traceback.format_exc()}")
+            
             # If VLM processing fails, try with hybrid mode again (embedding fix should resolve the issue)
             if "expected string or bytes-like object, got 'NoneType'" in str(e):
                 logger.info("🔄 [QUERY] Retrying with hybrid mode (embedding fix)...")
                 try:
                     result = run_async(rag.aquery(query, mode="hybrid"))
+                    logger.info(f"🔄 [QUERY] Retry SUCCESS")
                 except Exception as retry_e:
-                    logger.error(f"❌ [QUERY] Retry also failed: {str(retry_e)}")
+                    logger.error(f"❌ [QUERY] Retry FAILED: {str(retry_e)}")
                     result = None
             else:
                 result = None
         
         query_duration = time.time() - query_proc_start
         timing["query_duration"] = round(query_duration, 3)
-        logger.info(f"🔍 [QUERY] Query processed in {query_duration:.3f}s")
+        logger.info(f"🔍 [QUERY] Query execution time: {query_duration:.3f}s")
         
+        logger.info("📝 [QUERY] Step 4: Parsing result...")
         parse_start = time.time()
-        if result is None:
-            answer = "No results found for the query."
-            sources = []
-            confidence = 0.0
-            logger.warning("⚠️ [QUERY] Query returned None result")
-        elif isinstance(result, dict):
-            answer = result.get('answer', str(result))
-            sources = result.get('sources', [])
-            confidence = result.get('confidence', 0.0)
-        else:
-            answer = str(result)
-            sources = []
-            confidence = 0.0
-        parse_time = time.time() - parse_start
-        timing["parse_duration"] = round(parse_time, 3)
-        logger.info(f"📝 [QUERY] Result parsed in {parse_time:.3f}s")
+        try:
+            if result is None:
+                answer = "No results found for the query."
+                sources = []
+                confidence = 0.0
+                logger.warning("⚠️ [QUERY] Query returned None result")
+                logger.info(f"📝 [QUERY] Result is None - no results found")
+            elif isinstance(result, dict):
+                logger.info(f"📝 [QUERY] Result is a dict with keys: {list(result.keys())}")
+                answer = result.get('answer', str(result))
+                sources = result.get('sources', [])
+                confidence = result.get('confidence', 0.0)
+                logger.info(f"✅ [QUERY] Result parsed successfully")
+                logger.info(f"📝 [QUERY] Answer length: {len(answer)} chars")
+                logger.info(f"📝 [QUERY] Sources count: {len(sources)}")
+                logger.info(f"📝 [QUERY] Confidence: {confidence}")
+            else:
+                logger.info(f"📝 [QUERY] Result type is {type(result)}")
+                answer = str(result)
+                sources = []
+                confidence = 0.0
+                logger.info(f"📝 [QUERY] Converted result to string (length: {len(answer)} chars)")
+            parse_time = time.time() - parse_start
+            timing["parse_duration"] = round(parse_time, 3)
+            logger.info(f"✅ [QUERY] Step 4 SUCCESS: Result parsed in {parse_time:.3f}s")
+        except Exception as e:
+            logger.error(f"❌ [QUERY] Step 4 FAILED: Result parsing error: {str(e)}")
+            import traceback
+            logger.error(f"❌ [QUERY] Traceback: {traceback.format_exc()}")
+            raise
         
         total_duration = time.time() - start_time
         timing["total_duration"] = round(total_duration, 3)
-        logger.info(f"✅ [QUERY] Completed in {total_duration:.3f}s")
+        logger.info(f"✅ [QUERY] ===== QUERY COMPLETED =====")
+        logger.info(f"✅ [QUERY] Total time: {total_duration:.3f}s")
+        logger.info(f"✅ [QUERY] Query: {query[:50]}...")
+        logger.info(f"✅ [QUERY] Answer length: {len(answer)} chars")
         
         return jsonify({
             "query": query,
@@ -903,9 +1025,12 @@ def query():
     except Exception as e:
         total_duration = time.time() - start_time
         timing["total_duration"] = round(total_duration, 3)
-        logger.error(f"❌ [QUERY] Failed after {total_duration:.3f}s: {str(e)}")
+        logger.error(f"❌ [QUERY] ===== QUERY FAILED =====")
+        logger.error(f"❌ [QUERY] Error: {str(e)}")
+        logger.error(f"❌ [QUERY] Time before failure: {total_duration:.3f}s")
+        logger.error(f"❌ [QUERY] Query: {query if 'query' in locals() else 'N/A'}")
         import traceback
-        traceback.print_exc()
+        logger.error(f"❌ [QUERY] Full traceback:\n{traceback.format_exc()}")
         
         return jsonify({
             "error": str(e),
