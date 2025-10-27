@@ -55,11 +55,22 @@ Implemented **asynchronous document processing** to eliminate timeout issues and
 
 ## Chunking Methods
 
-### Default: Simple Chunking (Fast)
-Splits text by lines - instant, no timeouts:
+### Default: RAG-Anything Native Chunks (Recommended)
+Uses structured chunks directly from RAG-Anything/Docling parsing:
 ```python
-chunks = simple_chunking(markdown_content, doc_id)
+# Extract native chunks from parse_result
+for element in structured_data:
+    chunks.append({
+        'type': 'text',
+        'content': element.get('text', ''),
+        'metadata': {
+            'doc_id': s3_key,
+            'page_idx': element.get('page_idx', 0),
+            'element_type': element.get('type')
+        }
+    })
 ```
+**Benefits**: Preserves document structure, page numbers, element types
 
 ### Optional: LLM Chunking (Intelligent)
 Uses GPT to intelligently chunk content - slower but more semantic:
