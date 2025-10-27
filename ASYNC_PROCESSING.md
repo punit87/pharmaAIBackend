@@ -47,38 +47,47 @@ Implemented **asynchronous document processing** to eliminate timeout issues and
 3. API returns immediately: "accepted"
 4. Background thread:
    - Downloads PDF
-   - Calls rag.insert_document()
-   - RAG-Anything handles:
-     - Parse with Docling
-     - Chunk with Docling's native chunking
-     - Insert into LightRAG
+   - Calls rag.parse_document() → returns Docling structured output
+   - Extracts chunks from RAG-Anything's structured data
+   - Calls rag.insert_content_list() → inserts into LightRAG
    - Logs completion
 ```
 
 ## How It Works
 
-### RAG-Anything's Built-in Processing
-The code now uses `rag.insert_document()` which handles everything internally:
+### RAG-Anything's Two-Step Process
 
+**Step 1: Parse with RAG-Anything/Docling**
 ```python
-run_async(rag.insert_document(temp_file_path, doc_id=s3_key))
+parse_result = run_async(rag.parse_document(temp_file_path, parse_method='ocr'))
+```
+
+**Step 2: Extract and Insert Chunks**
+```python
+# Extract chunks from Docling's structured output
+for element in structured_data:
+    content_list.append({
+        'type': 'text',
+        'text': element.get('text', ''),
+        'metadata': {
+            'doc_id': s3_key,
+            'page_idx': element.get('page_idx', 0),
+            'element_type': element.get('type', 'text')
+        }
+    })
+
+# Insert into RAG-Anything
+run_async(rag.insert_content_list(content_list, doc_id=s3_key))
 ```
 
 **What RAG-Anything Does**:
-1. ✅ Parses document with Docling (OCR, tables, text extraction)
-2. ✅ Creates chunks from Docling's structured output
-3. ✅ Inserts chunks into LightRAG's vector store
-4. ✅ Handles all metadata (page numbers, element types, etc.)
+1. ✅ `parse_document()` - Parses with Docling (OCR, tables, text extraction)
+2. ✅ Returns structured elements (already chunked by Docling!)
+3. ✅ `insert_content_list()` - Inserts chunks into LightRAG's vector store
 
-**No manual chunking needed!** RAG-Anything/Docling does it all.
+**RAG-Anything doesn't have an `insert_document()` method** - use `parse_document()` + `insert_content_list()`
 
-### Legacy Code (Kept for Reference)
-
-The code still contains:
-- `custom_llm_chunking()` - available if needed later
-- `simple_chunking()` - fallback chunking method
-
-These are kept for future use but not currently invoked.
+The chunking is handled natively by **Docling's structured output** - no need for manual chunking!
 
 ## Testing
 
