@@ -665,15 +665,54 @@ def process_document_background(bucket, key, s3_key):
         # Get RAG instance
         rag = get_rag_instance()
         
-        # Use RAG-Anything's built-in document insertion with Docling chunking
+        # Parse document with RAG-Anything/Docling
         parse_method = os.environ.get('PARSE_METHOD', 'ocr')
-        logger.info(f"🔍 [BG_PROCESS] Processing document with RAG-Anything...")
+        logger.info(f"🔍 [BG_PROCESS] Parsing document with RAG-Anything/Docling...")
+        parse_result = run_async(rag.parse_document(temp_file_path, parse_method=parse_method))
         
-        # RAG-Anything will handle parsing and chunking internally via Docling
-        # Just pass the file path and let it do the work
-        logger.info(f"📥 [BG_PROCESS] Inserting document with built-in Docling chunking...")
-        run_async(rag.insert_document(temp_file_path, doc_id=s3_key))
-        logger.info(f"✅ [BG_PROCESS] Document processed by RAG-Anything")
+        # Extract chunks from RAG-Anything's parsed output
+        logger.info(f"🔍 [BG_PROCESS] Extracting chunks from parsed document...")
+        if isinstance(parse_result, tuple) and len(parse_result) > 0:
+            structured_data = parse_result[0]
+            
+            # RAG-Anything returns a list of structured elements (chunks)
+            if isinstance(structured_data, list):
+                logger.info(f"📦 [BG_PROCESS] Found {len(structured_data)} structured elements from Docling")
+                content_list = []
+                
+                for idx, element in enumerate(structured_data):
+                    if isinstance(element, dict):
+                        # Extract text content
+                        text_content = element.get('text', element.get('content', str(element)))
+                        if text_content and text_content.strip():
+                            content_list.append({
+                                'type': 'text',
+                                'text': text_content.strip(),
+                                'metadata': {
+                                    'doc_id': s3_key,
+                                    'chunk_id': f"{s3_key}_{idx}",
+                                    'page_idx': element.get('page_idx', 0),
+                                    'chunk_type': 'text',
+                                    'element_type': element.get('type', 'text')
+                                }
+                            })
+                
+                logger.info(f"✅ [BG_PROCESS] Created {len(content_list)} chunks from Docling output")
+            else:
+                logger.warning(f"⚠️ [BG_PROCESS] Unexpected structured_data format: {type(structured_data)}")
+                content_list = []
+        else:
+            logger.warning(f"⚠️ [BG_PROCESS] Unexpected parse_result format")
+            content_list = []
+        
+        # Insert chunks into LightRAG via RAG-Anything
+        if content_list:
+            logger.info(f"📥 [BG_PROCESS] Inserting {len(content_list)} chunks into RAG-Anything...")
+            run_async(rag.insert_content_list(content_list, doc_id=s3_key))
+            logger.info(f"✅ [BG_PROCESS] Document processed by RAG-Anything")
+        else:
+            logger.warning(f"⚠️ [BG_PROCESS] No chunks to insert")
+        
         logger.info(f"✅ [BG_PROCESS] Completed in {time.time() - start_time:.3f}s")
         
         return True
