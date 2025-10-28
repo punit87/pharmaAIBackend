@@ -15,17 +15,6 @@ Parameters:
     Type: String
     Description: S3 Bucket for document storage
 Resources:
-  # Lambda Layer for requests library
-  RequestsLayer:
-    Type: AWS::Lambda::LayerVersion
-    Properties:
-      LayerName: !Sub 'pharma-requests-websocket-${Environment}'
-      Content:
-        S3Bucket: !Ref S3Bucket
-        S3Key: lambda-packages/requests.zip
-      CompatibleRuntimes:
-        - python3.11
-
   # Lambda Integration Role
   # DynamoDB Table for WebSocket Connections
   WebSocketConnectionsTable:
@@ -151,8 +140,6 @@ Resources:
       Role: !GetAtt WebSocketLambdaRole.Arn
       Timeout: 300
       MemorySize: 512
-      Layers:
-        - !Ref RequestsLayer
       Environment:
         Variables:
           CONNECTIONS_TABLE: !Ref WebSocketConnectionsTable
