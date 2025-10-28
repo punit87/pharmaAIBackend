@@ -162,52 +162,6 @@ Resources:
         Variables:
           S3_BUCKET: !Ref DocumentBucket
 
-  WebSocketConnectFunction:
-    Type: AWS::Lambda::Function
-    Properties:
-      FunctionName: !Sub 'pharma-websocket-connect-${Environment}'
-      Runtime: python3.11
-      Handler: websocket_connect.lambda_handler
-      Code:
-        S3Bucket: !Sub '${S3Bucket}'
-        S3Key: !Sub 'lambda-packages/websocket_connect.zip'
-      Role: !GetAtt LambdaExecutionRole.Arn
-      Timeout: 30
-      Environment:
-        Variables:
-          CONNECTIONS_TABLE: !Ref WebSocketConnectionsTable
-
-  WebSocketDisconnectFunction:
-    Type: AWS::Lambda::Function
-    Properties:
-      FunctionName: !Sub 'pharma-websocket-disconnect-${Environment}'
-      Runtime: python3.11
-      Handler: websocket_disconnect.lambda_handler
-      Code:
-        S3Bucket: !Sub '${S3Bucket}'
-        S3Key: !Sub 'lambda-packages/websocket_disconnect.zip'
-      Role: !GetAtt LambdaExecutionRole.Arn
-      Timeout: 30
-      Environment:
-        Variables:
-          CONNECTIONS_TABLE: !Ref WebSocketConnectionsTable
-
-  WebSocketMessageFunction:
-    Type: AWS::Lambda::Function
-    Properties:
-      FunctionName: !Sub 'pharma-websocket-message-${Environment}'
-      Runtime: python3.11
-      Handler: websocket_message.lambda_handler
-      Code:
-        S3Bucket: !Sub '${S3Bucket}'
-        S3Key: !Sub 'lambda-packages/websocket_message.zip'
-      Role: !GetAtt LambdaExecutionRole.Arn
-      Timeout: 30
-      Environment:
-        Variables:
-          CONNECTIONS_TABLE: !Ref WebSocketConnectionsTable
-          API_ENDPOINT: !Ref WebSocketApiEndpoint
-
   RagQueryFunction:
     Type: AWS::Lambda::Function
     Properties:
