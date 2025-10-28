@@ -65,9 +65,18 @@ else
 fi
 
 # Package Lambda functions
-echo "📦 [DEPLOY] Packaging Lambda functions..."
+echo "📦 [DEPLOY] Packaging Lambda functions with dependencies..."
 LAMBDA_PACKAGE_DIR="lambda-packages"
 mkdir -p "$LAMBDA_PACKAGE_DIR"
+
+# Install Python packages into a local lib directory
+INSTALL_LIBS_DIR="lambda-local-libs"
+echo "📦 [DEPLOY] Installing Lambda dependencies to $INSTALL_LIBS_DIR..."
+mkdir -p "$INSTALL_LIBS_DIR"
+pip install -r lambda/requirements.txt -t "$INSTALL_LIBS_DIR" --no-deps || pip3 install -r lambda/requirements.txt -t "$INSTALL_LIBS_DIR" --no-deps
+
+# Lambda functions that need external dependencies
+LAMBDAS_WITH_DEPS=("document_processor" "document_deleter" "rag_query" "rag_query_multimodal" "websocket_message")
 
 # Package each Lambda function
 for lambda_file in lambda/*.py; do
@@ -79,9 +88,23 @@ for lambda_file in lambda/*.py; do
         temp_dir=$(mktemp -d)
         cp "$lambda_file" "$temp_dir/"
         
+        # Check if this Lambda needs external dependencies
+        NEEDS_DEPS=false
+        for deps_lambda in "${LAMBDAS_WITH_DEPS[@]}"; do
+            if [ "$lambda_name" = "$deps_lambda" ]; then
+                NEEDS_DEPS=true
+                break
+            fi
+        done
+        
+        if [ "$NEEDS_DEPS" = true ]; then
+            echo "📦 [DEPLOY] Including external dependencies for $lambda_name..."
+            cp -r "$INSTALL_LIBS_DIR"/* "$temp_dir/" 2>/dev/null || true
+        fi
+        
         # Create zip file in the temp directory
         cd "$temp_dir"
-        zip -r "${lambda_name}.zip" .
+        zip -r "${lambda_name}.zip" . -x "*.pyc" -x "__pycache__/*" -x "*.dist-info/*"
         cd - > /dev/null
         
         # Move zip file to package directory
@@ -95,6 +118,9 @@ for lambda_file in lambda/*.py; do
         rm -rf "$temp_dir"
     fi
 done
+
+# Clean up local libs directory
+rm -rf "$INSTALL_LIBS_DIR"
 
 # Upload CloudFormation templates to S3
 echo "📦 [DEPLOY] Uploading CloudFormation templates to S3..."
