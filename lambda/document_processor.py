@@ -78,55 +78,25 @@ def lambda_handler(event, context):
         if document_name:
             print(f"Document name: {document_name}")
 
-        # For API Gateway calls (without S3 Records), trigger processing asynchronously
-        if 'Records' not in event and not event.get('async_trigger'):
+        # For API Gateway calls (without S3 Records), we need to process it synchronously
+        # but return before timeout if processing takes too long
+        api_gateway_mode = 'Records' not in event
+        
+        if api_gateway_mode:
             print(f"API Gateway triggered processing for: {document_key}")
             
-            # Send WebSocket update if connection_id is provided
+            # Send initial WebSocket update
             if connection_id:
-                send_progress_update(
-                    connection_id, 
-                    'triggering',
-                    'Triggering document processing on ECS...',
-                    {'document_name': document_name, 'progress': 10},
-                    websocket_endpoint
-                )
-            
-            # Invoke this same Lambda function asynchronously to do the actual processing
-            import boto3
-            lambda_client = boto3.client('lambda')
-            lambda_function_name = os.environ.get('AWS_LAMBDA_FUNCTION_NAME')
-            
-            try:
-                lambda_client.invoke(
-                    FunctionName=lambda_function_name,
-                    InvocationType='Event',  # Async invocation
-                    Payload=json.dumps({
-                        'bucket': bucket_name,
-                        'document_key': document_key,
-                        'document_name': document_name,
-                        'connection_id': connection_id,
-                        'async_trigger': True  # Flag to indicate this is async call
-                    })
-                )
-                print(f"Triggered async processing via Lambda invoke for: {document_key}")
-            except Exception as e:
-                print(f"Failed to invoke Lambda asynchronously: {str(e)}")
-            
-            # Return immediately to avoid timeout
-            return {
-                'statusCode': 200,
-                'headers': {
-                    'Content-Type': 'application/json',
-                    'Access-Control-Allow-Origin': '*'
-                },
-                'body': json.dumps({
-                    'status': 'accepted',
-                    'message': 'Document processing started.',
-                    'document_key': document_key,
-                    'document_name': document_name
-                })
-            }
+                try:
+                    send_progress_update(
+                        connection_id, 
+                        'starting',
+                        'Starting document processing...',
+                        {'document_name': document_name, 'progress': 10},
+                        websocket_endpoint
+                    )
+                except Exception as e:
+                    print(f"Error sending WebSocket update: {str(e)}")
 
         # Send initial progress update via WebSocket if connection_id is provided
         if connection_id and event.get('async_trigger'):
@@ -158,14 +128,17 @@ def lambda_handler(event, context):
         
         print(f"Making document processing request via ALB: {process_url}")
         
-        if connection_id and event.get('async_trigger'):
-            send_progress_update(
-                connection_id,
-                'triggering',
-                'Triggering document processing on ECS...',
-                {'progress': 20},
-                websocket_endpoint
-            )
+        if connection_id and api_gateway_mode:
+            try:
+                send_progress_update(
+                    connection_id,
+                    'triggering',
+                    'Triggering document processing on ECS...',
+                    {'progress': 20},
+                    websocket_endpoint
+                )
+            except Exception as e:
+                print(f"Error sending WebSocket update: {str(e)}")
 
         # Retry logic with exponential backoff
         max_retries = 5
@@ -177,14 +150,17 @@ def lambda_handler(event, context):
                 print(f"Attempt {attempt + 1}/{max_retries}: Making document processing request to ALB: {process_url}")
                 
                 # Send progress update
-                if connection_id and event.get('async_trigger'):
-                    send_progress_update(
-                        connection_id,
-                        'processing',
-                        f'Connecting to ECS processing task... (attempt {attempt + 1}/{max_retries})',
-                        {'progress': 30 + (attempt * 10)},
-                        websocket_endpoint
-                    )
+                if connection_id and api_gateway_mode:
+                    try:
+                        send_progress_update(
+                            connection_id,
+                            'processing',
+                            f'Connecting to ECS processing task... (attempt {attempt + 1}/{max_retries})',
+                            {'progress': 30 + (attempt * 10)},
+                            websocket_endpoint
+                        )
+                    except Exception as e:
+                        print(f"Error sending WebSocket update: {str(e)}")
                 
                 # Prepare request payload - RAG-Anything expects 'bucket' and 'key'
                 payload = {
@@ -195,14 +171,17 @@ def lambda_handler(event, context):
                     payload['document_name'] = document_name
                 
                 # Send progress update before making request
-                if connection_id and event.get('async_trigger'):
-                    send_progress_update(
-                        connection_id,
-                        'processing',
-                        'Sending document to processing engine...',
-                        {'progress': 40},
-                        websocket_endpoint
-                    )
+                if connection_id and api_gateway_mode:
+                    try:
+                        send_progress_update(
+                            connection_id,
+                            'processing',
+                            'Sending document to processing engine...',
+                            {'progress': 40},
+                            websocket_endpoint
+                        )
+                    except Exception as e:
+                        print(f"Error sending WebSocket update: {str(e)}")
                 
                 process_response = requests.post(
                     process_url,
@@ -212,18 +191,21 @@ def lambda_handler(event, context):
                 )
                 
                 if process_response.status_code == 200:
-                    if connection_id and event.get('async_trigger'):
-                        send_progress_update(
-                            connection_id,
-                            'processing',
-                            'Document processing completed successfully!',
-                            {'progress': 90},
-                            websocket_endpoint
-                        )
+                    if connection_id and api_gateway_mode:
+                        try:
+                            send_progress_update(
+                                connection_id,
+                                'processing',
+                                'Document processing completed successfully!',
+                                {'progress': 90},
+                                websocket_endpoint
+                            )
+                        except Exception as e:
+                            print(f"Error sending WebSocket update: {str(e)}")
                     break  # Success, exit retry loop
                 elif process_response.status_code == 502 or process_response.status_code == 503:
                     # ALB/task not ready, retry
-                    if connection_id and event.get('async_trigger'):
+                    if connection_id and api_gateway_mode:
                         send_progress_update(
                             connection_id,
                             'waiting',
@@ -242,7 +224,7 @@ def lambda_handler(event, context):
                     
             except requests.exceptions.Timeout:
                 print(f"Request timeout on attempt {attempt + 1}")
-                if connection_id and event.get('async_trigger'):
+                if connection_id and api_gateway_mode:
                     send_progress_update(
                         connection_id,
                         'waiting',
@@ -256,7 +238,7 @@ def lambda_handler(event, context):
                     continue
             except requests.exceptions.ConnectionError:
                 print(f"Connection error on attempt {attempt + 1}")
-                if connection_id and event.get('async_trigger'):
+                if connection_id and api_gateway_mode:
                     send_progress_update(
                         connection_id,
                         'waiting',
@@ -270,7 +252,7 @@ def lambda_handler(event, context):
                     continue
             except Exception as e:
                 print(f"Unexpected error on attempt {attempt + 1}: {str(e)}")
-                if connection_id and event.get('async_trigger'):
+                if connection_id and api_gateway_mode:
                     send_progress_update(
                         connection_id,
                         'error',
@@ -301,12 +283,19 @@ def lambda_handler(event, context):
             print("ECS task remains running for better performance")
             
             # Return appropriate response based on event type
-            if 'Records' in event:
-                # S3 event - just log success
-                print(f"Document processing completed successfully: {document_key}")
-                return {'status': 'success', 'document_key': document_key}
-            else:
+            if api_gateway_mode:
                 # API Gateway event - return HTTP response
+                try:
+                    send_completion_notification(
+                        connection_id,
+                        True,
+                        document_key,
+                        None,
+                        websocket_endpoint
+                    )
+                except Exception as e:
+                    print(f"Error sending completion notification: {str(e)}")
+                    
                 return {
                     'statusCode': 200,
                     'headers': {
@@ -321,6 +310,12 @@ def lambda_handler(event, context):
                         'result': result
                     })
                 }
+            else:
+                # S3 event
+                if 'Records' in event:
+                    # S3 event - just log success
+                    print(f"Document processing completed successfully: {document_key}")
+                    return {'status': 'success', 'document_key': document_key}
         else:
             if process_response:
                 error_message = f'Document processing failed with status: {process_response.status_code}'
@@ -331,19 +326,18 @@ def lambda_handler(event, context):
             
             # Send error notification via WebSocket
             if connection_id:
-                send_completion_notification(
-                    connection_id,
-                    False,
-                    document_key,
-                    error_message,
-                    websocket_endpoint
-                )
+                try:
+                    send_completion_notification(
+                        connection_id,
+                        False,
+                        document_key,
+                        error_message,
+                        websocket_endpoint
+                    )
+                except Exception as e:
+                    print(f"Error sending error notification: {str(e)}")
             
-            if 'Records' in event:
-                # S3 event - just log error
-                print(f"Document processing failed: {process_response.text}")
-                return {'status': 'error', 'document_key': document_key, 'error': process_response.text}
-            else:
+            if api_gateway_mode:
                 # API Gateway event - return HTTP error response
                 return {
                     'statusCode': 500,
@@ -355,13 +349,17 @@ def lambda_handler(event, context):
                         'error': error_message
                     })
                 }
+            else:
+                # S3 event - just log error
+                print(f"Document processing failed: {process_response.text}")
+                return {'status': 'error', 'document_key': document_key, 'error': process_response.text}
                 
     except Exception as e:
         print(f"Error processing document: {str(e)}")
-        if 'Records' in event:
-            # S3 event - just log error
-            return {'status': 'error', 'error': str(e)}
-        else:
+        import traceback
+        traceback.print_exc()
+        
+        if api_gateway_mode:
             # API Gateway event - return HTTP error response
             return {
                 'statusCode': 500,
@@ -371,3 +369,6 @@ def lambda_handler(event, context):
                 },
                 'body': json.dumps({'error': str(e)})
             }
+        else:
+            # S3 event - just log error
+            return {'status': 'error', 'error': str(e)}
