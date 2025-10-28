@@ -54,12 +54,23 @@ def lambda_handler(event, context):
             _send_update(connection_id, 'processing', 'Sending document to processing engine...', 40)
             
             # Call ECS to process document
-            process_response = requests.post(
-                process_url,
-                json=payload,
-                headers={'Content-Type': 'application/json'},
-                timeout=300
-            )
+            print(f"Making HTTP request to ECS: {process_url}")
+            print(f"Payload: {json.dumps(payload)}")
+            try:
+                process_response = requests.post(
+                    process_url,
+                    json=payload,
+                    headers={'Content-Type': 'application/json'},
+                    timeout=300
+                )
+                print(f"HTTP response status: {process_response.status_code}")
+                print(f"HTTP response body: {process_response.text}")
+            except Exception as e:
+                print(f"Error making HTTP request to ECS: {str(e)}")
+                import traceback
+                traceback.print_exc()
+                _send_error(connection_id, f'Error calling ECS: {str(e)}')
+                return {'statusCode': 500}
             
             if process_response.status_code == 200:
                 _send_update(connection_id, 'complete', 'Document processing completed successfully!', 100)
