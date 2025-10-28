@@ -132,6 +132,32 @@ Resources:
       ParentId: !GetAtt ApiGateway.RootResourceId
       PathPart: process
 
+  ProcessOptionsMethod:
+    Type: AWS::ApiGateway::Method
+    Properties:
+      RestApiId: !Ref ApiGateway
+      ResourceId: !Ref ProcessResource
+      HttpMethod: OPTIONS
+      AuthorizationType: NONE
+      Integration:
+        Type: MOCK
+        RequestTemplates:
+          application/json: '{"statusCode": 200}'
+        IntegrationResponses:
+          - StatusCode: 200
+            ResponseParameters:
+              method.response.header.Access-Control-Allow-Origin: "'*'"
+              method.response.header.Access-Control-Allow-Methods: "'OPTIONS,POST'"
+              method.response.header.Access-Control-Allow-Headers: "'Content-Type,Authorization'"
+            ResponseTemplates:
+              application/json: ''
+      MethodResponses:
+        - StatusCode: 200
+          ResponseParameters:
+            method.response.header.Access-Control-Allow-Origin: true
+            method.response.header.Access-Control-Allow-Methods: true
+            method.response.header.Access-Control-Allow-Headers: true
+
   ProcessMethod:
     Type: AWS::ApiGateway::Method
     Properties:
@@ -217,6 +243,7 @@ Resources:
     DependsOn:
       - PresignedUrlMethod
       - HealthMethod
+      - ProcessOptionsMethod
       - ProcessMethod
       - KnowledgeBaseOptionsMethod
       - KnowledgeBaseMethod
