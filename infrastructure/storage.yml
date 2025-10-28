@@ -16,8 +16,8 @@ Resources:
     DeletionPolicy: Retain
     UpdateReplacePolicy: Retain
     Properties:
-      # Dynamic bucket name - if one exists with same name, update it instead of failing
-      BucketName: !Sub 'pharma-documents-${Environment}-${AWS::AccountId}-${AWS::Region}'
+      # Remove BucketName to make it idempotent - CloudFormation will generate unique name
+      # or use the existing bucket if recreating
       VersioningConfiguration:
         Status: Enabled
       PublicAccessBlockConfiguration:

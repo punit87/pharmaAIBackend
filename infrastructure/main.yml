@@ -90,16 +90,6 @@ Resources:
         DocumentBucket: !GetAtt StorageStack.Outputs.DocumentBucketName
         S3Bucket: !Ref S3Bucket
 
-  # S3 Notifications (Non-critical - can fail without affecting core functionality)
-  S3NotificationsStack:
-    Type: AWS::CloudFormation::Stack
-    Properties:
-      TemplateURL: !Sub 'https://${S3Bucket}.s3.${AWS::Region}.amazonaws.com/cloudformation-templates/s3-notifications.yml'
-      Parameters:
-        Environment: !Ref Environment
-        DocumentBucket: !GetAtt StorageStack.Outputs.DocumentBucketName
-        DocumentProcessorFunctionArn: !GetAtt LambdaStack.Outputs.DocumentProcessorFunction
-
   # API Gateway
   ApiGatewayStack:
     Type: AWS::CloudFormation::Stack
