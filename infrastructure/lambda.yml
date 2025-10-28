@@ -176,7 +176,8 @@ Resources:
       # This avoids the need for NAT Gateway (~$32/month)
       Layers:
         - !Ref RequestsLayer
-      Timeout: 300
+      MemorySize: 512
+      Timeout: 900
       Environment:
         Variables:
           ECS_CLUSTER: !Ref ECSCluster
