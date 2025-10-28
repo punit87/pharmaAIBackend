@@ -1,32 +1,19 @@
-# Environment files
-.env
-.env.local
-.env.*.local
-
 # Python
 __pycache__/
 *.py[cod]
 *$py.class
 *.so
 .Python
-build/
-develop-eggs/
-dist/
-downloads/
-eggs/
-.eggs/
-lib/
-lib64/
-parts/
-sdist/
-var/
-wheels/
-*.egg-info/
-.installed.cfg
-*.egg
 
-# Lambda packages
+# Virtual Environments
+venv/
+env/
+ENV/
+.venv
+
+# Lambda packages (built artifacts)
 lambda-packages/
+lambda-local-libs/
 
 # IDE
 .vscode/
@@ -39,9 +26,16 @@ lambda-packages/
 .DS_Store
 Thumbs.db
 
-# AWS
-.aws/
-*.zip
-
 # Logs
 *.log
+
+# Temporary files
+*.tmp
+temp/
+tmp/
+
+# Environment variables
+.env.local
+
+# CloudFormation outputs
+*.output
