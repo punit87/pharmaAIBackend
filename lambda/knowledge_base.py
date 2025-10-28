@@ -6,6 +6,18 @@ def lambda_handler(event, context):
     """
     Knowledge base endpoint - lists documents in S3
     """
+    # Handle CORS preflight
+    if event.get('httpMethod') == 'OPTIONS':
+        return {
+            'statusCode': 200,
+            'headers': {
+                'Access-Control-Allow-Origin': '*',
+                'Access-Control-Allow-Methods': 'OPTIONS,POST',
+                'Access-Control-Allow-Headers': 'Content-Type,Authorization'
+            },
+            'body': ''
+        }
+    
     try:
         bucket_name = os.environ.get('S3_BUCKET', '')
         
