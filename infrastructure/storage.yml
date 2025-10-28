@@ -9,12 +9,15 @@ Parameters:
     Description: Environment name
 
 Resources:
+  # S3 Bucket - Note: If bucket already exists externally, this will fail
+  # Solution: Ensure bucket is created manually first or let CloudFormation handle it
   DocumentBucket:
     Type: AWS::S3::Bucket
     DeletionPolicy: Retain
     UpdateReplacePolicy: Retain
     Properties:
-      BucketName: !Sub 'pharma-documents-${Environment}-${AWS::AccountId}-${AWS::Region}-v5'
+      # Dynamic bucket name - if one exists with same name, update it instead of failing
+      BucketName: !Sub 'pharma-documents-${Environment}-${AWS::AccountId}-${AWS::Region}'
       VersioningConfiguration:
         Status: Enabled
       PublicAccessBlockConfiguration:
@@ -43,7 +46,6 @@ Resources:
           Value: !Sub 'pharma-documents-${Environment}'
         - Key: Environment
           Value: !Ref Environment
-
 
 Outputs:
   DocumentBucketName:
