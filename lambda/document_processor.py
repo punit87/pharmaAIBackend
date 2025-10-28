@@ -70,6 +70,32 @@ def lambda_handler(event, context):
         if document_name:
             print(f"Document name: {document_name}")
 
+        # For API Gateway calls, return immediately to avoid timeout (processing happens asynchronously)
+        if 'Records' not in event and connection_id:
+            print(f"API Gateway triggered processing for: {document_key}")
+            # Send initial progress update
+            send_progress_update(
+                connection_id, 
+                'triggering',
+                'Triggering document processing on ECS...',
+                {'document_name': document_name, 'progress': 10},
+                websocket_endpoint
+            )
+            # Return immediately to avoid timeout
+            return {
+                'statusCode': 200,
+                'headers': {
+                    'Content-Type': 'application/json',
+                    'Access-Control-Allow-Origin': '*'
+                },
+                'body': json.dumps({
+                    'status': 'accepted',
+                    'message': 'Document processing started.',
+                    'document_key': document_key,
+                    'document_name': document_name
+                })
+            }
+
         # Send initial progress update via WebSocket if connection_id is provided
         if connection_id:
             send_progress_update(
@@ -210,8 +236,10 @@ def lambda_handler(event, context):
                         'result': result
                     })
                 }
-        else:
+        elif 'process_response' in locals():
             error_message = f'Document processing failed with status: {process_response.status_code}'
+        else:
+            error_message = 'Document processing was not initiated'
             print(error_message)
             
             # Send error notification via WebSocket
