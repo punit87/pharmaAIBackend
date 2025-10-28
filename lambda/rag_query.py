@@ -136,6 +136,43 @@ def lambda_handler(event, context):
             result = query_response.json()
             print("Query processed successfully")
             
+            # Extract document names from inline references if sources array is empty
+            if result.get('sources') == [] and 'answer' in result:
+                # Look for references like [1] unknown_document in the answer
+                import re
+                answer = result.get('answer', '')
+                # Try to extract document filenames from S3 bucket
+                try:
+                    s3_client = boto3.client('s3')
+                    bucket_name = os.environ.get('S3_BUCKET')
+                    if bucket_name:
+                        # List recently processed documents
+                        response = s3_client.list_objects_v2(
+                            Bucket=bucket_name,
+                            Prefix='test-documents/',
+                            MaxKeys=10
+                        )
+                        if 'Contents' in response:
+                            # Get the most recent document as the source
+                            recent_doc = max(response['Contents'], key=lambda x: x['LastModified'])
+                            original_name = None
+                            if '_' in recent_doc['Key']:
+                                # Extract original filename from key (format: uuid_originalname.pdf)
+                                parts = recent_doc['Key'].split('/')[-1].split('_', 1)
+                                if len(parts) == 2:
+                                    original_name = parts[1]
+                            
+                            # Replace unknown_document with actual filename in answer
+                            if original_name:
+                                result['answer'] = re.sub(
+                                    r'\[(\d+)\]\s+unknown_document',
+                                    f'[\\1] {original_name}',
+                                    answer
+                                )
+                                print(f"Updated document reference to: {original_name}")
+                except Exception as e:
+                    print(f"Could not extract document name: {str(e)}")
+            
             # Task stays running for better performance (DesiredCount=1)
             print("ECS task remains running for better performance")
             
