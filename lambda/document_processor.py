@@ -78,11 +78,12 @@ def lambda_handler(event, context):
         if document_name:
             print(f"Document name: {document_name}")
 
-        # For API Gateway calls (without S3 Records), we need to process it synchronously
-        # but return before timeout if processing takes too long
+        # For API Gateway calls (without S3 Records), return immediately and process asynchronously
+        # The API Gateway has a 30-second timeout, but WebSocket API has no such limit
+        # So we return quickly from the REST API, then process in background and send WebSocket updates
         api_gateway_mode = 'Records' not in event
         
-        if api_gateway_mode:
+        if api_gateway_mode and not event.get('_async_processing'):
             print(f"API Gateway triggered processing for: {document_key}")
             
             # Send initial WebSocket update
@@ -92,11 +93,50 @@ def lambda_handler(event, context):
                         connection_id, 
                         'starting',
                         'Starting document processing...',
-                        {'document_name': document_name, 'progress': 10},
+                        {'document_name': document_name, 'progress': 5},
                         websocket_endpoint
                     )
                 except Exception as e:
                     print(f"Error sending WebSocket update: {str(e)}")
+            
+            # Trigger async processing by invoking Lambda with special flag
+            try:
+                import boto3
+                lambda_client = boto3.client('lambda')
+                lambda_function_name = os.environ.get('AWS_LAMBDA_FUNCTION_NAME')
+                
+                # Invoke this Lambda asynchronously to do the actual processing
+                lambda_client.invoke(
+                    FunctionName=lambda_function_name,
+                    InvocationType='Event',  # Async invocation
+                    Payload=json.dumps({
+                        'bucket': bucket_name,
+                        'document_key': document_key,
+                        'document_name': document_name,
+                        'connection_id': connection_id,
+                        '_async_processing': True  # Flag for async processing
+                    })
+                )
+                print(f"Triggered async processing for: {document_key}")
+            except Exception as e:
+                print(f"Failed to invoke Lambda asynchronously: {str(e)}")
+            
+            # Return immediately to avoid API Gateway timeout
+            return {
+                'statusCode': 200,
+                'headers': {
+                    'Content-Type': 'application/json',
+                    'Access-Control-Allow-Origin': '*'
+                },
+                'body': json.dumps({
+                    'status': 'accepted',
+                    'message': 'Document processing started.',
+                    'document_key': document_key,
+                    'document_name': document_name
+                })
+            }
+        
+        # If this is the async processing invocation, skip the early return and continue to process
 
         # Send initial progress update via WebSocket if connection_id is provided
         if connection_id and event.get('async_trigger'):
