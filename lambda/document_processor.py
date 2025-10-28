@@ -21,7 +21,15 @@ except ImportError:
 def lambda_handler(event, context):
     try:
         connection_id = None
+        # Construct WebSocket endpoint dynamically if not set in environment
         websocket_endpoint = os.environ.get('WEBSOCKET_API_ENDPOINT')
+        if not websocket_endpoint:
+            # Construct from known WebSocket API ID: 6dkgg5u5s7
+            region = os.environ.get('AWS_REGION', 'us-east-1')
+            stage = os.environ.get('ENVIRONMENT', 'dev')
+            websocket_api_id = '6dkgg5u5s7'  # Known WebSocket API Gateway ID
+            websocket_endpoint = f'https://{websocket_api_id}.execute-api.{region}.amazonaws.com/{stage}'
+            print(f"Constructed WebSocket endpoint: {websocket_endpoint}")
         
         # Handle S3 event (from S3 notification)
         if 'Records' in event:
