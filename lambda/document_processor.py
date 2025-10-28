@@ -70,8 +70,8 @@ def lambda_handler(event, context):
         if document_name:
             print(f"Document name: {document_name}")
 
-        # For API Gateway calls (without S3 Records), we need to trigger async processing
-        if 'Records' not in event:
+        # For API Gateway calls (without S3 Records), trigger processing asynchronously
+        if 'Records' not in event and not event.get('async_trigger'):
             print(f"API Gateway triggered processing for: {document_key}")
             
             # Send WebSocket update if connection_id is provided
@@ -84,9 +84,26 @@ def lambda_handler(event, context):
                     websocket_endpoint
                 )
             
-            # TODO: Implement async processing via SQS or another Lambda
-            # For now, processing will happen via S3 events when files are uploaded
-            print("Returning accepted status - actual processing will be triggered by S3 events")
+            # Invoke this same Lambda function asynchronously to do the actual processing
+            import boto3
+            lambda_client = boto3.client('lambda')
+            lambda_function_name = os.environ.get('AWS_LAMBDA_FUNCTION_NAME')
+            
+            try:
+                lambda_client.invoke(
+                    FunctionName=lambda_function_name,
+                    InvocationType='Event',  # Async invocation
+                    Payload=json.dumps({
+                        'bucket': bucket_name,
+                        'document_key': document_key,
+                        'document_name': document_name,
+                        'connection_id': connection_id,
+                        'async_trigger': True  # Flag to indicate this is async call
+                    })
+                )
+                print(f"Triggered async processing via Lambda invoke for: {document_key}")
+            except Exception as e:
+                print(f"Failed to invoke Lambda asynchronously: {str(e)}")
             
             # Return immediately to avoid timeout
             return {
@@ -104,12 +121,12 @@ def lambda_handler(event, context):
             }
 
         # Send initial progress update via WebSocket if connection_id is provided
-        if connection_id:
+        if connection_id and event.get('async_trigger'):
             send_progress_update(
                 connection_id, 
                 'starting',
                 'Starting document processing...',
-                {'document_name': document_name, 'progress': 5},
+                {'document_name': document_name, 'progress': 15},
                 websocket_endpoint
             )
         
@@ -133,22 +150,33 @@ def lambda_handler(event, context):
         
         print(f"Making document processing request via ALB: {process_url}")
         
-        if connection_id:
+        if connection_id and event.get('async_trigger'):
             send_progress_update(
                 connection_id,
                 'triggering',
                 'Triggering document processing on ECS...',
-                {'progress': 10},
+                {'progress': 20},
                 websocket_endpoint
             )
 
         # Retry logic with exponential backoff
         max_retries = 5
         retry_delay = 10  # Start with 10 seconds
+        process_response = None
         
         for attempt in range(max_retries):
             try:
                 print(f"Attempt {attempt + 1}/{max_retries}: Making document processing request to ALB: {process_url}")
+                
+                # Send progress update
+                if connection_id and event.get('async_trigger'):
+                    send_progress_update(
+                        connection_id,
+                        'processing',
+                        f'Connecting to ECS processing task... (attempt {attempt + 1}/{max_retries})',
+                        {'progress': 30 + (attempt * 10)},
+                        websocket_endpoint
+                    )
                 
                 # Prepare request payload - RAG-Anything expects 'bucket' and 'key'
                 payload = {
@@ -158,6 +186,16 @@ def lambda_handler(event, context):
                 if document_name:
                     payload['document_name'] = document_name
                 
+                # Send progress update before making request
+                if connection_id and event.get('async_trigger'):
+                    send_progress_update(
+                        connection_id,
+                        'processing',
+                        'Sending document to processing engine...',
+                        {'progress': 40},
+                        websocket_endpoint
+                    )
+                
                 process_response = requests.post(
                     process_url,
                     json=payload,
@@ -166,17 +204,25 @@ def lambda_handler(event, context):
                 )
                 
                 if process_response.status_code == 200:
-                    if connection_id:
+                    if connection_id and event.get('async_trigger'):
                         send_progress_update(
                             connection_id,
                             'processing',
                             'Document processing completed successfully!',
-                            {'progress': 95},
+                            {'progress': 90},
                             websocket_endpoint
                         )
                     break  # Success, exit retry loop
                 elif process_response.status_code == 502 or process_response.status_code == 503:
                     # ALB/task not ready, retry
+                    if connection_id and event.get('async_trigger'):
+                        send_progress_update(
+                            connection_id,
+                            'waiting',
+                            f'Processing service not ready, retrying in {retry_delay}s...',
+                            {'progress': 50},
+                            websocket_endpoint
+                        )
                     if attempt < max_retries - 1:
                         print(f"ALB returned {process_response.status_code}, retrying in {retry_delay} seconds...")
                         time.sleep(retry_delay)
@@ -188,24 +234,48 @@ def lambda_handler(event, context):
                     
             except requests.exceptions.Timeout:
                 print(f"Request timeout on attempt {attempt + 1}")
+                if connection_id and event.get('async_trigger'):
+                    send_progress_update(
+                        connection_id,
+                        'waiting',
+                        'Request timeout, retrying...',
+                        {'progress': 50},
+                        websocket_endpoint
+                    )
                 if attempt < max_retries - 1:
                     time.sleep(retry_delay)
                     retry_delay *= 2
                     continue
             except requests.exceptions.ConnectionError:
                 print(f"Connection error on attempt {attempt + 1}")
+                if connection_id and event.get('async_trigger'):
+                    send_progress_update(
+                        connection_id,
+                        'waiting',
+                        'Connection error, retrying...',
+                        {'progress': 50},
+                        websocket_endpoint
+                    )
                 if attempt < max_retries - 1:
                     time.sleep(retry_delay)
                     retry_delay *= 2
                     continue
             except Exception as e:
                 print(f"Unexpected error on attempt {attempt + 1}: {str(e)}")
+                if connection_id and event.get('async_trigger'):
+                    send_progress_update(
+                        connection_id,
+                        'error',
+                        f'Error: {str(e)[:50]}...',
+                        {'progress': 50},
+                        websocket_endpoint
+                    )
                 if attempt < max_retries - 1:
                     time.sleep(retry_delay)
                     retry_delay *= 2
                     continue
         
-        if process_response.status_code == 200:
+        if process_response and process_response.status_code == 200:
             result = process_response.json()
             print("Document processed successfully")
             
@@ -243,10 +313,12 @@ def lambda_handler(event, context):
                         'result': result
                     })
                 }
-        elif 'process_response' in locals():
-            error_message = f'Document processing failed with status: {process_response.status_code}'
         else:
-            error_message = 'Document processing was not initiated'
+            if process_response:
+                error_message = f'Document processing failed with status: {process_response.status_code}'
+            else:
+                error_message = 'Document processing failed - no response received'
+            
             print(error_message)
             
             # Send error notification via WebSocket
