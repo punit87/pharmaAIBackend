@@ -70,17 +70,24 @@ def lambda_handler(event, context):
         if document_name:
             print(f"Document name: {document_name}")
 
-        # For API Gateway calls, return immediately to avoid timeout (processing happens asynchronously)
-        if 'Records' not in event and connection_id:
+        # For API Gateway calls (without S3 Records), we need to trigger async processing
+        if 'Records' not in event:
             print(f"API Gateway triggered processing for: {document_key}")
-            # Send initial progress update
-            send_progress_update(
-                connection_id, 
-                'triggering',
-                'Triggering document processing on ECS...',
-                {'document_name': document_name, 'progress': 10},
-                websocket_endpoint
-            )
+            
+            # Send WebSocket update if connection_id is provided
+            if connection_id:
+                send_progress_update(
+                    connection_id, 
+                    'triggering',
+                    'Triggering document processing on ECS...',
+                    {'document_name': document_name, 'progress': 10},
+                    websocket_endpoint
+                )
+            
+            # TODO: Implement async processing via SQS or another Lambda
+            # For now, processing will happen via S3 events when files are uploaded
+            print("Returning accepted status - actual processing will be triggered by S3 events")
+            
             # Return immediately to avoid timeout
             return {
                 'statusCode': 200,
