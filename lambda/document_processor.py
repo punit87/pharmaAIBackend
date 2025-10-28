@@ -3,9 +3,26 @@ import boto3
 import os
 import requests
 import time
+from datetime import datetime
+
+# WebSocket utility for sending progress updates
+try:
+    import sys
+    sys.path.append('/var/task')
+    from websocket_send import send_progress_update, send_completion_notification
+except ImportError:
+    # Fallback if websocket_send is not available
+    def send_progress_update(connection_id, step, message, data=None, api_endpoint=None):
+        print(f"[WebSocket] {step}: {message} (connection_id: {connection_id})")
+    
+    def send_completion_notification(connection_id, success, document_key=None, error=None, api_endpoint=None):
+        print(f"[WebSocket] Complete: {success} (connection_id: {connection_id})")
 
 def lambda_handler(event, context):
     try:
+        connection_id = None
+        websocket_endpoint = os.environ.get('WEBSOCKET_API_ENDPOINT')
+        
         # Handle S3 event (from S3 notification)
         if 'Records' in event:
             # Extract S3 event information
@@ -16,16 +33,18 @@ def lambda_handler(event, context):
             
             print(f"Processing S3 event: bucket={bucket_name}, key={document_key}")
         else:
-            # Handle API Gateway event (for manual testing)
+            # Handle API Gateway event (for manual testing or WebSocket tracking)
             if 'body' in event:
                 body = json.loads(event['body'])
                 document_key = body.get('document_key', '')
                 document_name = body.get('document_name', '')
                 bucket_name = body.get('bucket', os.environ.get('S3_BUCKET', ''))
+                connection_id = body.get('connection_id')  # WebSocket connection ID
             else:
                 document_key = event.get('document_key', '')
                 document_name = event.get('document_name', '')
                 bucket_name = event.get('bucket', os.environ.get('S3_BUCKET', ''))
+                connection_id = event.get('connection_id')
 
         if not document_key:
             return {
@@ -51,10 +70,41 @@ def lambda_handler(event, context):
         if document_name:
             print(f"Document name: {document_name}")
 
-        # Use ALB endpoint for reliable connection to ECS tasks
+        # For API Gateway calls (manual trigger), return immediately to avoid timeout
+        if 'Records' not in event:
+            print(f"API Gateway triggered processing for: {document_key}")
+            # Return immediately with CORS headers
+            return {
+                'statusCode': 200,
+                'headers': {
+                    'Content-Type': 'application/json',
+                    'Access-Control-Allow-Origin': '*'
+                },
+                'body': json.dumps({
+                    'status': 'accepted',
+                    'message': 'Document processing started. Processing will be handled automatically via S3 event notifications.',
+                    'document_key': document_key,
+                    'document_name': document_name,
+                    'note': 'S3 upload triggers automatic processing via Lambda function'
+                })
+            }
+        
+        # Send initial progress update via WebSocket if connection_id is provided
+        if connection_id:
+            send_progress_update(
+                connection_id, 
+                'starting',
+                'Starting document processing...',
+                {'document_name': document_name, 'progress': 5},
+                websocket_endpoint
+            )
+        
+        # Use ALB endpoint for reliable connection to ECS tasks (for S3 events)
         alb_endpoint = os.environ.get('ALB_ENDPOINT')
         if not alb_endpoint:
             print("ALB_ENDPOINT not configured")
+            if connection_id:
+                send_completion_notification(connection_id, False, document_key, 'ALB endpoint not configured', websocket_endpoint)
             return {
                 'statusCode': 500,
                 'headers': {
@@ -68,6 +118,15 @@ def lambda_handler(event, context):
         process_url = f"{server_url}/process"
         
         print(f"Making document processing request via ALB: {process_url}")
+        
+        if connection_id:
+            send_progress_update(
+                connection_id,
+                'triggering',
+                'Triggering document processing on ECS...',
+                {'progress': 10},
+                websocket_endpoint
+            )
 
         # Retry logic with exponential backoff
         max_retries = 5
@@ -93,6 +152,14 @@ def lambda_handler(event, context):
                 )
                 
                 if process_response.status_code == 200:
+                    if connection_id:
+                        send_progress_update(
+                            connection_id,
+                            'processing',
+                            'Document processing completed successfully!',
+                            {'progress': 95},
+                            websocket_endpoint
+                        )
                     break  # Success, exit retry loop
                 elif process_response.status_code == 502 or process_response.status_code == 503:
                     # ALB/task not ready, retry
@@ -128,6 +195,16 @@ def lambda_handler(event, context):
             result = process_response.json()
             print("Document processed successfully")
             
+            # Send completion notification via WebSocket
+            if connection_id:
+                send_completion_notification(
+                    connection_id,
+                    True,
+                    document_key,
+                    None,
+                    websocket_endpoint
+                )
+            
             # Task stays running for better performance (DesiredCount=1)
             print("ECS task remains running for better performance")
             
@@ -153,7 +230,19 @@ def lambda_handler(event, context):
                     })
                 }
         else:
-            print(f"Document processing failed with status: {process_response.status_code}")
+            error_message = f'Document processing failed with status: {process_response.status_code}'
+            print(error_message)
+            
+            # Send error notification via WebSocket
+            if connection_id:
+                send_completion_notification(
+                    connection_id,
+                    False,
+                    document_key,
+                    error_message,
+                    websocket_endpoint
+                )
+            
             if 'Records' in event:
                 # S3 event - just log error
                 print(f"Document processing failed: {process_response.text}")
@@ -167,7 +256,7 @@ def lambda_handler(event, context):
                         'Access-Control-Allow-Origin': '*'
                     },
                     'body': json.dumps({
-                        'error': f'Document processing failed: {process_response.text}'
+                        'error': error_message
                     })
                 }
                 

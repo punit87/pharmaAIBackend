@@ -32,7 +32,6 @@ Parameters:
 
   S3Bucket:
     Type: String
-    Default: pharma-deployments-864899869769
     Description: S3 bucket for CloudFormation templates and Lambda packages
 
 Resources:
@@ -110,8 +109,20 @@ Resources:
         Environment: !Ref Environment
         PresignedUrlFunction: !GetAtt LambdaStack.Outputs.PresignedUrlFunction
         HealthFunction: !GetAtt LambdaStack.Outputs.HealthFunction
+        DocumentProcessorFunction: !GetAtt LambdaStack.Outputs.DocumentProcessorFunction
+        KnowledgeBaseFunction: !GetAtt LambdaStack.Outputs.KnowledgeBaseFunction
         RagQueryFunction: !GetAtt LambdaStack.Outputs.RagQueryFunction
         RagQueryMultimodalFunction: !GetAtt LambdaStack.Outputs.RagQueryMultimodalFunction
+
+  # WebSocket API
+  WebSocketStack:
+    Type: AWS::CloudFormation::Stack
+    Properties:
+      TemplateURL: !Sub 'https://${S3Bucket}.s3.${AWS::Region}.amazonaws.com/cloudformation-templates/websocket.yml'
+      Parameters:
+        Environment: !Ref Environment
+        WebSocketTableName: !Sub '${Environment}-websocket-connections'
+        S3Bucket: !Ref S3Bucket
 
 
 Outputs:
@@ -120,6 +131,18 @@ Outputs:
     Value: !GetAtt ApiGatewayStack.Outputs.ApiGatewayUrl
     Export:
       Name: !Sub '${AWS::StackName}-ApiGatewayUrl'
+
+  WebSocketEndpoint:
+    Description: WebSocket API Endpoint
+    Value: !GetAtt WebSocketStack.Outputs.WebSocketApiEndpoint
+    Export:
+      Name: !Sub '${AWS::StackName}-WebSocketEndpoint'
+
+  WebSocketConnectionsTable:
+    Description: WebSocket Connections Table Name
+    Value: !GetAtt WebSocketStack.Outputs.WebSocketConnectionsTable
+    Export:
+      Name: !Sub '${AWS::StackName}-WebSocketConnectionsTable'
 
   DocumentBucketName:
     Description: S3 Bucket for document storage

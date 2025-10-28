@@ -22,6 +22,22 @@ Resources:
         BlockPublicPolicy: true
         IgnorePublicAcls: true
         RestrictPublicBuckets: true
+             CorsConfiguration:
+               CorsRules:
+                 - AllowedHeaders:
+                     - '*'
+                   AllowedMethods:
+                     - GET
+                     - PUT
+                     - POST
+                     - DELETE
+                     - HEAD
+                   AllowedOrigins:
+                     - '*'
+                   ExposedHeaders:
+                     - ETag
+                     - x-amz-version-id
+                   MaxAge: 3000
       Tags:
         - Key: Name
           Value: !Sub 'pharma-documents-${Environment}'

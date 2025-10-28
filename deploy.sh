@@ -18,11 +18,11 @@ else
 fi
 
 # Configuration
-STACK_NAME="pharma-rag-infrastructure-dev"
+STACK_NAME="${STACK_NAME:-pharma-rag-infrastructure-dev}"
 MAIN_TEMPLATE="infrastructure/main.yml"
 AWS_REGION="${AWS_REGION:-us-east-1}"
 AWS_PROFILE="${AWS_PROFILE:-pharma}"
-S3_BUCKET="${S3_BUCKET:-pharma-deployments-864899869769}"
+S3_BUCKET="${AWS_DEPLOYMENT_BUCKET:-pharma-deployments-864899869769}"
 
 # Validate required environment variables
 echo "🔍 [DEPLOY] Validating required environment variables..."
@@ -114,18 +114,22 @@ done
 echo "🚀 [DEPLOY] Starting CloudFormation deployment..."
 CF_START=$(date +%s.%3N)
 
+# Set environment from .env file
+ENVIRONMENT="${ENVIRONMENT:-dev}"
+
 aws cloudformation deploy \
   --template-file "$MAIN_TEMPLATE" \
   --stack-name "$STACK_NAME" \
   --capabilities CAPABILITY_IAM CAPABILITY_NAMED_IAM \
   --disable-rollback \
   --parameter-overrides \
-    Environment="dev" \
+    Environment="${ENVIRONMENT}" \
     RaganythingImageUri="$RAGANYTHING_IMAGE_URI" \
     OpenAIApiKey="$OPENAI_API_KEY" \
     Neo4jUri="$NEO4J_URI" \
     Neo4jUsername="$NEO4J_USERNAME" \
     Neo4jPassword="$NEO4J_PASSWORD" \
+    S3Bucket="$S3_BUCKET" \
   --region "$AWS_REGION" \
   --profile "$AWS_PROFILE" \
   --s3-bucket "$S3_BUCKET"

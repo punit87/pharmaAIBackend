@@ -24,6 +24,14 @@ Parameters:
     Type: String
     Description: RAG Query Multimodal Lambda Function ARN
 
+  DocumentProcessorFunction:
+    Type: String
+    Description: Document Processor Lambda Function ARN
+
+  KnowledgeBaseFunction:
+    Type: String
+    Description: Knowledge Base Lambda Function ARN
+
 Resources:
   ApiGateway:
     Type: AWS::ApiGateway::RestApi
@@ -117,6 +125,48 @@ Resources:
         IntegrationHttpMethod: POST
         Uri: !Sub 'arn:aws:apigateway:${AWS::Region}:lambda:path/2015-03-31/functions/${RagQueryFunction}/invocations'
 
+  ProcessResource:
+    Type: AWS::ApiGateway::Resource
+    Properties:
+      RestApiId: !Ref ApiGateway
+      ParentId: !GetAtt ApiGateway.RootResourceId
+      PathPart: process
+
+  ProcessMethod:
+    Type: AWS::ApiGateway::Method
+    Properties:
+      RestApiId: !Ref ApiGateway
+      ResourceId: !Ref ProcessResource
+      HttpMethod: POST
+      AuthorizationType: NONE
+      Integration:
+        Type: AWS_PROXY
+        IntegrationHttpMethod: POST
+        Uri: !Sub 'arn:aws:apigateway:${AWS::Region}:lambda:path/2015-03-31/functions/${DocumentProcessorFunction}/invocations'
+      MethodResponses:
+        - StatusCode: 200
+
+  KnowledgeBaseResource:
+    Type: AWS::ApiGateway::Resource
+    Properties:
+      RestApiId: !Ref ApiGateway
+      ParentId: !GetAtt ApiGateway.RootResourceId
+      PathPart: knowledge-base
+
+  KnowledgeBaseMethod:
+    Type: AWS::ApiGateway::Method
+    Properties:
+      RestApiId: !Ref ApiGateway
+      ResourceId: !Ref KnowledgeBaseResource
+      HttpMethod: POST
+      AuthorizationType: NONE
+      Integration:
+        Type: AWS_PROXY
+        IntegrationHttpMethod: POST
+        Uri: !Sub 'arn:aws:apigateway:${AWS::Region}:lambda:path/2015-03-31/functions/${KnowledgeBaseFunction}/invocations'
+      MethodResponses:
+        - StatusCode: 200
+
   RagQueryMultimodalResource:
     Type: AWS::ApiGateway::Resource
     Properties:
@@ -141,6 +191,8 @@ Resources:
     DependsOn:
       - PresignedUrlMethod
       - HealthMethod
+      - ProcessMethod
+      - KnowledgeBaseMethod
       - RagQueryOptionsMethod
       - RagQueryMethod
       - RagQueryMultimodalMethod
@@ -176,6 +228,22 @@ Resources:
     Type: AWS::Lambda::Permission
     Properties:
       FunctionName: !Ref RagQueryMultimodalFunction
+      Action: lambda:InvokeFunction
+      Principal: apigateway.amazonaws.com
+      SourceArn: !Sub 'arn:aws:execute-api:${AWS::Region}:${AWS::AccountId}:${ApiGateway}/*/*'
+
+  DocumentProcessorPermission:
+    Type: AWS::Lambda::Permission
+    Properties:
+      FunctionName: !Ref DocumentProcessorFunction
+      Action: lambda:InvokeFunction
+      Principal: apigateway.amazonaws.com
+      SourceArn: !Sub 'arn:aws:execute-api:${AWS::Region}:${AWS::AccountId}:${ApiGateway}/*/*'
+
+  KnowledgeBasePermission:
+    Type: AWS::Lambda::Permission
+    Properties:
+      FunctionName: !Ref KnowledgeBaseFunction
       Action: lambda:InvokeFunction
       Principal: apigateway.amazonaws.com
       SourceArn: !Sub 'arn:aws:execute-api:${AWS::Region}:${AWS::AccountId}:${ApiGateway}/*/*'
