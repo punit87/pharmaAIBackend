@@ -48,6 +48,18 @@ Parameters:
     Type: String
     Description: ALB DNS Name for connecting to ECS tasks
 
+  Neo4jUri:
+    Type: String
+    Description: Neo4j database URI
+
+  Neo4jUsername:
+    Type: String
+    Description: Neo4j username
+
+  Neo4jPassword:
+    Type: String
+    Description: Neo4j password
+
 Resources:
   LambdaExecutionRole:
     Type: AWS::IAM::Role
@@ -162,6 +174,26 @@ Resources:
         Variables:
           S3_BUCKET: !Ref DocumentBucket
 
+  DocumentDeleterFunction:
+    Type: AWS::Lambda::Function
+    Properties:
+      FunctionName: !Sub 'pharma-document-deleter-${Environment}'
+      Runtime: python3.11
+      Handler: document_deleter.lambda_handler
+      Code:
+        S3Bucket: !Sub '${S3Bucket}'
+        S3Key: !Sub 'lambda-packages/document_deleter.zip'
+      Role: !GetAtt LambdaExecutionRole.Arn
+      Timeout: 60
+      MemorySize: 256
+      Environment:
+        Variables:
+          S3_BUCKET: !Ref DocumentBucket
+          ALB_ENDPOINT: !Ref ALBEndpoint
+          NEO4J_URI: !Ref Neo4jUri
+          NEO4J_USERNAME: !Ref Neo4jUsername
+          NEO4J_PASSWORD: !Ref Neo4jPassword
+
   RagQueryFunction:
     Type: AWS::Lambda::Function
     Properties:
@@ -261,6 +293,12 @@ Outputs:
     Value: !GetAtt KnowledgeBaseFunction.Arn
     Export:
       Name: !Sub '${AWS::StackName}-KnowledgeBaseFunction'
+
+  DocumentDeleterFunction:
+    Description: Document Deleter Lambda Function ARN
+    Value: !GetAtt DocumentDeleterFunction.Arn
+    Export:
+      Name: !Sub '${AWS::StackName}-DocumentDeleterFunction'
 
   RagQueryFunction:
     Description: RAG Query Lambda Function ARN

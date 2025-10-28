@@ -32,6 +32,10 @@ Parameters:
     Type: String
     Description: Knowledge Base Lambda Function ARN
 
+  DocumentDeleterFunction:
+    Type: String
+    Description: Document Deleter Lambda Function ARN
+
 Resources:
   ApiGateway:
     Type: AWS::ApiGateway::RestApi
@@ -219,6 +223,53 @@ Resources:
       MethodResponses:
         - StatusCode: 200
 
+  DeleteDocumentResource:
+    Type: AWS::ApiGateway::Resource
+    Properties:
+      RestApiId: !Ref ApiGateway
+      ParentId: !GetAtt ApiGateway.RootResourceId
+      PathPart: delete-document
+
+  DeleteDocumentOptionsMethod:
+    Type: AWS::ApiGateway::Method
+    Properties:
+      RestApiId: !Ref ApiGateway
+      ResourceId: !Ref DeleteDocumentResource
+      HttpMethod: OPTIONS
+      AuthorizationType: NONE
+      Integration:
+        Type: MOCK
+        RequestTemplates:
+          application/json: '{"statusCode": 200}'
+        IntegrationResponses:
+          - StatusCode: 200
+            ResponseParameters:
+              method.response.header.Access-Control-Allow-Origin: "'*'"
+              method.response.header.Access-Control-Allow-Methods: "'OPTIONS,POST'"
+              method.response.header.Access-Control-Allow-Headers: "'Content-Type,Authorization'"
+            ResponseTemplates:
+              application/json: ''
+      MethodResponses:
+        - StatusCode: 200
+          ResponseParameters:
+            method.response.header.Access-Control-Allow-Origin: true
+            method.response.header.Access-Control-Allow-Methods: true
+            method.response.header.Access-Control-Allow-Headers: true
+
+  DeleteDocumentMethod:
+    Type: AWS::ApiGateway::Method
+    Properties:
+      RestApiId: !Ref ApiGateway
+      ResourceId: !Ref DeleteDocumentResource
+      HttpMethod: POST
+      AuthorizationType: NONE
+      Integration:
+        Type: AWS_PROXY
+        IntegrationHttpMethod: POST
+        Uri: !Sub 'arn:aws:apigateway:${AWS::Region}:lambda:path/2015-03-31/functions/${DocumentDeleterFunction}/invocations'
+      MethodResponses:
+        - StatusCode: 200
+
   RagQueryMultimodalResource:
     Type: AWS::ApiGateway::Resource
     Properties:
@@ -247,6 +298,8 @@ Resources:
       - ProcessMethod
       - KnowledgeBaseOptionsMethod
       - KnowledgeBaseMethod
+      - DeleteDocumentOptionsMethod
+      - DeleteDocumentMethod
       - RagQueryOptionsMethod
       - RagQueryMethod
       - RagQueryMultimodalMethod
@@ -298,6 +351,14 @@ Resources:
     Type: AWS::Lambda::Permission
     Properties:
       FunctionName: !Ref KnowledgeBaseFunction
+      Action: lambda:InvokeFunction
+      Principal: apigateway.amazonaws.com
+      SourceArn: !Sub 'arn:aws:execute-api:${AWS::Region}:${AWS::AccountId}:${ApiGateway}/*/*'
+
+  DeleteDocumentPermission:
+    Type: AWS::Lambda::Permission
+    Properties:
+      FunctionName: !Ref DocumentDeleterFunction
       Action: lambda:InvokeFunction
       Principal: apigateway.amazonaws.com
       SourceArn: !Sub 'arn:aws:execute-api:${AWS::Region}:${AWS::AccountId}:${ApiGateway}/*/*'

@@ -89,6 +89,9 @@ Resources:
         ALBEndpoint: !GetAtt ECSStack.Outputs.ALBEndpoint
         DocumentBucket: !GetAtt StorageStack.Outputs.DocumentBucketName
         S3Bucket: !Ref S3Bucket
+        Neo4jUri: !Ref Neo4jUri
+        Neo4jUsername: !Ref Neo4jUsername
+        Neo4jPassword: !Ref Neo4jPassword
 
   # API Gateway
   ApiGatewayStack:
@@ -100,9 +103,10 @@ Resources:
         PresignedUrlFunction: !GetAtt LambdaStack.Outputs.PresignedUrlFunction
         HealthFunction: !GetAtt LambdaStack.Outputs.HealthFunction
         DocumentProcessorFunction: !GetAtt LambdaStack.Outputs.DocumentProcessorFunction
-        KnowledgeBaseFunction: !GetAtt LambdaStack.Outputs.KnowledgeBaseFunction
-        RagQueryFunction: !GetAtt LambdaStack.Outputs.RagQueryFunction
-        RagQueryMultimodalFunction: !GetAtt LambdaStack.Outputs.RagQueryMultimodalFunction
+             KnowledgeBaseFunction: !GetAtt LambdaStack.Outputs.KnowledgeBaseFunction
+             DocumentDeleterFunction: !GetAtt LambdaStack.Outputs.DocumentDeleterFunction
+             RagQueryFunction: !GetAtt LambdaStack.Outputs.RagQueryFunction
+             RagQueryMultimodalFunction: !GetAtt LambdaStack.Outputs.RagQueryMultimodalFunction
 
   # WebSocket API
   WebSocketStack:
