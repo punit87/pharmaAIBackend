@@ -70,25 +70,6 @@ def lambda_handler(event, context):
         if document_name:
             print(f"Document name: {document_name}")
 
-        # For API Gateway calls (manual trigger), return immediately to avoid timeout
-        if 'Records' not in event:
-            print(f"API Gateway triggered processing for: {document_key}")
-            # Return immediately with CORS headers
-            return {
-                'statusCode': 200,
-                'headers': {
-                    'Content-Type': 'application/json',
-                    'Access-Control-Allow-Origin': '*'
-                },
-                'body': json.dumps({
-                    'status': 'accepted',
-                    'message': 'Document processing started. Processing will be handled automatically via S3 event notifications.',
-                    'document_key': document_key,
-                    'document_name': document_name,
-                    'note': 'S3 upload triggers automatic processing via Lambda function'
-                })
-            }
-        
         # Send initial progress update via WebSocket if connection_id is provided
         if connection_id:
             send_progress_update(
