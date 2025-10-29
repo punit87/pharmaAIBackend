@@ -8,33 +8,21 @@ Parameters:
     AllowedValues: [dev, dev-1, dev-2, staging, prod]
     Description: Environment name
 
-  PresignedUrlFunction:
+  VPCId:
     Type: String
-    Description: Presigned URL Lambda Function ARN
+    Description: VPC ID from network stack
 
-  HealthFunction:
+  PublicSubnet1:
     Type: String
-    Description: Health Lambda Function ARN
+    Description: Public Subnet 1 ID for VPC Link
 
-  RagQueryFunction:
+  PublicSubnet2:
     Type: String
-    Description: RAG Query Lambda Function ARN
+    Description: Public Subnet 2 ID for VPC Link
 
-  RagQueryMultimodalFunction:
+  ALBDnsName:
     Type: String
-    Description: RAG Query Multimodal Lambda Function ARN
-
-  DocumentProcessorFunction:
-    Type: String
-    Description: Document Processor Lambda Function ARN
-
-  KnowledgeBaseFunction:
-    Type: String
-    Description: Knowledge Base Lambda Function ARN
-
-  DocumentDeleterFunction:
-    Type: String
-    Description: Document Deleter Lambda Function ARN
+    Description: ALB DNS Name from ECS stack
 
 Resources:
   ApiGateway:
@@ -45,6 +33,21 @@ Resources:
       EndpointConfiguration:
         Types:
           - REGIONAL
+
+  # VPC Link for connecting API Gateway to ALB
+  VPCLink:
+    Type: AWS::ApiGateway::VpcLink
+    Properties:
+      Name: !Sub 'pharma-vpc-link-${Environment}'
+      Description: VPC Link to connect API Gateway to ALB
+      SubnetIds:
+        - !Ref PublicSubnet1
+        - !Ref PublicSubnet2
+      Tags:
+        - Key: Name
+          Value: !Sub 'pharma-vpc-link-${Environment}'
+        - Key: Environment
+          Value: !Ref Environment
 
   PresignedUrlResource:
     Type: AWS::ApiGateway::Resource
@@ -61,9 +64,19 @@ Resources:
       HttpMethod: GET
       AuthorizationType: NONE
       Integration:
-        Type: AWS_PROXY
-        IntegrationHttpMethod: POST
-        Uri: !Sub 'arn:aws:apigateway:${AWS::Region}:lambda:path/2015-03-31/functions/${PresignedUrlFunction}/invocations'
+        Type: HTTP_PROXY
+        IntegrationHttpMethod: GET
+        Uri: !Sub 'http://${ALBDnsName}/presigned-url'
+        ConnectionType: VPC_LINK
+        ConnectionId: !Ref VPCLink
+        RequestParameters:
+          integration.request.querystring.filename: method.request.querystring.filename
+      MethodResponses:
+        - StatusCode: 200
+          ResponseParameters:
+            method.response.header.Access-Control-Allow-Origin: true
+      RequestParameters:
+        method.request.querystring.filename: false
 
   HealthResource:
     Type: AWS::ApiGateway::Resource
@@ -80,9 +93,15 @@ Resources:
       HttpMethod: GET
       AuthorizationType: NONE
       Integration:
-        Type: AWS_PROXY
-        IntegrationHttpMethod: POST
-        Uri: !Sub 'arn:aws:apigateway:${AWS::Region}:lambda:path/2015-03-31/functions/${HealthFunction}/invocations'
+        Type: HTTP_PROXY
+        IntegrationHttpMethod: GET
+        Uri: !Sub 'http://${ALBDnsName}/health'
+        ConnectionType: VPC_LINK
+        ConnectionId: !Ref VPCLink
+      MethodResponses:
+        - StatusCode: 200
+          ResponseParameters:
+            method.response.header.Access-Control-Allow-Origin: true
 
   RagQueryResource:
     Type: AWS::ApiGateway::Resource
@@ -125,9 +144,15 @@ Resources:
       HttpMethod: POST
       AuthorizationType: NONE
       Integration:
-        Type: AWS_PROXY
+        Type: HTTP_PROXY
         IntegrationHttpMethod: POST
-        Uri: !Sub 'arn:aws:apigateway:${AWS::Region}:lambda:path/2015-03-31/functions/${RagQueryFunction}/invocations'
+        Uri: !Sub 'http://${ALBDnsName}/rag-query'
+        ConnectionType: VPC_LINK
+        ConnectionId: !Ref VPCLink
+      MethodResponses:
+        - StatusCode: 200
+          ResponseParameters:
+            method.response.header.Access-Control-Allow-Origin: true
 
   ProcessResource:
     Type: AWS::ApiGateway::Resource
@@ -170,11 +195,15 @@ Resources:
       HttpMethod: POST
       AuthorizationType: NONE
       Integration:
-        Type: AWS_PROXY
+        Type: HTTP_PROXY
         IntegrationHttpMethod: POST
-        Uri: !Sub 'arn:aws:apigateway:${AWS::Region}:lambda:path/2015-03-31/functions/${DocumentProcessorFunction}/invocations'
+        Uri: !Sub 'http://${ALBDnsName}/process'
+        ConnectionType: VPC_LINK
+        ConnectionId: !Ref VPCLink
       MethodResponses:
         - StatusCode: 200
+          ResponseParameters:
+            method.response.header.Access-Control-Allow-Origin: true
 
   KnowledgeBaseResource:
     Type: AWS::ApiGateway::Resource
@@ -217,11 +246,15 @@ Resources:
       HttpMethod: POST
       AuthorizationType: NONE
       Integration:
-        Type: AWS_PROXY
+        Type: HTTP_PROXY
         IntegrationHttpMethod: POST
-        Uri: !Sub 'arn:aws:apigateway:${AWS::Region}:lambda:path/2015-03-31/functions/${KnowledgeBaseFunction}/invocations'
+        Uri: !Sub 'http://${ALBDnsName}/knowledge-base'
+        ConnectionType: VPC_LINK
+        ConnectionId: !Ref VPCLink
       MethodResponses:
         - StatusCode: 200
+          ResponseParameters:
+            method.response.header.Access-Control-Allow-Origin: true
 
   DeleteDocumentResource:
     Type: AWS::ApiGateway::Resource
@@ -264,11 +297,15 @@ Resources:
       HttpMethod: POST
       AuthorizationType: NONE
       Integration:
-        Type: AWS_PROXY
+        Type: HTTP_PROXY
         IntegrationHttpMethod: POST
-        Uri: !Sub 'arn:aws:apigateway:${AWS::Region}:lambda:path/2015-03-31/functions/${DocumentDeleterFunction}/invocations'
+        Uri: !Sub 'http://${ALBDnsName}/delete-document'
+        ConnectionType: VPC_LINK
+        ConnectionId: !Ref VPCLink
       MethodResponses:
         - StatusCode: 200
+          ResponseParameters:
+            method.response.header.Access-Control-Allow-Origin: true
 
   RagQueryMultimodalResource:
     Type: AWS::ApiGateway::Resource
@@ -285,13 +322,20 @@ Resources:
       HttpMethod: POST
       AuthorizationType: NONE
       Integration:
-        Type: AWS_PROXY
+        Type: HTTP_PROXY
         IntegrationHttpMethod: POST
-        Uri: !Sub 'arn:aws:apigateway:${AWS::Region}:lambda:path/2015-03-31/functions/${RagQueryMultimodalFunction}/invocations'
+        Uri: !Sub 'http://${ALBDnsName}/rag-query-multimodal'
+        ConnectionType: VPC_LINK
+        ConnectionId: !Ref VPCLink
+      MethodResponses:
+        - StatusCode: 200
+          ResponseParameters:
+            method.response.header.Access-Control-Allow-Origin: true
 
   ApiGatewayDeployment:
     Type: AWS::ApiGateway::Deployment
     DependsOn:
+      - VPCLink
       - PresignedUrlMethod
       - HealthMethod
       - ProcessOptionsMethod
@@ -307,62 +351,6 @@ Resources:
       RestApiId: !Ref ApiGateway
       StageName: !Ref Environment
 
-  PresignedUrlPermission:
-    Type: AWS::Lambda::Permission
-    Properties:
-      FunctionName: !Ref PresignedUrlFunction
-      Action: lambda:InvokeFunction
-      Principal: apigateway.amazonaws.com
-      SourceArn: !Sub 'arn:aws:execute-api:${AWS::Region}:${AWS::AccountId}:${ApiGateway}/*/*'
-
-  HealthPermission:
-    Type: AWS::Lambda::Permission
-    Properties:
-      FunctionName: !Ref HealthFunction
-      Action: lambda:InvokeFunction
-      Principal: apigateway.amazonaws.com
-      SourceArn: !Sub 'arn:aws:execute-api:${AWS::Region}:${AWS::AccountId}:${ApiGateway}/*/*'
-
-  RagQueryPermission:
-    Type: AWS::Lambda::Permission
-    Properties:
-      FunctionName: !Ref RagQueryFunction
-      Action: lambda:InvokeFunction
-      Principal: apigateway.amazonaws.com
-      SourceArn: !Sub 'arn:aws:execute-api:${AWS::Region}:${AWS::AccountId}:${ApiGateway}/*/*'
-
-  RagQueryMultimodalPermission:
-    Type: AWS::Lambda::Permission
-    Properties:
-      FunctionName: !Ref RagQueryMultimodalFunction
-      Action: lambda:InvokeFunction
-      Principal: apigateway.amazonaws.com
-      SourceArn: !Sub 'arn:aws:execute-api:${AWS::Region}:${AWS::AccountId}:${ApiGateway}/*/*'
-
-  DocumentProcessorPermission:
-    Type: AWS::Lambda::Permission
-    Properties:
-      FunctionName: !Ref DocumentProcessorFunction
-      Action: lambda:InvokeFunction
-      Principal: apigateway.amazonaws.com
-      SourceArn: !Sub 'arn:aws:execute-api:${AWS::Region}:${AWS::AccountId}:${ApiGateway}/*/*'
-
-  KnowledgeBasePermission:
-    Type: AWS::Lambda::Permission
-    Properties:
-      FunctionName: !Ref KnowledgeBaseFunction
-      Action: lambda:InvokeFunction
-      Principal: apigateway.amazonaws.com
-      SourceArn: !Sub 'arn:aws:execute-api:${AWS::Region}:${AWS::AccountId}:${ApiGateway}/*/*'
-
-  DeleteDocumentPermission:
-    Type: AWS::Lambda::Permission
-    Properties:
-      FunctionName: !Ref DocumentDeleterFunction
-      Action: lambda:InvokeFunction
-      Principal: apigateway.amazonaws.com
-      SourceArn: !Sub 'arn:aws:execute-api:${AWS::Region}:${AWS::AccountId}:${ApiGateway}/*/*'
-
 Outputs:
   ApiGatewayUrl:
     Description: API Gateway URL
@@ -375,3 +363,9 @@ Outputs:
     Value: !Ref ApiGateway
     Export:
       Name: !Sub '${AWS::StackName}-ApiGatewayId'
+
+  VPCLinkId:
+    Description: VPC Link ID
+    Value: !Ref VPCLink
+    Export:
+      Name: !Sub '${AWS::StackName}-VPCLinkId'
