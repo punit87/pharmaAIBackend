@@ -53,7 +53,8 @@ Resources:
       HttpMethod: GET
       AuthorizationType: NONE
       Integration:
-        Type: HTTP_PROXY
+        Type: HTTP
+        ConnectionType: INTERNET
         IntegrationHttpMethod: GET
         Uri: !Sub 'http://${ALBDnsName}/presigned-url'
         RequestParameters:
@@ -80,9 +81,10 @@ Resources:
       HttpMethod: GET
       AuthorizationType: NONE
       Integration:
-        Type: HTTP_PROXY
+        Type: HTTP
         IntegrationHttpMethod: GET
         Uri: !Sub 'http://${ALBDnsName}/health'
+        ConnectionType: INTERNET
       MethodResponses:
         - StatusCode: 200
           ResponseParameters:
@@ -129,7 +131,8 @@ Resources:
       HttpMethod: POST
       AuthorizationType: NONE
       Integration:
-        Type: HTTP_PROXY
+        Type: HTTP
+        ConnectionType: INTERNET
         IntegrationHttpMethod: POST
         Uri: !Sub 'http://${ALBDnsName}/rag-query'
       MethodResponses:
@@ -178,7 +181,8 @@ Resources:
       HttpMethod: POST
       AuthorizationType: NONE
       Integration:
-        Type: HTTP_PROXY
+        Type: HTTP
+        ConnectionType: INTERNET
         IntegrationHttpMethod: POST
         Uri: !Sub 'http://${ALBDnsName}/process'
       MethodResponses:
@@ -227,7 +231,8 @@ Resources:
       HttpMethod: POST
       AuthorizationType: NONE
       Integration:
-        Type: HTTP_PROXY
+        Type: HTTP
+        ConnectionType: INTERNET
         IntegrationHttpMethod: POST
         Uri: !Sub 'http://${ALBDnsName}/knowledge-base'
       MethodResponses:
@@ -276,7 +281,8 @@ Resources:
       HttpMethod: POST
       AuthorizationType: NONE
       Integration:
-        Type: HTTP_PROXY
+        Type: HTTP
+        ConnectionType: INTERNET
         IntegrationHttpMethod: POST
         Uri: !Sub 'http://${ALBDnsName}/delete-document'
       MethodResponses:
@@ -299,7 +305,8 @@ Resources:
       HttpMethod: POST
       AuthorizationType: NONE
       Integration:
-        Type: HTTP_PROXY
+        Type: HTTP
+        ConnectionType: INTERNET
         IntegrationHttpMethod: POST
         Uri: !Sub 'http://${ALBDnsName}/rag-query-multimodal'
       MethodResponses:
