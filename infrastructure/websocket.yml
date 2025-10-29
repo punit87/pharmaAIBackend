@@ -49,6 +49,7 @@ Resources:
       IntegrationMethod: POST
       IntegrationUri: !Sub 'http://${ALBEndpoint}/websocket/connect'
       PayloadFormatVersion: '1.0'
+      TimeoutInMillis: 29000
 
   WebSocketDisconnectIntegration:
     Type: AWS::ApiGatewayV2::Integration
@@ -58,6 +59,7 @@ Resources:
       IntegrationMethod: POST
       IntegrationUri: !Sub 'http://${ALBEndpoint}/websocket/disconnect'
       PayloadFormatVersion: '1.0'
+      TimeoutInMillis: 29000
 
   WebSocketMessageIntegration:
     Type: AWS::ApiGatewayV2::Integration
@@ -67,6 +69,7 @@ Resources:
       IntegrationMethod: POST
       IntegrationUri: !Sub 'http://${ALBEndpoint}/websocket/message'
       PayloadFormatVersion: '1.0'
+      TimeoutInMillis: 29000
 
   # Routes
   WebSocketConnectRoute:

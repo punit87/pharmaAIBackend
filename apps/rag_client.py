@@ -1858,7 +1858,11 @@ def websocket_connect():
         
         logger.info(f"WebSocket connection established: {connection_id}")
         
-        return jsonify({'statusCode': 200}), 200
+        # Return response for API Gateway WebSocket HTTP integration
+        # Must return JSON with statusCode and HTTP 200
+        response = jsonify({'statusCode': 200})
+        response.status_code = 200
+        return response
         
     except Exception as e:
         logger.error(f"Error handling WebSocket connect: {str(e)}")
