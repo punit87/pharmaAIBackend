@@ -1829,18 +1829,39 @@ def websocket_connect():
     """Handle WebSocket connect event"""
     try:
         # Parse WebSocket event from API Gateway
+        # API Gateway WebSocket HTTP integration sends event as JSON in request body
+        import json
+        event = {}
+        
         if request.is_json:
             event = request.json
-        else:
-            # API Gateway sends event as raw JSON in body
-            import json
-            event = json.loads(request.data.decode('utf-8')) if request.data else {}
+        elif request.data:
+            try:
+                event = json.loads(request.data.decode('utf-8'))
+            except (json.JSONDecodeError, UnicodeDecodeError):
+                logger.warning(f"Could not parse request body: {request.data[:200]}")
         
-        connection_id = event.get('requestContext', {}).get('connectionId')
+        # Log full event for debugging
+        logger.info(f"WebSocket connect event received - Headers: {dict(request.headers)}, Body length: {len(request.data) if request.data else 0}")
+        logger.info(f"WebSocket connect event data: {json.dumps(event) if event else 'empty'}")
+        
+        # Extract connectionId - check multiple possible locations
+        request_context = event.get('requestContext', {}) or {}
+        connection_id = (
+            request_context.get('connectionId') or 
+            event.get('connectionId') or 
+            request.headers.get('X-Amzn-Apigateway-Connection-Id') or
+            request.headers.get('x-amzn-connection-id')
+        )
         
         if not connection_id:
-            logger.error("Missing connectionId in WebSocket connect event")
-            return jsonify({'statusCode': 400}), 400
+            # Log all headers and body for debugging
+            logger.error(f"Missing connectionId. Event keys: {list(event.keys())}, RequestContext keys: {list(request_context.keys())}")
+            logger.error(f"All headers: {dict(request.headers)}")
+            logger.error(f"Request data: {request.data.decode('utf-8') if request.data else 'None'}")
+            # For API Gateway WebSocket, we might need to accept the connection even without ID
+            # But log this for investigation
+            return jsonify({'statusCode': 400, 'message': 'Missing connectionId', 'event_keys': list(event.keys())}), 400
         
         # Store connection in DynamoDB
         dynamodb = boto3.resource('dynamodb')
@@ -1913,13 +1934,22 @@ def websocket_message():
     """Handle WebSocket message event"""
     try:
         # Parse WebSocket event from API Gateway
+        import json
+        event = {}
+        
         if request.is_json:
             event = request.json
-        else:
-            import json
-            event = json.loads(request.data.decode('utf-8')) if request.data else {}
+        elif request.data:
+            try:
+                event = json.loads(request.data.decode('utf-8'))
+            except (json.JSONDecodeError, UnicodeDecodeError):
+                logger.warning(f"Could not parse message request body: {request.data[:200]}")
         
-        connection_id = event.get('requestContext', {}).get('connectionId')
+        logger.info(f"WebSocket message event received: {json.dumps(event)[:500]}")
+        
+        # Extract connectionId
+        request_context = event.get('requestContext', {})
+        connection_id = request_context.get('connectionId') or event.get('connectionId')
         websocket_endpoint = event.get('requestContext', {}).get('domainName')
         websocket_stage = event.get('requestContext', {}).get('stage')
         
