@@ -15,6 +15,12 @@ ENV/
 lambda-packages/
 lambda-local-libs/
 
+# Python package directories (should not be in repo)
+neo4j/
+neo4j-*.dist-info/
+pytz/
+pytz-*.dist-info/
+
 # IDE
 .vscode/
 .idea/
