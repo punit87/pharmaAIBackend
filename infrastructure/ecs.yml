@@ -250,10 +250,10 @@ Resources:
         - Key: Environment
           Value: !Ref Environment
 
-  RaganythingTaskDefinition:
+  RaganythingTaskDefinitionV2:
     Type: AWS::ECS::TaskDefinition
     Properties:
-      Family: !Sub 'pharma-raganything-${Environment}'
+      Family: !Sub 'pharma-raganything-${Environment}-v2'
       NetworkMode: awsvpc
       RequiresCompatibilities:
         - FARGATE
@@ -325,12 +325,12 @@ Resources:
   RaganythingService:
     Type: AWS::ECS::Service
     DependsOn: 
-      - RaganythingTaskDefinition
+      - RaganythingTaskDefinitionV2
       - ALBListener
     Properties:
       ServiceName: !Sub 'pharma-raganything-service-${Environment}'
       Cluster: !Ref ECSCluster
-      TaskDefinition: !Ref RaganythingTaskDefinition
+      TaskDefinition: !Ref RaganythingTaskDefinitionV2
       DesiredCount: 1  # Start with 1 task running - you can stop it manually from console
       LaunchType: FARGATE
       NetworkConfiguration:
@@ -356,7 +356,7 @@ Outputs:
 
   RaganythingTaskDefinition:
     Description: RAG-Anything Task Definition ARN
-    Value: !Ref RaganythingTaskDefinition
+    Value: !Ref RaganythingTaskDefinitionV2
     Export:
       Name: !Sub '${AWS::StackName}-RaganythingTaskDefinition'
 
