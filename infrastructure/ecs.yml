@@ -357,3 +357,9 @@ Outputs:
     Value: !GetAtt ApplicationLoadBalancer.DNSName
     Export:
       Name: !Sub '${AWS::StackName}-ALBEndpoint'
+
+  ALBArn:
+    Description: ALB ARN for VPC Link
+    Value: !GetAtt ApplicationLoadBalancer.LoadBalancerArn
+    Export:
+      Name: !Sub '${AWS::StackName}-ALBArn'

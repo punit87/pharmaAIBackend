@@ -1662,6 +1662,165 @@ def delete_all_data():
         return jsonify({'error': str(e), "timing": timing}), 500
 
 # ============================================================================
+# API GATEWAY ENDPOINTS (for VPC Link integration)
+# ============================================================================
+
+@app.route('/presigned-url', methods=['GET'])
+def presigned_url():
+    """Generate presigned URL for S3 upload"""
+    try:
+        bucket_name = os.environ.get('S3_BUCKET')
+        if not bucket_name:
+            return jsonify({'error': 'S3_BUCKET environment variable not set'}), 500
+        
+        # Get original filename from query params
+        original_filename = request.args.get('filename')
+        
+        # Generate presigned URL for PUT request
+        s3_client = boto3.client('s3')
+        
+        # Generate a unique key for the file, preserving original filename if provided
+        import uuid
+        if original_filename:
+            safe_filename = original_filename.replace(' ', '_').replace('/', '_').replace('\\', '_')
+            file_key = f"test-documents/{uuid.uuid4()}_{safe_filename}"
+        else:
+            file_key = f"test-documents/{uuid.uuid4()}.pdf"
+        
+        presigned_url = s3_client.generate_presigned_url(
+            'put_object',
+            Params={
+                'Bucket': bucket_name,
+                'Key': file_key,
+                'ContentType': 'application/pdf'
+            },
+            ExpiresIn=300
+        )
+        
+        return jsonify({
+            'presigned_url': presigned_url,
+            'bucket': bucket_name,
+            'key': file_key,
+            'upload_method': 'PUT',
+            'expires_in': 300
+        })
+    except Exception as e:
+        logger.error(f"❌ [PRESIGNED_URL] Error: {str(e)}")
+        return jsonify({'error': str(e)}), 500
+
+@app.route('/knowledge-base', methods=['POST', 'OPTIONS'])
+def knowledge_base():
+    """List documents in S3"""
+    if request.method == 'OPTIONS':
+        return '', 200
+    
+    try:
+        bucket_name = os.environ.get('S3_BUCKET', '')
+        
+        if not bucket_name:
+            return jsonify({
+                'documents': [],
+                'message': 'No documents available'
+            })
+        
+        s3_client = boto3.client('s3')
+        
+        try:
+            response = s3_client.list_objects_v2(
+                Bucket=bucket_name,
+                Prefix='test-documents/'
+            )
+            
+            documents = []
+            if 'Contents' in response:
+                for obj in response['Contents']:
+                    key = obj['Key']
+                    filename = key.split('/')[-1]
+                    
+                    # Extract original filename
+                    original_filename = None
+                    if '_' in filename:
+                        parts = filename.split('_', 1)
+                        if len(parts) == 2:
+                            original_filename = parts[1]
+                        else:
+                            original_filename = filename
+                    else:
+                        original_filename = filename
+                    
+                    documents.append({
+                        'key': key,
+                        'filename': filename,
+                        'original_name': original_filename,
+                        'size': obj['Size'],
+                        'last_modified': obj['LastModified'].isoformat(),
+                        'etag': obj['ETag'].strip('"')
+                    })
+            
+            return jsonify({
+                'documents': documents,
+                'count': len(documents)
+            })
+        except Exception as e:
+            return jsonify({
+                'documents': [],
+                'error': str(e)
+            })
+    except Exception as e:
+        logger.error(f"❌ [KNOWLEDGE_BASE] Error: {str(e)}")
+        return jsonify({'error': str(e)}), 500
+
+@app.route('/delete-document', methods=['POST', 'OPTIONS'])
+def delete_document():
+    """Delete document from S3"""
+    if request.method == 'OPTIONS':
+        return '', 200
+    
+    try:
+        data = request.get_json()
+        document_key = data.get('document_key') if data else None
+        
+        if not document_key:
+            return jsonify({'error': 'document_key is required'}), 400
+        
+        bucket_name = os.environ.get('S3_BUCKET')
+        
+        # Delete from S3
+        s3_client = boto3.client('s3')
+        try:
+            s3_client.delete_object(Bucket=bucket_name, Key=document_key)
+            logger.info(f"Deleted document from S3: {document_key}")
+        except Exception as e:
+            logger.warning(f"Error deleting from S3: {str(e)}")
+        
+        return jsonify({
+            'status': 'success',
+            'message': 'Document deleted successfully',
+            'document_key': document_key
+        })
+    except Exception as e:
+        logger.error(f"❌ [DELETE_DOCUMENT] Error: {str(e)}")
+        return jsonify({'error': str(e)}), 500
+
+@app.route('/rag-query', methods=['POST', 'OPTIONS'])
+def rag_query():
+    """RAG query endpoint - proxy to /query"""
+    if request.method == 'OPTIONS':
+        return '', 200
+    
+    # Proxy to existing /query endpoint
+    return query()
+
+@app.route('/rag-query-multimodal', methods=['POST', 'OPTIONS'])
+def rag_query_multimodal_gateway():
+    """Multimodal RAG query endpoint - proxy to /query_multimodal"""
+    if request.method == 'OPTIONS':
+        return '', 200
+    
+    # Proxy to existing /query_multimodal endpoint
+    return query_multimodal()
+
+# ============================================================================
 # SERVER STARTUP
 # ============================================================================
 
