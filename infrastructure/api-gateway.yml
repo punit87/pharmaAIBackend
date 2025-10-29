@@ -34,20 +34,9 @@ Resources:
         Types:
           - REGIONAL
 
-  # VPC Link for connecting API Gateway to ALB
-  VPCLink:
-    Type: AWS::ApiGateway::VpcLink
-    Properties:
-      Name: !Sub 'pharma-vpc-link-${Environment}'
-      Description: VPC Link to connect API Gateway to ALB
-      SubnetIds:
-        - !Ref PublicSubnet1
-        - !Ref PublicSubnet2
-      Tags:
-        - Key: Name
-          Value: !Sub 'pharma-vpc-link-${Environment}'
-        - Key: Environment
-          Value: !Ref Environment
+  # VPC Link removed - using direct HTTP_PROXY integration since ALB is internet-facing
+  # For REST API Gateway v1, VPC Links require Network Load Balancer, but we use ALB
+  # Direct HTTP integration works since ALB has a public endpoint
 
   PresignedUrlResource:
     Type: AWS::ApiGateway::Resource
@@ -67,8 +56,6 @@ Resources:
         Type: HTTP_PROXY
         IntegrationHttpMethod: GET
         Uri: !Sub 'http://${ALBDnsName}/presigned-url'
-        ConnectionType: VPC_LINK
-        ConnectionId: !Ref VPCLink
         RequestParameters:
           integration.request.querystring.filename: method.request.querystring.filename
       MethodResponses:
@@ -96,8 +83,6 @@ Resources:
         Type: HTTP_PROXY
         IntegrationHttpMethod: GET
         Uri: !Sub 'http://${ALBDnsName}/health'
-        ConnectionType: VPC_LINK
-        ConnectionId: !Ref VPCLink
       MethodResponses:
         - StatusCode: 200
           ResponseParameters:
@@ -147,8 +132,6 @@ Resources:
         Type: HTTP_PROXY
         IntegrationHttpMethod: POST
         Uri: !Sub 'http://${ALBDnsName}/rag-query'
-        ConnectionType: VPC_LINK
-        ConnectionId: !Ref VPCLink
       MethodResponses:
         - StatusCode: 200
           ResponseParameters:
@@ -198,8 +181,6 @@ Resources:
         Type: HTTP_PROXY
         IntegrationHttpMethod: POST
         Uri: !Sub 'http://${ALBDnsName}/process'
-        ConnectionType: VPC_LINK
-        ConnectionId: !Ref VPCLink
       MethodResponses:
         - StatusCode: 200
           ResponseParameters:
@@ -249,8 +230,6 @@ Resources:
         Type: HTTP_PROXY
         IntegrationHttpMethod: POST
         Uri: !Sub 'http://${ALBDnsName}/knowledge-base'
-        ConnectionType: VPC_LINK
-        ConnectionId: !Ref VPCLink
       MethodResponses:
         - StatusCode: 200
           ResponseParameters:
@@ -300,8 +279,6 @@ Resources:
         Type: HTTP_PROXY
         IntegrationHttpMethod: POST
         Uri: !Sub 'http://${ALBDnsName}/delete-document'
-        ConnectionType: VPC_LINK
-        ConnectionId: !Ref VPCLink
       MethodResponses:
         - StatusCode: 200
           ResponseParameters:
@@ -325,8 +302,6 @@ Resources:
         Type: HTTP_PROXY
         IntegrationHttpMethod: POST
         Uri: !Sub 'http://${ALBDnsName}/rag-query-multimodal'
-        ConnectionType: VPC_LINK
-        ConnectionId: !Ref VPCLink
       MethodResponses:
         - StatusCode: 200
           ResponseParameters:
@@ -335,7 +310,6 @@ Resources:
   ApiGatewayDeployment:
     Type: AWS::ApiGateway::Deployment
     DependsOn:
-      - VPCLink
       - PresignedUrlMethod
       - HealthMethod
       - ProcessOptionsMethod
@@ -364,8 +338,3 @@ Outputs:
     Export:
       Name: !Sub '${AWS::StackName}-ApiGatewayId'
 
-  VPCLinkId:
-    Description: VPC Link ID
-    Value: !Ref VPCLink
-    Export:
-      Name: !Sub '${AWS::StackName}-VPCLinkId'
