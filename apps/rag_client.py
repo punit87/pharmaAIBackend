@@ -1868,7 +1868,6 @@ def websocket_connect():
             return response
         
         # Store connection in DynamoDB
-vv
         dynamodb = boto3.resource('dynamodb')
         connections_table_name = os.environ.get('WEBSOCKET_CONNECTIONS_TABLE', f"{os.environ.get('ENVIRONMENT', 'dev')}-websocket-connections")
         connections_table = dynamodb.Table(connections_table_name)
