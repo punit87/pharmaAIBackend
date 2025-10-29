@@ -1846,12 +1846,18 @@ def websocket_connect():
         logger.info(f"WebSocket connect event data: {json.dumps(event) if event else 'empty'}")
         
         # Extract connectionId - check multiple possible locations
+        # For API Gateway WebSocket v2 HTTP integrations, connectionId might be in:
+        # 1. Query parameters ($request.connectionId)
+        # 2. Path parameters
+        # 3. Headers (X-Amzn-Apigateway-Connection-Id)
+        # 4. Event body (if sent)
         request_context = event.get('requestContext', {}) or {}
         connection_id = (
-            request_context.get('connectionId') or 
-            event.get('connectionId') or 
+            request.args.get('connectionId') or
             request.headers.get('X-Amzn-Apigateway-Connection-Id') or
-            request.headers.get('x-amzn-connection-id')
+            request.headers.get('x-amzn-connection-id') or
+            request_context.get('connectionId') or 
+            event.get('connectionId')
         )
         
         if not connection_id:
