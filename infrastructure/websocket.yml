@@ -50,22 +50,12 @@ Resources:
       IntegrationUri: !Sub 'http://${ALBEndpoint}/websocket/connect'
       PayloadFormatVersion: '1.0'
       TimeoutInMillis: 29000
-      RequestTemplates:
-        application/json: |
-          {
-            "requestContext": {
-              "connectionId": "$context.connectionId",
-              "domainName": "$context.domainName",
-              "stage": "$context.stage",
-              "routeKey": "$context.routeKey",
-              "requestId": "$context.requestId",
-              "connectedAt": "$context.connectedAt",
-              "identity": {
-                "sourceIp": "$context.identity.sourceIp",
-                "userAgent": "$context.identity.userAgent"
-              }
-            }
-          }
+      RequestParameters:
+        'append:header.X-Connection-Id': '$context.connectionId'
+        'append:header.X-Domain-Name': '$context.domainName'
+        'append:header.X-Stage': '$context.stage'
+        'append:header.X-Route-Key': '$context.routeKey'
+        'append:header.X-Request-Id': '$context.requestId'
 
   WebSocketDisconnectIntegration:
     Type: AWS::ApiGatewayV2::Integration
@@ -76,18 +66,12 @@ Resources:
       IntegrationUri: !Sub 'http://${ALBEndpoint}/websocket/disconnect'
       PayloadFormatVersion: '1.0'
       TimeoutInMillis: 29000
-      RequestTemplates:
-        application/json: |
-          {
-            "requestContext": {
-              "connectionId": "$context.connectionId",
-              "domainName": "$context.domainName",
-              "stage": "$context.stage",
-              "routeKey": "$context.routeKey",
-              "requestId": "$context.requestId",
-              "disconnectedAt": "$context.disconnectedAt"
-            }
-          }
+      RequestParameters:
+        'append:header.X-Connection-Id': '$context.connectionId'
+        'append:header.X-Domain-Name': '$context.domainName'
+        'append:header.X-Stage': '$context.stage'
+        'append:header.X-Route-Key': '$context.routeKey'
+        'append:header.X-Request-Id': '$context.requestId'
 
   WebSocketMessageIntegration:
     Type: AWS::ApiGatewayV2::Integration
@@ -98,19 +82,13 @@ Resources:
       IntegrationUri: !Sub 'http://${ALBEndpoint}/websocket/message'
       PayloadFormatVersion: '1.0'
       TimeoutInMillis: 29000
-      RequestTemplates:
-        application/json: |
-          {
-            "requestContext": {
-              "connectionId": "$context.connectionId",
-              "domainName": "$context.domainName",
-              "stage": "$context.stage",
-              "routeKey": "$context.routeKey",
-              "requestId": "$context.requestId",
-              "messageId": "$context.messageId"
-            },
-            "body": "$util.escapeJavaScript($input.body)"
-          }
+      RequestParameters:
+        'append:header.X-Connection-Id': '$context.connectionId'
+        'append:header.X-Domain-Name': '$context.domainName'
+        'append:header.X-Stage': '$context.stage'
+        'append:header.X-Route-Key': '$context.routeKey'
+        'append:header.X-Request-Id': '$context.requestId'
+        'append:header.X-Message-Id': '$context.messageId'
 
   # Routes
   WebSocketConnectRoute:
