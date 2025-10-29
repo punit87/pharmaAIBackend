@@ -71,6 +71,7 @@ Resources:
         Neo4jUri: !Ref Neo4jUri
         Neo4jUsername: !Ref Neo4jUsername
         Neo4jPassword: !Ref Neo4jPassword
+        DocumentBucket: !GetAtt StorageStack.Outputs.DocumentBucketName
 
   # Lambda Functions
   LambdaStack:
@@ -92,6 +93,7 @@ Resources:
         Neo4jUri: !Ref Neo4jUri
         Neo4jUsername: !Ref Neo4jUsername
         Neo4jPassword: !Ref Neo4jPassword
+        DocumentBucket: !GetAtt StorageStack.Outputs.DocumentBucketName
 
   # API Gateway
   ApiGatewayStack:

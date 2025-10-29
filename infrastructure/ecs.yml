@@ -63,6 +63,10 @@ Parameters:
     Description: OpenAI Base URL
     Default: https://api.openai.com/v1
 
+  DocumentBucket:
+    Type: String
+    Description: S3 Bucket name for document storage
+
 Resources:
   # ALB Infrastructure (moved from main stack to avoid cross-stack dependencies)
   ApplicationLoadBalancer:
@@ -184,6 +188,20 @@ Resources:
                   - elasticfilesystem:ClientWrite
                   - elasticfilesystem:ClientRootAccess
                 Resource: '*'
+        - PolicyName: DynamoDBAccess
+          PolicyDocument:
+            Version: '2012-10-17'
+            Statement:
+              - Effect: Allow
+                Action:
+                  - dynamodb:GetItem
+                  - dynamodb:PutItem
+                  - dynamodb:DeleteItem
+                  - dynamodb:Query
+                  - dynamodb:Scan
+                Resource:
+                  - !Sub 'arn:aws:dynamodb:${AWS::Region}:${AWS::AccountId}:table/${Environment}-websocket-connections'
+                  - !Sub 'arn:aws:dynamodb:${AWS::Region}:${AWS::AccountId}:table/${Environment}-websocket-connections/*'
 
   EFSFileSystem:
     Type: AWS::EFS::FileSystem
@@ -272,6 +290,8 @@ Resources:
               Value: 'docling'
             - Name: PARSE_METHOD
               Value: 'ocr'
+            - Name: S3_BUCKET
+              Value: !Ref DocumentBucket
           MountPoints:
             - SourceVolume: efs-storage
               ContainerPath: /mnt/efs
