@@ -1859,11 +1859,16 @@ def websocket_connect():
             logger.error(f"Missing connectionId. Event keys: {list(event.keys())}, RequestContext keys: {list(request_context.keys())}")
             logger.error(f"All headers: {dict(request.headers)}")
             logger.error(f"Request data: {request.data.decode('utf-8') if request.data else 'None'}")
-            # For API Gateway WebSocket, we might need to accept the connection even without ID
-            # But log this for investigation
-            return jsonify({'statusCode': 400, 'message': 'Missing connectionId', 'event_keys': list(event.keys())}), 400
+            # For API Gateway WebSocket handshake, we MUST return 200 to accept the connection
+            # Even without connectionId, we accept to allow the handshake to complete
+            # The connectionId might be available in subsequent requests
+            logger.warning("Accepting WebSocket connection without connectionId for debugging")
+            response = jsonify({'statusCode': 200, 'message': 'Connection accepted without connectionId'})
+            response.status_code = 200
+            return response
         
         # Store connection in DynamoDB
+vv
         dynamodb = boto3.resource('dynamodb')
         connections_table_name = os.environ.get('WEBSOCKET_CONNECTIONS_TABLE', f"{os.environ.get('ENVIRONMENT', 'dev')}-websocket-connections")
         connections_table = dynamodb.Table(connections_table_name)
