@@ -2,20 +2,14 @@ Parameters:
   Environment:
     Type: String
     Description: Environment name
-  WebSocketTableName:
-    Type: String
-    Description: DynamoDB table for WebSocket connections
-  S3Bucket:
-    Type: String
-    Description: S3 bucket for CloudFormation templates and Lambda packages
   ALBEndpoint:
     Type: String
     Description: ALB DNS Name for connecting to ECS tasks
   DocumentBucket:
     Type: String
     Description: S3 Bucket for document storage
+
 Resources:
-  # Lambda Integration Role
   # DynamoDB Table for WebSocket Connections
   WebSocketConnectionsTable:
     Type: AWS::DynamoDB::Table
@@ -46,128 +40,33 @@ Resources:
       RouteSelectionExpression: "$request.body.action"
       Description: WebSocket API for real-time document processing updates
 
-  # Lambda Integration Role
-  WebSocketLambdaRole:
-    Type: AWS::IAM::Role
-    Properties:
-      RoleName: !Sub 'pharma-websocket-lambda-role-${Environment}'
-      AssumeRolePolicyDocument:
-        Version: '2012-10-17'
-        Statement:
-          - Effect: Allow
-            Principal:
-              Service: lambda.amazonaws.com
-            Action: sts:AssumeRole
-      ManagedPolicyArns:
-        - arn:aws:iam::aws:policy/service-role/AWSLambdaBasicExecutionRole
-      Policies:
-        - PolicyName: WebSocketPermissions
-          PolicyDocument:
-            Version: '2012-10-17'
-            Statement:
-              - Effect: Allow
-                Action:
-                  - execute-api:ManageConnections
-                Resource: !Sub 'arn:aws:execute-api:${AWS::Region}:${AWS::AccountId}:*/*/*'
-              - Effect: Allow
-                Action:
-                  - dynamodb:PutItem
-                  - dynamodb:GetItem
-                  - dynamodb:DeleteItem
-                  - dynamodb:UpdateItem
-                  - dynamodb:Scan
-                Resource: !GetAtt WebSocketConnectionsTable.Arn
-              - Effect: Allow
-                Action:
-                  - logs:CreateLogGroup
-                  - logs:CreateLogStream
-                  - logs:PutLogEvents
-                Resource: !Sub 'arn:aws:logs:${AWS::Region}:${AWS::AccountId}:log-group:/aws/lambda/pharma-websocket-*'
-              - Effect: Allow
-                Action:
-                  - ecs:RunTask
-                  - ecs:DescribeTasks
-                  - ec2:*
-                Resource: '*'
-              - Effect: Allow
-                Action:
-                  - s3:GetObject
-                  - s3:ListBucket
-                Resource: !Sub 'arn:aws:s3:::${DocumentBucket}/*'
-
-  # Connect Handler
-  WebSocketConnectFunction:
-    Type: AWS::Lambda::Function
-    Properties:
-      FunctionName: !Sub 'pharma-websocket-connect-${Environment}'
-      Runtime: python3.11
-      Handler: websocket_connect.lambda_handler
-      Code:
-        S3Bucket: !Ref S3Bucket
-        S3Key: lambda-packages/websocket_connect.zip
-      Role: !GetAtt WebSocketLambdaRole.Arn
-      Timeout: 60
-      Environment:
-        Variables:
-          CONNECTIONS_TABLE: !Ref WebSocketConnectionsTable
-
-  # Disconnect Handler
-  WebSocketDisconnectFunction:
-    Type: AWS::Lambda::Function
-    Properties:
-      FunctionName: !Sub 'pharma-websocket-disconnect-${Environment}'
-      Runtime: python3.11
-      Handler: websocket_disconnect.lambda_handler
-      Code:
-        S3Bucket: !Ref S3Bucket
-        S3Key: lambda-packages/websocket_disconnect.zip
-      Role: !GetAtt WebSocketLambdaRole.Arn
-      Timeout: 60
-      Environment:
-        Variables:
-          CONNECTIONS_TABLE: !Ref WebSocketConnectionsTable
-
-  # Message Handler
-  WebSocketMessageFunction:
-    Type: AWS::Lambda::Function
-    Properties:
-      FunctionName: !Sub 'pharma-websocket-message-${Environment}'
-      Runtime: python3.11
-      Handler: websocket_message.lambda_handler
-      Code:
-        S3Bucket: !Ref S3Bucket
-        S3Key: lambda-packages/websocket_message.zip
-      Role: !GetAtt WebSocketLambdaRole.Arn
-      Timeout: 300
-      MemorySize: 512
-      Environment:
-        Variables:
-          CONNECTIONS_TABLE: !Ref WebSocketConnectionsTable
-          API_ENDPOINT: !Sub 'https://${WebSocketApi}.execute-api.${AWS::Region}.amazonaws.com/${Environment}'
-          ALB_ENDPOINT: !Ref ALBEndpoint
-          S3_BUCKET: !Ref DocumentBucket
-
-  # WebSocket Integrations
+  # WebSocket Integrations (HTTP backend - direct to ALB)
   WebSocketConnectIntegration:
     Type: AWS::ApiGatewayV2::Integration
     Properties:
       ApiId: !Ref WebSocketApi
-      IntegrationType: AWS_PROXY
-      IntegrationUri: !Sub 'arn:aws:apigateway:${AWS::Region}:lambda:path/2015-03-31/functions/${WebSocketConnectFunction.Arn}/invocations'
+      IntegrationType: HTTP
+      IntegrationMethod: POST
+      IntegrationUri: !Sub 'http://${ALBEndpoint}/websocket/connect'
+      PayloadFormatVersion: '1.0'
 
   WebSocketDisconnectIntegration:
     Type: AWS::ApiGatewayV2::Integration
     Properties:
       ApiId: !Ref WebSocketApi
-      IntegrationType: AWS_PROXY
-      IntegrationUri: !Sub 'arn:aws:apigateway:${AWS::Region}:lambda:path/2015-03-31/functions/${WebSocketDisconnectFunction.Arn}/invocations'
+      IntegrationType: HTTP
+      IntegrationMethod: POST
+      IntegrationUri: !Sub 'http://${ALBEndpoint}/websocket/disconnect'
+      PayloadFormatVersion: '1.0'
 
   WebSocketMessageIntegration:
     Type: AWS::ApiGatewayV2::Integration
     Properties:
       ApiId: !Ref WebSocketApi
-      IntegrationType: AWS_PROXY
-      IntegrationUri: !Sub 'arn:aws:apigateway:${AWS::Region}:lambda:path/2015-03-31/functions/${WebSocketMessageFunction.Arn}/invocations'
+      IntegrationType: HTTP
+      IntegrationMethod: POST
+      IntegrationUri: !Sub 'http://${ALBEndpoint}/websocket/message'
+      PayloadFormatVersion: '1.0'
 
   # Routes
   WebSocketConnectRoute:
@@ -211,31 +110,6 @@ Resources:
         ThrottlingBurstLimit: 100
         ThrottlingRateLimit: 50
 
-  # Lambda Invoke Permissions
-  WebSocketConnectPermission:
-    Type: AWS::Lambda::Permission
-    Properties:
-      FunctionName: !Ref WebSocketConnectFunction
-      Action: lambda:InvokeFunction
-      Principal: apigateway.amazonaws.com
-      SourceArn: !Sub 'arn:aws:execute-api:${AWS::Region}:${AWS::AccountId}:${WebSocketApi}/*'
-
-  WebSocketDisconnectPermission:
-    Type: AWS::Lambda::Permission
-    Properties:
-      FunctionName: !Ref WebSocketDisconnectFunction
-      Action: lambda:InvokeFunction
-      Principal: apigateway.amazonaws.com
-      SourceArn: !Sub 'arn:aws:execute-api:${AWS::Region}:${AWS::AccountId}:${WebSocketApi}/*'
-
-  WebSocketMessagePermission:
-    Type: AWS::Lambda::Permission
-    Properties:
-      FunctionName: !Ref WebSocketMessageFunction
-      Action: lambda:InvokeFunction
-      Principal: apigateway.amazonaws.com
-      SourceArn: !Sub 'arn:aws:execute-api:${AWS::Region}:${AWS::AccountId}:${WebSocketApi}/*'
-
 Outputs:
   WebSocketApiEndpoint:
     Description: WebSocket API Endpoint
@@ -248,10 +122,4 @@ Outputs:
     Value: !Ref WebSocketConnectionsTable
     Export:
       Name: !Sub '${AWS::StackName}-WebSocketConnectionsTable'
-
-  WebSocketMessageFunctionArn:
-    Description: WebSocket Message Function ARN
-    Value: !GetAtt WebSocketMessageFunction.Arn
-    Export:
-      Name: !Sub '${AWS::StackName}-WebSocketMessageFunction'
 

@@ -111,13 +111,12 @@ Resources:
   # WebSocket API
   WebSocketStack:
     Type: AWS::CloudFormation::Stack
-    DependsOn: LambdaStack
+    DependsOn:
+      - ECSStack
     Properties:
       TemplateURL: !Sub 'https://${S3Bucket}.s3.${AWS::Region}.amazonaws.com/cloudformation-templates/websocket.yml'
       Parameters:
         Environment: !Ref Environment
-        WebSocketTableName: !Sub '${Environment}-websocket-connections'
-        S3Bucket: !Ref S3Bucket
         ALBEndpoint: !GetAtt ECSStack.Outputs.ALBEndpoint
         DocumentBucket: !GetAtt StorageStack.Outputs.DocumentBucketName
 

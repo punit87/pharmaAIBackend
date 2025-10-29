@@ -1821,6 +1821,244 @@ def rag_query_multimodal_gateway():
     return query_multimodal()
 
 # ============================================================================
+# WEBSOCKET HANDLERS (for WebSocket API Gateway HTTP backend integration)
+# ============================================================================
+
+@app.route('/websocket/connect', methods=['POST'])
+def websocket_connect():
+    """Handle WebSocket connect event"""
+    try:
+        # Parse WebSocket event from API Gateway
+        if request.is_json:
+            event = request.json
+        else:
+            # API Gateway sends event as raw JSON in body
+            import json
+            event = json.loads(request.data.decode('utf-8')) if request.data else {}
+        
+        connection_id = event.get('requestContext', {}).get('connectionId')
+        
+        if not connection_id:
+            logger.error("Missing connectionId in WebSocket connect event")
+            return jsonify({'statusCode': 400}), 400
+        
+        # Store connection in DynamoDB
+        dynamodb = boto3.resource('dynamodb')
+        connections_table_name = os.environ.get('WEBSOCKET_CONNECTIONS_TABLE', f"{os.environ.get('ENVIRONMENT', 'dev')}-websocket-connections")
+        connections_table = dynamodb.Table(connections_table_name)
+        
+        from datetime import datetime, timedelta
+        connections_table.put_item(
+            Item={
+                'connectionId': connection_id,
+                'connectedAt': datetime.utcnow().isoformat(),
+                'ttl': int((datetime.utcnow() + timedelta(hours=1)).timestamp())
+            }
+        )
+        
+        logger.info(f"WebSocket connection established: {connection_id}")
+        
+        return jsonify({'statusCode': 200}), 200
+        
+    except Exception as e:
+        logger.error(f"Error handling WebSocket connect: {str(e)}")
+        import traceback
+        traceback.print_exc()
+        return jsonify({'statusCode': 500, 'error': str(e)}), 500
+
+@app.route('/websocket/disconnect', methods=['POST'])
+def websocket_disconnect():
+    """Handle WebSocket disconnect event"""
+    try:
+        # Parse WebSocket event from API Gateway
+        if request.is_json:
+            event = request.json
+        else:
+            import json
+            event = json.loads(request.data.decode('utf-8')) if request.data else {}
+        
+        connection_id = event.get('requestContext', {}).get('connectionId')
+        
+        if not connection_id:
+            logger.error("Missing connectionId in WebSocket disconnect event")
+            return jsonify({'statusCode': 400}), 400
+        
+        # Remove connection from DynamoDB
+        dynamodb = boto3.resource('dynamodb')
+        connections_table_name = os.environ.get('WEBSOCKET_CONNECTIONS_TABLE', f"{os.environ.get('ENVIRONMENT', 'dev')}-websocket-connections")
+        connections_table = dynamodb.Table(connections_table_name)
+        
+        try:
+            connections_table.delete_item(
+                Key={'connectionId': connection_id}
+            )
+            logger.info(f"WebSocket connection removed: {connection_id}")
+        except Exception as e:
+            logger.warning(f"Error removing connection: {str(e)}")
+        
+        return jsonify({'statusCode': 200}), 200
+        
+    except Exception as e:
+        logger.error(f"Error handling WebSocket disconnect: {str(e)}")
+        import traceback
+        traceback.print_exc()
+        return jsonify({'statusCode': 500, 'error': str(e)}), 500
+
+@app.route('/websocket/message', methods=['POST'])
+def websocket_message():
+    """Handle WebSocket message event"""
+    try:
+        # Parse WebSocket event from API Gateway
+        if request.is_json:
+            event = request.json
+        else:
+            import json
+            event = json.loads(request.data.decode('utf-8')) if request.data else {}
+        
+        connection_id = event.get('requestContext', {}).get('connectionId')
+        websocket_endpoint = event.get('requestContext', {}).get('domainName')
+        websocket_stage = event.get('requestContext', {}).get('stage')
+        
+        # Get WebSocket Management API endpoint
+        websocket_api_endpoint = os.environ.get('WEBSOCKET_API_ENDPOINT')
+        if not websocket_api_endpoint and websocket_endpoint and websocket_stage:
+            # Construct from event data
+            websocket_api_endpoint = f"https://{websocket_endpoint}/{websocket_stage}"
+        
+        body_str = event.get('body', '{}')
+        if isinstance(body_str, str):
+            body = json.loads(body_str)
+        else:
+            body = body_str
+        
+        action = body.get('action')
+        
+        logger.info(f"WebSocket message received - action={action}, connection_id={connection_id}")
+        
+        if action == 'process_document':
+            # Handle document processing request
+            bucket = body.get('bucket')
+            document_key = body.get('document_key')
+            document_name = body.get('document_name')
+            
+            if not document_key:
+                _send_websocket_error(connection_id, websocket_api_endpoint, 'Missing document_key')
+                return jsonify({'statusCode': 400}), 400
+            
+            # Get S3 bucket from environment if not provided
+            s3_bucket = bucket or os.environ.get('S3_BUCKET')
+            
+            if not s3_bucket:
+                _send_websocket_error(connection_id, websocket_api_endpoint, 'S3 bucket not configured')
+                return jsonify({'statusCode': 500}), 500
+            
+            # Send progress updates
+            _send_websocket_update(connection_id, websocket_api_endpoint, 'starting', 'Starting document processing...', 10)
+            _send_websocket_update(connection_id, websocket_api_endpoint, 'triggering', 'Connecting to ECS processing service...', 20)
+            
+            # Process document - call the /process endpoint on the same ALB
+            _send_websocket_update(connection_id, websocket_api_endpoint, 'processing', 'Sending document to processing engine...', 40)
+            
+            # Call the process endpoint via HTTP
+            try:
+                import requests
+                alb_endpoint = os.environ.get('ALB_ENDPOINT') or os.environ.get('ALB_DNS_NAME')
+                if not alb_endpoint:
+                    _send_websocket_error(connection_id, websocket_api_endpoint, 'ALB endpoint not configured')
+                    return jsonify({'statusCode': 500}), 500
+                
+                process_url = f"http://{alb_endpoint}/process"
+                payload = {
+                    'bucket': s3_bucket,
+                    'key': document_key
+                }
+                if document_name:
+                    payload['document_name'] = document_name
+                
+                logger.info(f"Calling process endpoint: {process_url} with payload: {payload}")
+                process_response = requests.post(
+                    process_url,
+                    json=payload,
+                    headers={'Content-Type': 'application/json'},
+                    timeout=300
+                )
+                
+                if process_response.status_code == 200:
+                    _send_websocket_update(connection_id, websocket_api_endpoint, 'complete', 'Document processing started successfully!', 100)
+                    return jsonify({'statusCode': 200}), 200
+                else:
+                    error_msg = f'Processing failed: {process_response.status_code}'
+                    _send_websocket_error(connection_id, websocket_api_endpoint, error_msg)
+                    return jsonify({'statusCode': 500}), 500
+                        
+            except Exception as e:
+                logger.error(f"Error processing document: {str(e)}")
+                import traceback
+                traceback.print_exc()
+                _send_websocket_error(connection_id, websocket_api_endpoint, f'Error processing document: {str(e)}')
+                return jsonify({'statusCode': 500}), 500
+        
+        # Handle other actions
+        response_data = {'action': 'message', 'data': body}
+        _send_websocket_message(connection_id, websocket_api_endpoint, response_data)
+        
+        return jsonify({'statusCode': 200}), 200
+        
+    except Exception as e:
+        logger.error(f"Error handling WebSocket message: {str(e)}")
+        import traceback
+        traceback.print_exc()
+        if 'connection_id' in locals():
+            _send_websocket_error(connection_id, websocket_api_endpoint, str(e))
+        return jsonify({'statusCode': 500, 'error': str(e)}), 500
+
+def _send_websocket_update(connection_id, api_endpoint, step, message, progress):
+    """Send progress update via WebSocket Management API"""
+    try:
+        payload = {
+            'action': 'progressUpdate',
+            'step': step,
+            'message': message,
+            'data': {'progress': progress}
+        }
+        _send_websocket_message(connection_id, api_endpoint, payload)
+        logger.info(f"Sent progress update: {step} - {message} ({progress}%)")
+    except Exception as e:
+        logger.error(f"Error sending progress update: {str(e)}")
+
+def _send_websocket_error(connection_id, api_endpoint, error_msg):
+    """Send error message via WebSocket Management API"""
+    try:
+        payload = {
+            'action': 'error',
+            'message': error_msg
+        }
+        _send_websocket_message(connection_id, api_endpoint, payload)
+    except Exception as e:
+        logger.error(f"Error sending error message: {str(e)}")
+
+def _send_websocket_message(connection_id, api_endpoint, payload):
+    """Send message via WebSocket Management API"""
+    import json
+    try:
+        if not api_endpoint:
+            logger.warning("WebSocket API endpoint not configured, cannot send message")
+            return
+        
+        # Use boto3 ApiGatewayManagementApi client
+        apigateway = boto3.client(
+            'apigatewaymanagementapi',
+            endpoint_url=api_endpoint
+        )
+        
+        apigateway.post_to_connection(
+            ConnectionId=connection_id,
+            Data=json.dumps(payload).encode('utf-8')
+        )
+    except Exception as e:
+        logger.error(f"Error sending WebSocket message: {str(e)}")
+
+# ============================================================================
 # SERVER STARTUP
 # ============================================================================
 
