@@ -51,6 +51,11 @@ RUN pip install --no-cache-dir 'raganything[all]' boto3 flask flask-cors
 # Install Docling with CPU-only PyTorch and pytesseract
 RUN pip install --no-cache-dir docling pytesseract --extra-index-url https://download.pytorch.org/whl/cpu
 
+# Install Lambda handler dependencies
+COPY lambda/requirements.txt /tmp/lambda-requirements.txt
+RUN pip install --no-cache-dir -r /tmp/lambda-requirements.txt && \
+    rm /tmp/lambda-requirements.txt
+
 # Create models directory and download docling models
 RUN mkdir -p /opt/models/ && \
     docling-tools models download
@@ -67,6 +72,9 @@ RUN python3 -c "import raganything; print('RAG-Anything installed successfully')
 
 # Copy RAG server script
 COPY apps/rag_client.py /var/task/
+
+# Copy Lambda handlers (kept as-is for reference/future use)
+COPY lambda/ /var/task/lambda/
 
 # Set the CMD to run the RAG server
 CMD ["python3", "/var/task/rag_client.py"]
