@@ -1868,8 +1868,10 @@ def websocket_connect():
             # Even without connectionId, we accept to allow the handshake to complete
             # The connectionId might be available in subsequent requests
             logger.warning("Accepting WebSocket connection without connectionId for debugging")
-            # Return plain HTTP 200 for PayloadFormatVersion 1.0 (empty body)
-            return Response('', status=200, mimetype='application/json')
+            # Return plain HTTP 200 for PayloadFormatVersion 1.0 (empty body, no Content-Type)
+            response = Response('', status=200)
+            response.headers.pop('Content-Type', None)
+            return response
         
         # Store connection in DynamoDB
         dynamodb = boto3.resource('dynamodb')
@@ -1889,8 +1891,10 @@ def websocket_connect():
         
         # Return response for API Gateway WebSocket HTTP integration
         # For PayloadFormatVersion 1.0, return plain HTTP 200 (no JSON body)
-        # Use Response object to ensure empty body is sent
-        return Response('', status=200, mimetype='application/json')
+        # Use Response object to ensure empty body is sent without Content-Type header
+        response = Response('', status=200)
+        response.headers.pop('Content-Type', None)
+        return response
         
     except Exception as e:
         logger.error(f"Error handling WebSocket connect: {str(e)}")
