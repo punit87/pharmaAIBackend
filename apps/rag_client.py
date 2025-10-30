@@ -17,7 +17,7 @@ import threading
 import atexit
 import logging
 from functools import lru_cache
-from flask import Flask, request, jsonify
+from flask import Flask, request, jsonify, Response
 from flask_cors import CORS
 from raganything import RAGAnything, RAGAnythingConfig
 from lightrag import LightRAG
@@ -1868,8 +1868,8 @@ def websocket_connect():
             # Even without connectionId, we accept to allow the handshake to complete
             # The connectionId might be available in subsequent requests
             logger.warning("Accepting WebSocket connection without connectionId for debugging")
-            # Return plain HTTP 200 for PayloadFormatVersion 1.0
-            return '', 200
+            # Return plain HTTP 200 for PayloadFormatVersion 1.0 (empty body)
+            return Response('', status=200, mimetype='application/json')
         
         # Store connection in DynamoDB
         dynamodb = boto3.resource('dynamodb')
@@ -1889,7 +1889,8 @@ def websocket_connect():
         
         # Return response for API Gateway WebSocket HTTP integration
         # For PayloadFormatVersion 1.0, return plain HTTP 200 (no JSON body)
-        return '', 200
+        # Use Response object to ensure empty body is sent
+        return Response('', status=200, mimetype='application/json')
         
     except Exception as e:
         logger.error(f"Error handling WebSocket connect: {str(e)}")
